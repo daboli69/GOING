@@ -1,5 +1,5 @@
 // GOING YARD bet journal: My Bets and CLV. Bets are stored in this browser under hr-board's own key (gy_bets) in
-// hr-board's format, so the journal is shared with hr-board's page on daboli69.github.io. Stats and CLV use
+// hr-board's format so either site can import a journal backup. Stats and CLV use
 // hr-board's functions (site/yard-engine.mjs); this module adds the layout and box-score grading.
 import {current as S,esc,box,grid,metric,table,cell,tools,btn,select,search,empty,badge,dateKey,toast} from './ui.mjs';
 import {signed} from './math.mjs';

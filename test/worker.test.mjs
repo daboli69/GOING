@@ -49,6 +49,8 @@ test('Worker reuses fresh scores, reports stale data and throttles retries',asyn
   assert.equal(first.headers.get('Access-Control-Allow-Origin'),'http://localhost:4387');
   assert.equal(first.headers.get('Cache-Control'),'public, max-age=30');
   assert.equal((await call('/scores/nba')).headers.get('X-Going-Cache'),'HIT');
+  const production=await call('/scores/nba',{headers:{Origin:'https://goingplaybook.com'}});
+  assert.equal(production.headers.get('Access-Control-Allow-Origin'),'https://goingplaybook.com');
   assert.equal(source.mock.callCount(),1);
   assert.equal((await call('/scores/nba',{headers:{Origin:'https://other.example'}})).status,403);
   assert.equal((await call('/scores/nba',{method:'POST'})).status,404);

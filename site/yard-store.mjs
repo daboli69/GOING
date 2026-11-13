@@ -1,4 +1,4 @@
-// Settings hr-board keeps in this browser. GOING YARD shares them because both pages live on daboli69.github.io.
+// Save GOING YARD settings in this browser using hr-board's storage format.
 export function setMinEdgeValue(v){try{localStorage.setItem('gy_minedge',String(v));}catch{}}
 export function setManualPrice(boardDate,id,value,current){
   const prices={...current};const clean=String(value||'').trim();

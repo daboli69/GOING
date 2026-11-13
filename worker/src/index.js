@@ -7,7 +7,7 @@ const nhl='https://api-web.nhle.com/v1';
 const repo='https://api.github.com/repos/daboli69/GOING';
 const jsonType='application/json; charset=utf-8';
 const refreshing=new Set();
-const allowedOrigin=origin=>origin==='https://daboli69.github.io'||
+const allowedOrigin=origin=>origin==='https://goingplaybook.com'||origin==='https://daboli69.github.io'||
   /^http:\/\/localhost:[1-9]\d{0,4}$/.test(origin||'')&&Number(origin.slice(17))<=65535;
 const validDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!value.startsWith('0000-')&&
   Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
@@ -67,7 +67,7 @@ async function load({type,name,date},env){
   if(type==='injuries'){
     // ESPN embeds megabytes of athlete and team metadata for NFL injuries.
     if(name==='nfl'){
-      const response=await upstream('https://daboli69.github.io/GOING/data/live/injuries-nfl.json');
+      const response=await upstream('https://goingplaybook.com/data/live/injuries-nfl.json');
       return new Response(response.body,{headers:{'Content-Type':jsonType}});
     }
     return json(compactInjuries(await espn(name,'injuries','injuries')));

@@ -1,6 +1,6 @@
 # GOING
 
-One site for the ensemble models and the sports dashboards.
+One site for the ensemble models and the sports dashboards. [GOING Playbook](https://goingplaybook.com/)
 
 | Section | Sport | What is in it |
 | --- | --- | --- |
@@ -65,7 +65,7 @@ GOING YARD shows the Going Yard model from [hr-board](https://github.com/daboli6
 
 Several views (Top Picks, Daily Card, Signal Convergence, Team vs Pitch Mix, Split Overlaps, Edge Finder, Price Research, Alt Line Finder, Parlay Builder, Parlay Scanner, Ladder Challenge, HR Calendar, HR Patterns) run hr-board's own in-browser math. `site/yard-engine.mjs` is generated from hr-board's page by `npm run yard-engine`, which parses that page and copies the functions those views call, and everything they depend on, word for word. It leaves out anything that draws hr-board's own page. Rerun it after changing that math in hr-board. These views load the full board, history and backtest.
 
-Prices you type into the Edge Finder, the Ladder Challenge, the Price Research minimum and the My Bets journal use the same browser storage keys as hr-board's page. My Bets grades each player from the MLB box score once his game is final and never overwrites a mark you set yourself. Backups use hr-board's file format, so either page can restore them. Both live on daboli69.github.io, so the two stay in step.
+Prices you type into the Edge Finder, the Ladder Challenge, the Price Research minimum and the My Bets journal are saved in your browser for goingplaybook.com. My Bets grades each player from the MLB box score once his game is final and never overwrites a mark you set yourself. Backups use hr-board's file format, so either page can restore them. To bring over journal entries saved under daboli69.github.io, export a backup from hr-board and import it on GOING Playbook.
 
 When the live board has no games (offseason or an off day), the section shows the last slate hr-board published and says so. It switches back on its own once games return. Player photos and team logos come from MLB's image service.
 
