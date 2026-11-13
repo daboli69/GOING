@@ -42,6 +42,6 @@ export function homePage(){
   const L=summary.live||{},M=summary.models||{};
   const fresh=[L.updated&&'Slates, injuries and prices '+ago(L.updated),L.archive_updated&&'season archives '+ago(L.archive_updated),
     M.nfl?.generated_at&&'NFL model '+ago(M.nfl.generated_at),M.nba?.generated_at&&'NBA model '+ago(M.nba.generated_at),summary.yard?.generated_at&&'MLB board '+ago(summary.yard.generated_at)].filter(Boolean);
-  return `<section class="going-intro"><h1 class="going-title">GOING</h1><p class="lede">Ensemble models and matchup dashboards for basketball, football, hockey and baseball.</p></section>`+
+  return `<section class="going-intro"><h1 class="going-title"><img class="going-wordmark" src="${href('brand/going-wordmark.svg')}" width="461" height="100" alt="GOING"></h1><p class="lede">Ensemble models and matchup dashboards for basketball, football, hockey and baseball.</p></section>`+
     `<div class="doors">${doors}</div><p class="tiny freshness">${fresh.length?'Updated: '+fresh.map(esc).join(' · '):'Update times appear after the first automatic refresh.'}</p>`;
 }

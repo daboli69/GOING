@@ -107,7 +107,7 @@ export function footer(){
   const lead=current.route.id==='myplays'?'Your saved plays, graded. Saved in this browser.':
     /-models$/.test(current.route.id)?'Model forecasts are published from the local ensemble lab. Research only, not betting advice.':
     f?`Data: <a href="${f[1]}" target="_blank" rel="noopener">${f[0]}</a>. ${f[2]}`:'Public sports data, refreshed automatically. Research only, not betting advice.';
-  $('#footer').innerHTML=lead+`<div class="sources">${Object.entries(footers).map(([k,x])=>`<a href="${x[1]}" target="_blank" rel="noopener">${k.toUpperCase()} sources</a>`).join('')}<a href="https://www.espn.com/" target="_blank" rel="noopener">ESPN game lines &amp; injuries</a><a href="https://docs.kalshi.com/api-reference/market/get-markets" target="_blank" rel="noopener">Kalshi public player lines</a></div>`;
+  $('#footer').innerHTML=`<a class="footer-brand" href="${BASE}" aria-label="GOING home"><img class="going-wordmark" src="${BASE}brand/going-wordmark.svg" width="461" height="100" alt=""></a>`+lead+`<div class="sources">${Object.entries(footers).map(([k,x])=>`<a href="${x[1]}" target="_blank" rel="noopener">${k.toUpperCase()} sources</a>`).join('')}<a href="https://www.espn.com/" target="_blank" rel="noopener">ESPN game lines &amp; injuries</a><a href="https://docs.kalshi.com/api-reference/market/get-markets" target="_blank" rel="noopener">Kalshi public player lines</a></div>`;
 }
 export function dialog(title,body,wide=false){
   const d=$('#dialog');
