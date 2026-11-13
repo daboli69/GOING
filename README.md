@@ -30,6 +30,16 @@ Two sources feed the site, and neither commits data to `main`.
 publishers\publish_models.bat
 ```
 
+**Hourly backstop (your PC).** GitHub's hourly schedule can start late or skip runs. `publishers/refresh_site.py` starts a refresh when no run has started in the last 40 minutes, so it never doubles up. Run this once to make it an hourly Windows scheduled task (at :20, while the PC is on and you are signed in):
+
+```bat
+publishers\install_refresh_task.bat
+```
+
+It uses the same `gh` login as the model publisher, and `publishers\last_refresh.log` shows what the last run did. To keep the site refreshing while the PC is off, use a free scheduler such as cron-job.org instead. Create a fine-grained GitHub token for this repository with "Actions: read and write" access. Then have the scheduler send `POST https://api.github.com/repos/daboli69/GOING/actions/workflows/deploy.yml/dispatches` every hour, with the headers `Authorization: Bearer <token>` and `Accept: application/vnd.github+json` and the body `{"ref":"main","inputs":{"mode":"live"}}`.
+
+**Feed health.** After each refresh, `scripts/health.mjs` checks how old every feed is: live snapshots, season archives, the college feeds and both trackers. When one is stale, the workflow opens a GitHub issue named "GOING feed health" (GitHub emails you), comments when the list of stale feeds changes, and closes the issue once everything is fresh again. The site keeps showing the last good data in the meantime. Tests run before every deploy, so a push that breaks them never reaches the site.
+
 Lab locations default to `Documents\ChatGPT\GOING\research\nfl-ensemble-lab` and `...\NBA ensemble`. Set `GOING_NFL_LAB` or `GOING_NBA_LAB` to override them.
 
 ## GOING YARD
@@ -82,10 +92,17 @@ npm start
 
 `npm start` serves `site/` at http://localhost:4387 (set `PORT` to change it). `npm run refresh` rebuilds the season archives locally (Python 3 required). `npm run preview` builds `dist/` the way Pages does. `npm test` checks the parsers and model math.
 
+## In the browser
+
+- **Live scores.** While a page is open and visible, games that are under way or about to start get their score and status from ESPN's public scoreboard once a minute (`site/live-scores.mjs`). This covers the NBA, NHL, NFL and college slates. The hourly snapshot fills in everything else.
+- **Offline.** `site/sw.js` saves each page, its code and its data as you open them. Offline, those pages still open with the data last seen on that device. The build stamps the worker with the code version, so a deploy replaces the saved code.
+- **Loading.** Each section's code loads only when one of its pages opens, and every page preloads its own section. Team logos and NFL and NBA player photos are requested at the size shown. The fonts are self-hosted (`site/fonts`, SIL Open Font License).
+- **Backups.** My Plays has Back up and Restore. A backup file holds everything GOING saved in that browser. Restoring adds the file's plays to the ones already there and fills in settings only where the browser has none.
+
 ## Layout
 
-- `site/`: the static app. `app.mjs` routes, `home.mjs` is the landing page, `models.mjs` shows the ensemble forecasts, and `nfl.mjs`, `nba.mjs` and `nhl.mjs` are the dashboards.
-- `scripts/`: data refresh, hourly snapshot, build and local server.
-- `publishers/`: model export and push to `model-feeds`.
+- `site/`: the static app. `app.mjs` routes, `home.mjs` is the landing page, `models.mjs` shows the ensemble forecasts, and `nfl.mjs`, `nba.mjs` and `nhl.mjs` are the dashboards. `live-scores.mjs` updates games in progress, and `sw.js` is the offline worker.
+- `scripts/`: data refresh, hourly snapshot, feed health check, build and local server.
+- `publishers/`: model export and push to `model-feeds`, and the hourly refresh backstop.
 
 Research only. Forecasts and prices are not betting advice, and the public price quotes are not sportsbook consensus.

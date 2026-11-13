@@ -1,4 +1,4 @@
-import {current as S,esc,get,dataURL,today,dateLabel,et,tools,select,search,table,box,empty,round,pct,badge} from './ui.mjs';
+import {current as S,esc,get,dataURL,today,dateLabel,et,tools,select,search,table,box,empty,round,pct,badge,espnLogo} from './ui.mjs';
 import {sections,href} from './config.mjs';
 import {collegePicks,collegePickLabel,minCollegeGames} from './college-core.mjs';
 
@@ -6,7 +6,7 @@ export const collegeLoad=(s,id)=>get(dataURL('college/'+s+(id==='college-players
 const fmt=(v,d=1)=>v==null?'—':round(v,d);
 const percent=v=>v==null?'—':pct(v,1);
 const signed=v=>v==null?'—':(v>0?'+':'')+v;
-const team=t=>/^\d+$/.test(t.id)?`<span class="team-inline"><img class="team-mark" src="https://a.espncdn.com/i/teamlogos/ncaa/500/${t.id}.png" alt="" loading="lazy" decoding="async"> ${esc(t.name)}</span>`:esc(t.name);
+const team=t=>/^\d+$/.test(t.id)?`<span class="team-inline"><img class="team-mark" src="${espnLogo('ncaa/500/'+t.id+'.png')}" alt="" loading="lazy" decoding="async" onerror="this.remove()"> ${esc(t.name)}</span>`:esc(t.name);
 const matchup=g=>team(g.away)+` <span class="muted">${g.neutral?'vs':'at'}</span> `+team(g.home);
 const stamp=t=>new Date(t).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 const record=t=>t?`${t.wins}–${t.losses}`:'—';
@@ -67,7 +67,7 @@ function playerPage(snapshot,q){
       fmt(p.steals),fmt(p.blocks),fmt(p.threes),fmt(p.threeAttempts),percent(p.threePct)]);
   return `<p class="subtle">Season ${snapshot.season} · Box scores checked ${esc(stamp(snapshot.checked))}</p>`+
     tools(search('Search players or teams')+select('Team','collegeTeam',[['','All teams'],...teams])+select('Minimum games','collegeSample',['1','3','5','10']))+
-    box('Player leaders',table(['Player','Team','Pos.','Games','Min','Pts','Reb','Ast','Stl','Blk','3PM','3PA','3P%'],rows,{sort:'college-players'}),
+    box('Player leaders',table(['Player','Team','Pos.','Games','Min','Pts','Reb','Ast','Stl','Blk','3PM','3PA','3P%'],rows,{sort:'college-players',limit:100}),
       'Per-game averages from completed box scores. Three-point percentage uses total makes and attempts. Games with no minutes are excluded.');
 }
 function quote(side,market){

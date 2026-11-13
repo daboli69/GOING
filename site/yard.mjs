@@ -30,7 +30,7 @@ const inGame=p=>S.f.allGames||!S.game||String(p.game_pk)===S.game.id;
 const pageHead=(title,help,extra='')=>{
   const b=board(),fb=b.fallback;
   return `<h1>${title}${help?info(help):''}</h1><p class="subtle">Board built ${ago(b.generated_at)}${b.recent_window?` · recent window: last ${b.recent_window.days} game days (${esc(b.recent_window.start)} to ${esc(b.recent_window.end)})`:''}${extra}</p>`+
-    (fb?`<div class="callout">No MLB games on the live board right now, so this shows the last slate hr-board published (${esc(dateLabel(b.slate_date))}). It switches back to the live board automatically when games return.</div>`:'');
+    (fb?`<div class="callout">No MLB games on the live board right now, so this shows ${b.slate_date?`the last slate hr-board published (${esc(dateLabel(b.slate_date))})`:'the last slate hr-board published, once one can be found'}. It switches back to the live board automatically when games return.</div>`:'');
 };
 const noSlate=()=>box('',empty('hr-board has not published a slate yet. The board fills in once lineups and probable pitchers post.'));
 
