@@ -1,7 +1,8 @@
 name: Refresh and deploy
 
-# Hourly: slates, injuries, public prices and NHL lineups (about a minute).
-# 09:07 and 17:07 UTC: also rebuild the season archives (nflverse, hoopR, NHL), reusing cached downloads.
+# Hourly, all day: slates, injuries, public prices and NHL lineups (about a minute).
+# 7am Eastern every morning (the first run after 7:00, DST-proof) and 17:07 UTC: also rebuild the season
+# archives (nflverse, hoopR, NHL), so the day starts on fresh data for every sport.
 # The local model publisher starts a run with mode=models whenever forecasts change.
 on:
   schedule:
@@ -58,7 +59,8 @@ jobs:
         run: |
           mode="${{ inputs.mode || 'live' }}"
           hour=$(date -u +%H)
-          if [ "${{ github.event_name }}" = "schedule" ] && { [ "$hour" = "09" ] || [ "$hour" = "17" ]; }; then mode=full; fi
+          east=$(TZ=America/New_York date +%H)
+          if [ "${{ github.event_name }}" = "schedule" ] && { [ "$east" = "07" ] || [ "$hour" = "17" ]; }; then mode=full; fi
           deep=""
           if [ -z "${{ steps.archive.outputs.cache-matched-key }}" ]; then mode=full; deep="--deep"; fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"

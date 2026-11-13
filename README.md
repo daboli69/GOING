@@ -22,7 +22,7 @@ Each section uses its own accent color and the same dashboard typography, boards
 
 Two sources feed the site, and neither commits data to `main`.
 
-**Public data (GitHub Actions, `.github/workflows/deploy.yml`).** The workflow runs every hour. It saves slates, injuries, Kalshi public player prices, NHL projected lineups and line-matchup stats (`scripts/live.mjs`, about a minute), then builds and deploys the site to GitHub Pages. Twice a day (09:07 and 17:07 UTC) it also rebuilds the season archives from nflverse, hoopR and the NHL feed (`scripts/refresh.mjs`). Downloads and archives sit in the Actions cache, so each rebuild fetches only what changed. A push to `main` also deploys.
+**Public data (GitHub Actions, `.github/workflows/deploy.yml`).** The workflow runs every hour. It saves slates, injuries, Kalshi public player prices, NHL projected lineups and line-matchup stats (`scripts/live.mjs`, about a minute), then builds and deploys the site to GitHub Pages. Every morning at 7am Eastern and again at 17:07 UTC it also rebuilds the season archives from nflverse, hoopR and the NHL feed (`scripts/refresh.mjs`). Downloads and archives sit in the Actions cache, so each rebuild fetches only what changed. A push to `main` also deploys.
 
 **Model forecasts (your PC).** The NFL and NBA labs run locally and use private inputs, so they cannot run on GitHub. `publishers/publish_models.bat` runs each lab's own Python, exports the saved forecasts read-only, and commits them to the `model-feeds` branch. It then starts a deploy. When the forecasts haven't changed, it pushes nothing. The site keeps showing the last published forecasts while the PC is off, along with how old they are.
 
