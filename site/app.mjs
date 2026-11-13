@@ -8,7 +8,9 @@ import {nhlPage,nhlPlayer,nhlAction,nhlResult} from './nhl.mjs';
 import {modelLoad,modelPage,modelAction,modelStep} from './models.mjs';
 import {homeLoad,homePage} from './home.mjs';
 
-const modules={nfl:[nflPage,nflPlayer,nflAction,nflResult],nba:[nbaPage,nbaPlayer,nbaAction,nbaResult],nhl:[nhlPage,nhlPlayer,nhlAction,nhlResult]};
+import {yardPage,yardPlayer,yardAction,yardResult} from './yard.mjs';
+
+const modules={nfl:[nflPage,nflPlayer,nflAction,nflResult],nba:[nbaPage,nbaPlayer,nbaAction,nbaResult],nhl:[nhlPage,nhlPlayer,nhlAction,nhlResult],mlb:[yardPage,yardPlayer,yardAction,yardResult]};
 const defaults=viewDefaults;
 S.today=today;
 const memory={};
@@ -109,6 +111,18 @@ async function load(){
     catch(e){if(token!==req)return;S.error='The model feed could not load. Try again in a moment.';console.error(e);render();}
     return;
   }
+  if(s==='mlb'){
+    // GOING YARD reads hr-board's published slate; there is one slate at a time.
+    try{
+      const [board,odds,results]=await Promise.all([get(dataURL('yard/board.json')),get(dataURL('yard/odds.json'),{}),id==='yard-record'?get(dataURL('yard/results.json'),{}):null]);
+      if(token!==req)return;
+      const seen=new Set();
+      Object.assign(S,{data:board,odds:[],injuries:{},yardOdds:odds,yardResults:results,day:board.slate_date||today,game:null,
+        games:(board.games||[]).filter(g=>!seen.has(g.game_pk)&&seen.add(g.game_pk)).map(g=>({id:String(g.game_pk),a:g.away,h:g.home,iso:g.time,park:g.park,status:Date.parse(g.time)>Date.now()?'FUT':'STARTED'}))});
+      S.f.allGames=true;S.loaded=true;render();
+    }catch(e){if(token!==req)return;S.error='The GOING YARD board could not load. Try again in a moment.';console.error(e);render();}
+    return;
+  }
   try{
     const d=S.day,year=s==='nfl'?S.year:seasonFor(s,d);
     const [data,dayGames,injuries,odds,lineups]=await Promise.all([dataFor(s,year),
@@ -144,6 +158,8 @@ async function load(){
 }
 function chooseGame(g,scroll=false){
   if(!g)return;
+  // GOING YARD: a game filters the page; tapping the same game again shows every game.
+  if(S.route.sport==='mlb'){S.f.allGames=!S.f.allGames&&S.game?.id===g.id;S.game=S.f.allGames?null:g;render({scrollGame:scroll});return;}
   S.game=g;savedGames[S.route.sport]=g.id;
   S.lineStats={};
   S.f.away=g.a;S.f.home=g.h;
@@ -326,6 +342,7 @@ document.addEventListener('change',e=>{
   if(k==='wheelLegs'){wheelState.legs=Math.max(1,Math.min(12,+t.value||1));return;}
   if(k==='photoResults'){photoState.results=t.checked;photo();return;}
   if(k==='lean'){S.f.lean=t.checked;render();return;}
+  if(k==='hideThin'){S.f.hideThin=t.checked;render();return;}
   if(isModel(S.route.id)&&k&&modelAction('field',k+':'+t.value)){render();return;}
   if(k&&!['notes','search'].includes(k))updateField(k,t.value);
 });

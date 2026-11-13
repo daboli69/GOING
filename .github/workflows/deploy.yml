@@ -81,6 +81,12 @@ jobs:
       - name: Capture live snapshots
         run: node scripts/live.mjs || echo "::warning::Live snapshot failed; pages fall back to the archives."
 
+      # GOING YARD: hr-board runs its own model on its own schedule; this copies what it last published.
+      - name: Add GOING YARD board
+        run: node scripts/yard.mjs || echo "::warning::GOING YARD data could not be refreshed."
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
       - name: Add model feeds
         run: |
           mkdir -p site/data/models

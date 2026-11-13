@@ -12,7 +12,12 @@ export const TOOLS={
   'nhl-shots':'GOING GOAL · Shots',
   'nhl-goals':'GOING GOAL · Goals',
   'nhl-points':'GOING GOAL · Points',
-  'nhl-saves':'GOING GOAL · Saves'
+  'nhl-saves':'GOING GOAL · Saves',
+  'yard-heat70':'GOING YARD · HR Board (Heat 70+)',
+  'yard-top':'GOING YARD · Top Plays',
+  'yard-hits':'GOING YARD · Hits',
+  'yard-hrr':'GOING YARD · H+R+RBI',
+  'yard-ks':'GOING YARD · Pitcher Strikeouts'
 };
 // Individual ensemble members are tracked as "<sport>-model:<name>".
 export const toolLabel=t=>TOOLS[t]||(t.includes('-model:')?(t.startsWith('nba')?'GOING UP':'GOING LONG')+' · Model: '+t.split(':')[1]:t);
@@ -44,6 +49,18 @@ export function leanOf({edge,prob,odds,proj,avg,line,side}){
   const x=proj??avg;
   if(x==null||line==null)return null;
   return side==='Under'?x<line:x>line;
+}
+
+// MLB stat for a pick from an MLB StatsAPI box score; null when the player did not bat (or pitch).
+export function mlbStat(box,id,market){
+  const pl=box?.teams?.away?.players?.['ID'+id]||box?.teams?.home?.players?.['ID'+id];
+  const bat=pl?.stats?.batting,pit=pl?.stats?.pitching;
+  if(market==='Strikeouts')return pit&&Object.keys(pit).length?pit.strikeOuts??null:null;
+  if(!bat||!Object.keys(bat).length||!(bat.plateAppearances>0))return null;   // did not bat
+  if(market==='Home Run')return bat.homeRuns??null;
+  if(market==='Hits')return bat.hits??null;
+  if(market==='H+R+RBI')return (bat.hits??0)+(bat.runs??0)+(bat.rbi??0);
+  return null;
 }
 
 /* ---------- aggregation (page) ---------- */

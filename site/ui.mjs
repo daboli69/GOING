@@ -1,4 +1,4 @@
-import { footers,nflTeams,nhlColors,sections,BASE } from './config.mjs';
+import { footers,nflTeams,nhlColors,mlbTeams,sections,BASE } from './config.mjs';
 import {round,pct} from './math.mjs';
 export const esc=(v='')=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const $=q=>document.querySelector(q);
@@ -16,13 +16,14 @@ export const current={
   data:{},games:[],odds:[],injuries:{},game:null,route:null,f:{},sort:null,loaded:false
 };
 export const gamesFor=t=>current.games.find(g=>g.a===t||g.h===t);
-export const teamName=(t,s=current.route.sport)=>s==='nfl'?nflTeams[t]?.[0]||t:current.data?.teams?.[t]?.[0]||t;
+export const teamName=(t,s=current.route.sport)=>s==='nfl'?nflTeams[t]?.[0]||t:s==='mlb'?mlbTeams[t]?.[0]||t:current.data?.teams?.[t]?.[0]||t;
 export const color=(t,s=current.route.sport)=>{
-  const c=s==='nfl'?nflTeams[t]?.[1]:s==='nhl'?nhlColors[t]:current.data?.teams?.[t]?.[2];
+  const c=s==='nfl'?nflTeams[t]?.[1]:s==='nhl'?nhlColors[t]:s==='mlb'?mlbTeams[t]?.[2]:current.data?.teams?.[t]?.[2];
   return '#'+(/^[\da-f]{6}$/i.test(c||'')?c:'657795');
 };
 export function logoURL(t,s=current.route.sport){
   if(s==='nhl')return 'https://assets.nhle.com/logos/nhl/svg/'+t+'_dark.svg';
+  if(s==='mlb')return 'https://www.mlbstatic.com/team-logos/team-cap-on-dark/'+(mlbTeams[t]?.[1]??0)+'.svg';
   const code=s==='nfl'?nflTeams[t]?.[2]||t:({WSH:'wsh',UTAH:'utah'}[t]||t);
   return 'https://a.espncdn.com/i/teamlogos/'+s+'/500/'+(code||'').toLowerCase()+'.png';
 }
@@ -64,7 +65,8 @@ export function person(p,detail=true){
 }
 export function slate(opts={}){
   const {sport:s}=current.route;
-  const nav=tools(`<button class="sq" aria-label="Previous ${s==='nfl'?'week':'day'}" ${action('step',-1)}>‹</button><span class="period-label">${s==='nfl'?'Week '+(current.week||'—'):dateLabel(current.day,true)}</span><button class="sq" aria-label="Next ${s==='nfl'?'week':'day'}" ${action('step',1)}>›</button>${opts.date?` <input type="date" data-field="date" aria-label="Pick a day" value="${current.day}">`:''}`,'tight');
+  // GOING YARD shows the one slate hr-board publishes, so there is no day stepping.
+  const nav=s==='mlb'?tools(`<span class="period-label">${dateLabel(current.day,true)}</span>${opts.note?`<span class="subtle">${opts.note}</span>`:''}`,'tight'):tools(`<button class="sq" aria-label="Previous ${s==='nfl'?'week':'day'}" ${action('step',-1)}>‹</button><span class="period-label">${s==='nfl'?'Week '+(current.week||'—'):dateLabel(current.day,true)}</span><button class="sq" aria-label="Next ${s==='nfl'?'week':'day'}" ${action('step',1)}>›</button>${opts.date?` <input type="date" data-field="date" aria-label="Pick a day" value="${current.day}">`:''}`,'tight');
   if(opts.navOnly)return nav;
   return box('',nav+`<div class="matchup-row">${current.games.length?current.games.map(g=>{
     const multi=opts.multi&&current.f.multi;

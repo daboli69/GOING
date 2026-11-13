@@ -12,11 +12,12 @@ import { routes, viewSetup } from '../site/config.mjs';
 import { nflPage, nflResult } from '../site/nfl.mjs';
 import { nbaPage, nbaResult } from '../site/nba.mjs';
 import { nhlPage, nhlResult } from '../site/nhl.mjs';
-import { outcome, leanOf } from '../site/track-core.mjs';
+import { outcome, leanOf, impliedProb, mlbStat } from '../site/track-core.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const data=join(root,'site','data'), out=join(data,'tracker');
-const now=Date.now(), nowIso=new Date(now).toISOString();
+// TRACK_NOW (ISO time) replays a capture as of that moment; for testing only.
+const now=Date.parse(process.env.TRACK_NOW||'')||Date.now(), nowIso=new Date(now).toISOString();
 const dayKey=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
 const today=dayKey(new Date(now));
 const add=(d,n)=>new Date(Date.parse(d+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
@@ -136,6 +137,40 @@ for(const [d,rows] of Object.entries(nbaFeed?.days||{}))for(const r of rows){
   for(const x of det?.models||[])modelPick('nba','nba-model:'+x.name,x.name,{...base,pHome:x.p_home});
 }
 
+/* ---------- GOING YARD (hr-board) ---------- */
+// Recorded picks: Heat 70+ and Top Plays to homer, high-confidence hits and H+R+RBI, and strikeout overs on the engine's line.
+// Hits, H+R+RBI and strikeouts are also recorded whenever hr-board captured a price for them.
+const yard=await read('yard/board.json'), yardOdds=await read('yard/odds.json')||{};
+const yName=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+function yardPick(tool,x,{market,line,prob=null,odds=null,proj=null,team,id,name,lean}){
+  const g=(yard.games||[]).find(g=>g.game_pk===x.game_pk),start=g?.time||x.time;
+  if(!start||Date.parse(start)<=now)return;
+  const k=['mlb',yard.slate_date,x.game_pk,id,market,'Over'].join('|');
+  const meta={prob,edge:prob!=null&&impliedProb(odds)!=null?prob-impliedProb(odds):null,rating:null,lean};
+  upsert({k,sport:'mlb',kind:'prop',date:yard.slate_date,game:String(x.game_pk),a:g?.away,h:g?.home,start,id:String(id),player:name,team,market,side:'Over',line,
+    odds,provider:odds!=null?'hr-board odds':null,proj,avg:null,tools:{[tool]:meta}});
+  scope.add('mlb|'+x.game_pk);
+}
+if(yard?.players?.length&&!yard.fallback){
+  const price=(bucket,name)=>yardOdds.props?.[bucket]?.[yName(name)];
+  const hrPrice=name=>yardOdds.prices?.[yName(name)]?.best??null;
+  for(const p of yard.players){
+    const base={team:p.team,id:p.id,name:p.name};
+    if((p.heat??0)>=70)yardPick('yard-heat70',p,{...base,market:'Home Run',line:.5,odds:hrPrice(p.name),lean:true});
+    const ph=p.hit_gated?.p_hit,hp=price('hits',p.name);
+    if(ph!=null&&(ph>=.65||hp?.line===.5))yardPick('yard-hits',p,{...base,market:'Hits',line:.5,prob:ph,odds:hp?.line===.5?hp.over_american??null:null,proj:p.hit_gated.xpa,lean:ph>=.65||leanOf({prob:ph,odds:hp?.over_american})});
+    const pr=p.hrr_proj?.p_over15,rp=price('hrr',p.name);
+    if(pr!=null&&(pr>=.5||rp?.line===1.5))yardPick('yard-hrr',p,{...base,market:'H+R+RBI',line:1.5,prob:pr,odds:rp?.line===1.5?rp.over_american??null:null,proj:p.hrr_proj.hrr,lean:pr>=.5||leanOf({prob:pr,odds:rp?.over_american})});
+  }
+  const byId=new Map(yard.players.map(p=>[p.id,p]));
+  for(const t of yard.top_plays||[]){const p=byId.get(t.id);if(p)yardPick('yard-top',p,{team:p.team,id:p.id,name:p.name,market:'Home Run',line:.5,odds:hrPrice(p.name),lean:true});}
+  for(const a of yard.pitcher_props||[]){
+    const q=price('pk',a.name),line=q?.line??a.est_line_over;if(line==null)continue;
+    const dist=a.kengine?.dist,prob=dist?Object.entries(dist).reduce((s,[k,v])=>s+(+k>line?v:0),0):null;
+    yardPick('yard-ks',a,{team:a.team,id:a.id,name:a.name,market:'Strikeouts',line,prob,odds:q?.over_american??null,proj:a.kengine?.exp_k??a.est_ks,lean:leanOf({prob,odds:q?.over_american,proj:a.kengine?.exp_k,line,side:'Over'})});
+  }
+}
+
 // A line that disappeared before its game started was not available to bet; drop it.
 let dropped=0;
 for(const [k,p] of store)if(!p.result&&Date.parse(p.start)>now&&scope.has(p.sport+'|'+p.game)&&!seen.has(k)&&p.kind==='prop'){store.delete(k);dropped++;}
@@ -151,6 +186,12 @@ for(const f of await readdir(join(data,'live')).catch(()=>[])){
   for(const g of await read('live/'+f)||[])if(['FINAL','OFF'].includes(g.status))fin(m[1],g.id,g.sa,g.sh);
 }
 const results={nfl:nflResult,nba:nbaResult,nhl:nhlResult};
+// MLB results come straight from the official box score.
+const boxes=new Map();
+function boxscore(pk){
+  if(!boxes.has(pk))boxes.set(pk,fetch(`https://statsapi.mlb.com/api/v1/game/${pk}/boxscore`,{signal:AbortSignal.timeout(20000)}).then(r=>r.ok?r.json():null).catch(()=>null));
+  return boxes.get(pk);
+}
 let graded=0;
 for(const p of store.values()){
   if(p.result||Date.parse(p.start)>now-2*3600_000)continue;
@@ -158,6 +199,10 @@ for(const p of store.values()){
   if(p.kind==='model'){
     const f=finals.get(p.sport+'|'+p.game);
     if(f){value=f.a===f.h?null:(f.h>f.a?p.h:p.a);p.value=value?`${p.a} ${f.a}, ${p.h} ${f.h}`:'Tie';p.result=value==null?'push':value===p.side?'won':'lost';}
+  }else if(p.sport==='mlb'){
+    if(Date.parse(p.start)>now-6*3600_000)continue;   // let the game finish
+    value=mlbStat(await boxscore(p.game),p.id,p.market);
+    if(value!=null){p.value=value;p.result=outcome(+value,p.line,p.side);}
   }else{
     const arch=await archive(p.sport,seasonFor(p.sport,p.date));
     if(arch){S.data=arch;S.route={sport:p.sport};try{value=results[p.sport]({...p,game:p.game});}catch{value=null;}}

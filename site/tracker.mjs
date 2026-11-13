@@ -43,7 +43,7 @@ export function trackerPage(){
     `<p class="subtle">Updated ${ago(index.updated)} · ${index.picks??0} picks recorded · ${index.graded??0} graded · ${index.pending??0} waiting on results</p>`;
   if(!picks.length)return head+box('',empty('No picks recorded yet. The tracker records picks every hour before games start, so they will appear after the next update.'));
   const markets=['All markets',...new Set(picks.map(p=>p.market))].sort((a,b)=>a==='All markets'?-1:b==='All markets'?1:a.localeCompare(b));
-  const filters=tools(['All','NBA','NFL','NHL'].map(s=>btn(s,'set','sport:'+s,f.sport===s?'on':'')).join('')+
+  const filters=tools(['All','NBA','NFL','NHL','MLB'].map(s=>btn(s,'set','sport:'+s,f.sport===s?'on':'')).join('')+
     select('Picks','kind',['All picks','Model picks','Prop picks'])+select('Market','market',markets)+select('Window','window',['Last 7 days','Last 30 days','Season'])+
     `<label class="field"><input type="checkbox" data-field="lean" ${f.lean?'checked':''}> Only sides the tool leaned toward</label>`);
   const rows=memberships(),scoped=f.tool?rows.filter(r=>r.t===f.tool):rows;

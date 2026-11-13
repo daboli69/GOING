@@ -8,10 +8,10 @@ import {routes} from '../site/config.mjs';
 import {together,lineStats} from '../scripts/lines-data.mjs';
 
 test('every tool has one unique path inside its sport section',()=>{
-  assert.equal(routes.length,37);
+  assert.equal(routes.length,49);
   assert.equal(new Set(routes.map(r=>r.path)).size,routes.length);
   assert.equal(routes.filter(r=>r.group==='Promos').length,5);
-  const home={nfl:'long/',nba:'up/',nhl:'goal/'};
+  const home={nfl:'long/',nba:'up/',nhl:'goal/',mlb:'yard/'};
   for(const r of routes)if(home[r.sport])assert.ok(r.path.startsWith(home[r.sport]),r.path);
 });
 test('the snapshot contains regular-season NFL play-by-play with resolvable players',{skip:!existsSync(new URL('../site/data/nfl-2026.json',import.meta.url))&&'no local snapshot'},()=>{
@@ -82,4 +82,15 @@ test('the pick tracker grades sides, pushes and units at the captured price',asy
   assert.equal(rate(s),2/3);
   assert.equal(s.units,.5);
   assert.equal(roi(s),.5/3);
+});
+test('MLB picks grade from the official box score and skip players who did not bat',async()=>{
+  const {mlbStat,outcome}=await import('../site/track-core.mjs');
+  const box={teams:{away:{players:{ID1:{stats:{batting:{plateAppearances:4,homeRuns:1,hits:2,runs:1,rbi:3},pitching:{}}},ID2:{stats:{batting:{},pitching:{strikeOuts:7}}}}},home:{players:{ID3:{stats:{batting:{plateAppearances:0},pitching:{}}}}}}};
+  assert.equal(mlbStat(box,1,'Home Run'),1);
+  assert.equal(mlbStat(box,1,'H+R+RBI'),6);
+  assert.equal(outcome(mlbStat(box,1,'Hits'),.5,'Over'),'won');
+  assert.equal(mlbStat(box,2,'Strikeouts'),7);
+  assert.equal(mlbStat(box,2,'Hits'),null);
+  assert.equal(mlbStat(box,3,'Hits'),null);
+  assert.equal(mlbStat(box,9,'Home Run'),null);
 });

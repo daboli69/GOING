@@ -7,7 +7,7 @@ One site for the ensemble models and the sports dashboards.
 | GOING UP | Basketball (NBA) | Ensemble forecasts, matchup tools, prop research, shot charts, King of the Court |
 | GOING LONG | Football (NFL) | Ensemble forecasts, game previews, TD data, opening drives, props, King of the Endzone |
 | GOING GOAL | Hockey (NHL) | Game previews, line matchups, props, crease, icebreaker and hat-trick promos |
-| GOING YARD | Baseball (MLB) | Not built yet |
+| GOING YARD | Baseball (MLB) | The Going Yard home run model: HR Board, Top Plays, Model Record, Game Scan, pitchers and bullpens, target teams, weather and parks, hits and H+R+RBI, total bases, strikeouts, game totals, parlays and jackpots |
 
 Each section uses its own accent color: orange for basketball, green for football, blue for hockey and red for baseball. Everything else (type, boards, heat cells, charts) is the sports dash design.
 
@@ -25,13 +25,19 @@ publishers\publish_models.bat
 
 Lab locations default to `Documents\ChatGPT\GOING\research\nfl-ensemble-lab` and `...\NBA ensemble`. Set `GOING_NFL_LAB` or `GOING_NBA_LAB` to override them.
 
+## GOING YARD
+
+GOING YARD shows the Going Yard model from [hr-board](https://github.com/daboli69/hr-board). hr-board keeps its own ETL and schedule (Statcast, MLB StatsAPI, FanGraphs) and publishes `board.json`, `history.json`, `backtest.json` and `odds.json` to its GitHub Pages site. Every hourly GOING run copies those files with `scripts/yard.mjs`, drops the raw per-pitch tables the pages don't use (6 MB down to about 2 MB), and pre-computes the season record. Nothing in the model changes.
+
+When the live board has no games (offseason or an off day), the section shows the last slate hr-board published and says so. It switches back on its own once games return. Player photos and team logos come from MLB's image service.
+
 ## Pick Tracker
 
 The Tracker page (`tracker.html`) grades every pick the site makes. Each hourly run (`scripts/track.mjs`) renders the props pages, Best Plays and TD Data with the dashboard's own code. It records every priced line those pages show, plus every model pick (the combined forecast and each individual model). Picks are captured only while their game hasn't started, and the last capture before the start is the one that counts. A line pulled before the game is dropped.
 
 After the game, the pick is graded with the same result functions My Plays uses. Units assume a 1-unit stake at the captured price. A pick with no result after four days (the player didn't play) is voided. Each pick also records whether the tool's own numbers favored that side (edge, projection or average against the line), so the page can show leans only. The page reports hit rate against the break-even rate of those prices, units, ROI, Brier score and calibration, and a head to head of the ensemble models. You can filter by sport, market, date range and tool.
 
-The record is committed to the `tracker` branch, so it survives cache resets. Promo tools (King of the Court and the others) rank players rather than pick lines, so they are not graded yet.
+The record is committed to the `tracker` branch, so it survives cache resets. GOING YARD picks (Heat 70+ and Top Plays to homer, hits, H+R+RBI and pitcher strikeouts) are graded from the official MLB box score. Promo tools (King of the Court and the others) rank players rather than pick lines, so they are not graded yet.
 
 ## Local preview
 
