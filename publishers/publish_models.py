@@ -109,11 +109,18 @@ def summary(nfl: dict | None, nba: dict | None) -> dict:
     return out
 
 
+IGNORED = {"generated_at", "freshness", "retrieved_at"}  # timestamps that move on every lab refresh
+
+
 def fingerprint(feed: dict | None) -> str:
-    if not feed:
-        return ""
-    body = {k: v for k, v in feed.items() if k not in ("generated_at", "freshness")}
-    return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    """Hash of the content that matters, so a refreshed timestamp alone never triggers a deploy."""
+    def strip(x):
+        if isinstance(x, dict):
+            return {k: strip(v) for k, v in x.items() if k not in IGNORED}
+        if isinstance(x, list):
+            return [strip(v) for v in x]
+        return x
+    return hashlib.sha256(json.dumps(strip(feed), sort_keys=True).encode()).hexdigest() if feed else ""
 
 
 def push(files: dict[str, dict], message: str) -> str:
