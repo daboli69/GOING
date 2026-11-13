@@ -25,6 +25,14 @@ publishers\publish_models.bat
 
 Lab locations default to `Documents\ChatGPT\GOING\research\nfl-ensemble-lab` and `...\NBA ensemble`. Set `GOING_NFL_LAB` or `GOING_NBA_LAB` to override them.
 
+## Pick Tracker
+
+The Tracker page (`tracker.html`) grades every pick the site makes. Each hourly run (`scripts/track.mjs`) renders the props pages, Best Plays and TD Data with the dashboard's own code. It records every priced line those pages show, plus every model pick (the combined forecast and each individual model). Picks are captured only while their game hasn't started, and the last capture before the start is the one that counts. A line pulled before the game is dropped.
+
+After the game, the pick is graded with the same result functions My Plays uses. Units assume a 1-unit stake at the captured price. A pick with no result after four days (the player didn't play) is voided. Each pick also records whether the tool's own numbers favored that side (edge, projection or average against the line), so the page can show leans only. The page reports hit rate against the break-even rate of those prices, units, ROI, Brier score and calibration, and a head to head of the ensemble models. You can filter by sport, market, date range and tool.
+
+The record is committed to the `tracker` branch, so it survives cache resets. Promo tools (King of the Court and the others) rank players rather than pick lines, so they are not graded yet.
+
 ## Local preview
 
 Node.js 22 or newer.

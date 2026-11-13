@@ -1,4 +1,5 @@
-import {menus,routes,sections,BASE,href} from './config.mjs';
+import {menus,routes,sections,BASE,href,viewDefaults,viewSetup} from './config.mjs';
+import {trackerLoad,trackerPage,trackerAction} from './tracker.mjs';
 import {$,current as S,today,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus} from './ui.mjs';
 import {ESPN,sportPath,scoreboard,compactInjuries} from './feeds.mjs';
 import {nflPage,nflPlayer,nflAction,nflResult} from './nfl.mjs';
@@ -8,14 +9,7 @@ import {modelLoad,modelPage,modelAction,modelStep} from './models.mjs';
 import {homeLoad,homePage} from './home.mjs';
 
 const modules={nfl:[nflPage,nflPlayer,nflAction,nflResult],nba:[nbaPage,nbaPlayer,nbaAction,nbaResult],nhl:[nhlPage,nhlPlayer,nhlAction,nhlResult]};
-const defaults={
-  td:{view:'Season TDs'},'nfl-preview':{view:'Full Preview',scheme:'Raw Stats'},drives:{view:'Opening Drive',window:'Season'},'nfl-best':{view:'Receiving',rating:'All Ratings',gameFilter:'All games'},
-  keys:{view:'Summary',window:'Season'},standouts:{cat:'All',window:'Season'},league:{window:'Season'},
-  zones:{zoneMarket:'Threes',zoneView:'Best & Worst Spots',minimum:'0'},types:{view:'The 11 Types',typeFilter:'All'},
-  'nba-props':{position:'All',pricing:'Every Player',allGames:true,gameFilter:'All games'},court:{trend:'Pregame Rank'},
-  'nhl-props':{allGames:true,side:'Best side',skater:'All skaters',status:'All games',edge:'0',pricing:'All players',zoneMatch:'Everyone'},
-  myplays:{when:'Everything',playType:'Every Type',grade:'All'}
-};
+const defaults=viewDefaults;
 S.today=today;
 const memory={};
 let req=0, menu=null, lastDialog=null, resizeTimer, dateHash=location.hash, playArchive={};
@@ -33,7 +27,7 @@ function header(){
   const sportMenu=Object.entries(sections).map(([k,x])=>x.home?['GOING '+x.word+' · '+x.league,x.home]:null).filter(Boolean);
   const nav=sec&&menus[s]?Object.entries(menus[s]).map(([k,items])=>menuHTML(k,items)).join('')+menuHTML('Sports',sportMenu):
     Object.entries(sections).filter(([,x])=>x.home).map(([k,x])=>`<a class="navbutton" href="${href(x.home)}">${x.league}</a>`).join('');
-  $('#site-header').innerHTML=`<a class="brand" href="${href('')}" aria-label="GOING home">${sec?`<span class="brand-chip">${sec.league}</span>`:''}<span class="brand-type">GOING${sec?`<br><em>${sec.word}</em>`:''}</span></a><nav class="nav" aria-label="${sec?esc(sec.name)+' tools':'Sports'}">${nav}<a class="navbutton ${S.route.id==='myplays'?'active':''}" href="${href('plays.html')}">My Plays</a></nav><div class="head-actions"><button type="button" class="icon" aria-label="Switch light/dark theme" title="Switch light/dark theme" ${action('theme','')}>${document.documentElement.dataset.theme==='light'?'☾':'☼'}</button></div>`;
+  $('#site-header').innerHTML=`<a class="brand" href="${href('')}" aria-label="GOING home">${sec?`<span class="brand-chip">${sec.league}</span>`:''}<span class="brand-type">GOING${sec?`<br><em>${sec.word}</em>`:''}</span></a><nav class="nav" aria-label="${sec?esc(sec.name)+' tools':'Sports'}">${nav}<a class="navbutton ${S.route.id==='tracker'?'active':''}" href="${href('tracker.html')}">Tracker</a><a class="navbutton ${S.route.id==='myplays'?'active':''}" href="${href('plays.html')}">My Plays</a></nav><div class="head-actions"><button type="button" class="icon" aria-label="Switch light/dark theme" title="Switch light/dark theme" ${action('theme','')}>${document.documentElement.dataset.theme==='light'?'☾':'☼'}</button></div>`;
 }
 function render(options={}){
   if(!S.route)return;
@@ -42,7 +36,7 @@ function render(options={}){
   if(S.error)main.innerHTML=box('',empty(S.error)+tools(btn('Try again','retry','')));
   else if(!S.loaded)main.innerHTML=box('',empty(S.route.id==='home'?'Loading today’s slates…':'Loading the slate…'));
   else{
-    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():isModel(S.route.id)?modelPage():modules[S.route.sport][0]();}
+    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?trackerPage():isModel(S.route.id)?modelPage():modules[S.route.sport][0]();}
     catch(e){console.error(e);main.innerHTML=box('',empty('This view could not be rendered.')+tools(btn('Try again','retry','')));}
   }
   const next=main.querySelector('.matchup-row');
@@ -81,10 +75,7 @@ const oddsFor=(s,d)=>get(dataURL('live/odds-'+s+(s==='nfl'?'':'-'+d)+'.json'),[]
 const savedGames={};
 function start(){
   S.route=route();S.sort=null;S.error=null;
-  S.f={...defaults[S.route.id]};S.game=null;S.games=[];
-  if(S.route.id==='nfl-props')S.f.view=({rushing:'Rushing',passing:'Passing'})[location.hash.slice(1)]||'Receiving';
-  if(S.route.id==='nhl-props'&&S.route.title==='Saves')S.f.confirm='All goalies';
-  if(S.route.id==='nhl-props'&&S.route.title==='Best Plays')S.f.edge='3';
+  S.f=viewSetup(S.route,location.hash);S.game=null;S.games=[];
   S.loaded=false;
   S.lineStats={};
   document.documentElement.dataset.sport=S.route.sport;
@@ -97,6 +88,11 @@ async function load(){
   if(id==='home'){
     try{await homeLoad();}catch(e){console.error(e);}
     if(token!==req)return;S.loaded=true;render();return;
+  }
+  if(id==='tracker'){
+    try{await trackerLoad();if(token!==req)return;S.loaded=true;render();}
+    catch(e){if(token!==req)return;S.error='The pick record could not load. Try again in a moment.';console.error(e);render();}
+    return;
   }
   if(id==='myplays'){
     S.loaded=true;
@@ -270,6 +266,7 @@ document.addEventListener('click',e=>{
   if(act==='step'){changePeriod(+v);return;}
   if(act==='retry'){S.error=null;load();return;}
   if(isModel(S.route.id)&&modelAction(act,v)){render();return;}
+  if(S.route.id==='tracker'&&trackerAction(act,v)){render();return;}
   if(act==='game'){chooseGame(S.games.find(g=>g.id===v));return;}
   if(act==='gameStep'){chooseGame(S.games[S.games.indexOf(S.game)+Number(v)],true);return;}
   if(act==='set'){
@@ -328,6 +325,7 @@ document.addEventListener('change',e=>{
   if(k==='wheelPending'){wheelState.pending=t.checked;wheel(false);return;}
   if(k==='wheelLegs'){wheelState.legs=Math.max(1,Math.min(12,+t.value||1));return;}
   if(k==='photoResults'){photoState.results=t.checked;photo();return;}
+  if(k==='lean'){S.f.lean=t.checked;render();return;}
   if(isModel(S.route.id)&&k&&modelAction('field',k+':'+t.value)){render();return;}
   if(k&&!['notes','search'].includes(k))updateField(k,t.value);
 });

@@ -29,8 +29,26 @@ export const menus={
 export const routes=[
   {group:'',title:'GOING',path:'',id:'home',sport:'going'},
   ...Object.entries(menus).flatMap(([sport,groups])=>Object.entries(groups).flatMap(([group,entries])=>entries.map(([title,path,id])=>({group,title,path,id,sport})))),
-  {group:'',title:'My Plays',path:'plays.html',id:'myplays',sport:'going'}
+  {group:'',title:'My Plays',path:'plays.html',id:'myplays',sport:'going'},
+  {group:'',title:'Pick Tracker',path:'tracker.html',id:'tracker',sport:'going'}
 ];
+// Filters each view opens with. The tracker (scripts/track.mjs) renders views with these same settings.
+export const viewDefaults={
+  td:{view:'Season TDs'},'nfl-preview':{view:'Full Preview',scheme:'Raw Stats'},drives:{view:'Opening Drive',window:'Season'},'nfl-best':{view:'Receiving',rating:'All Ratings',gameFilter:'All games'},
+  keys:{view:'Summary',window:'Season'},standouts:{cat:'All',window:'Season'},league:{window:'Season'},
+  zones:{zoneMarket:'Threes',zoneView:'Best & Worst Spots',minimum:'0'},types:{view:'The 11 Types',typeFilter:'All'},
+  'nba-props':{position:'All',pricing:'Every Player',allGames:true,gameFilter:'All games'},court:{trend:'Pregame Rank'},
+  'nhl-props':{allGames:true,side:'Best side',skater:'All skaters',status:'All games',edge:'0',pricing:'All players',zoneMatch:'Everyone'},
+  myplays:{when:'Everything',playType:'Every Type',grade:'All'},
+  tracker:{sport:'All',kind:'All picks',window:'Season',lean:true}
+};
+export function viewSetup(r,hash=''){
+  const f={...viewDefaults[r.id]};
+  if(r.id==='nfl-props')f.view=({'#rushing':'Rushing','#passing':'Passing'})[hash]||'Receiving';
+  if(r.id==='nhl-props'&&r.title==='Saves')f.confirm='All goalies';
+  if(r.id==='nhl-props'&&r.title==='Best Plays')f.edge='3';
+  return f;
+}
 export const href=p=>BASE+p;
 export const nflTeams={
  ARI:['Arizona Cardinals','97233f'],ATL:['Atlanta Falcons','a71930'],BAL:['Baltimore Ravens','49378b'],BUF:['Buffalo Bills','2369bc'],CAR:['Carolina Panthers','0085ca'],CHI:['Chicago Bears','c83803'],CIN:['Cincinnati Bengals','fb4f14'],CLE:['Cleveland Browns','ff3c00'],DAL:['Dallas Cowboys','365283'],DEN:['Denver Broncos','fb4f14'],DET:['Detroit Lions','0076b6'],GB:['Green Bay Packers','348371'],HOU:['Houston Texans','a71930'],IND:['Indianapolis Colts','1460aa'],JAX:['Jacksonville Jaguars','006778'],KC:['Kansas City Chiefs','e31837'],LA:['Los Angeles Rams','2557e5','lar'],LAC:['Los Angeles Chargers','0080c6'],LV:['Las Vegas Raiders','68747e'],MIA:['Miami Dolphins','008e97'],MIN:['Minnesota Vikings','6d4ea4'],NE:['New England Patriots','264e84'],NO:['New Orleans Saints','d3bc8d'],NYG:['New York Giants','1745c7'],NYJ:['New York Jets','125740'],PHI:['Philadelphia Eagles','008765'],PIT:['Pittsburgh Steelers','ffb612'],SEA:['Seattle Seahawks','376294'],SF:['San Francisco 49ers','aa0000'],TB:['Tampa Bay Buccaneers','d50a0a'],TEN:['Tennessee Titans','4b92db'],WAS:['Washington Commanders','e9a624','wsh']

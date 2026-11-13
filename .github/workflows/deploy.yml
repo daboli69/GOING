@@ -17,7 +17,7 @@ on:
         default: live
 
 permissions:
-  contents: read
+  contents: write   # the pick tracker commits its record to the `tracker` branch
   pages: write
   id-token: write
 
@@ -89,6 +89,32 @@ jobs:
           else
             echo "::notice::No model-feeds branch yet. Run publishers/publish_models.bat --push on the lab PC."
           fi
+
+      # Pick tracker: the permanent record lives on the `tracker` branch, never in the cache.
+      - name: Restore pick record
+        run: |
+          mkdir -p site/data/tracker
+          if git fetch --depth 1 origin tracker:refs/remotes/origin/tracker 2>/dev/null; then git archive refs/remotes/origin/tracker | tar -x -C site/data/tracker; fi
+
+      - name: Capture and grade picks
+        id: track
+        run: node scripts/track.mjs || echo "::warning::Pick tracker failed; the previous record is still published."
+
+      - name: Save pick record
+        run: |
+          set -e
+          dir=$(mktemp -d)
+          if git rev-parse --verify -q refs/remotes/origin/tracker >/dev/null; then
+            git worktree add --detach "$dir" refs/remotes/origin/tracker
+          else
+            git worktree add --detach "$dir" && (cd "$dir" && git checkout --orphan tracker && git rm -rfq .)
+          fi
+          cp site/data/tracker/*.json "$dir"/ 2>/dev/null || exit 0
+          cd "$dir"
+          git add -A
+          if git diff --cached --quiet; then echo "Pick record unchanged."; exit 0; fi
+          git -c user.name="GOING tracker" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "Pick record $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q origin HEAD:refs/heads/tracker
 
       - id: pages
         uses: actions/configure-pages@v5

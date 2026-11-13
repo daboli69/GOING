@@ -8,7 +8,7 @@ import {routes} from '../site/config.mjs';
 import {together,lineStats} from '../scripts/lines-data.mjs';
 
 test('every tool has one unique path inside its sport section',()=>{
-  assert.equal(routes.length,36);
+  assert.equal(routes.length,37);
   assert.equal(new Set(routes.map(r=>r.path)).size,routes.length);
   assert.equal(routes.filter(r=>r.group==='Promos').length,5);
   const home={nfl:'long/',nba:'up/',nhl:'goal/'};
@@ -60,4 +60,26 @@ test('line matchups count only the time when all players share the ice',()=>{
   const rows=names.map((n,i)=>({firstName:n.split(' ')[0],lastName:'Player',teamAbbrev:'CAR',period:1,startTime:'00:'+String(i*5).padStart(2,'0'),endTime:'00:25'}));
   const shots=[['CAR',1,9,65,0,2],['CAR',1,10,65,0,1],['SEA',2,24,65,0,2],['CAR',1,25,65,0,2]];
   assert.deepEqual(lineStats(rows,shots,'CAR',[names]),[{sec:15,sf:1,sa:1,gf:0,ga:1}]);
+});
+test('the pick tracker grades sides, pushes and units at the captured price',async()=>{
+  const {outcome,units,leanOf,impliedProb,blank,add,rate,roi}=await import('../site/track-core.mjs');
+  assert.equal(outcome(3,2.5,'Over'),'won');
+  assert.equal(outcome(2,2.5,'Under'),'won');
+  assert.equal(outcome(3,3,'Over'),'push');
+  assert.equal(outcome(null,2.5,'Over'),null);
+  assert.equal(units('won','+150'),1.5);
+  assert.ok(Math.abs(units('won','-120')-100/120)<1e-12);
+  assert.equal(units('lost','-120'),-1);
+  assert.equal(units('push','+200'),0);
+  assert.equal(units('won',null),null);
+  assert.ok(Math.abs(impliedProb('-150')-.6)<1e-12);
+  assert.equal(leanOf({edge:.04}),true);
+  assert.equal(leanOf({prob:.4,odds:'+200'}),true);
+  assert.equal(leanOf({avg:3.1,line:2.5,side:'Under'}),false);
+  assert.equal(leanOf({line:2.5}),null);
+  const s=blank();
+  for(const [result,odds] of [['won','+100'],['lost','+100'],['push','+100'],['won','-200']])add(s,{result,odds},.6);
+  assert.equal(rate(s),2/3);
+  assert.equal(s.units,.5);
+  assert.equal(roi(s),.5/3);
 });

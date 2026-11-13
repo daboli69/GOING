@@ -139,7 +139,7 @@ function propsPage(){
   const extras=adv?['TOI','Last 5','Opp Adjustment','Games']:[], cols=[...baseCols,...extras];
   const rows=list.slice(0,S.f.more?list.length:100).map((f,i)=>{
     const {p,g,m,x,line,side,edge,prob,rating,avg,proj,recent,opp,match}=f,price=side==='Over'?x?.over:x?.under;
-    const play=basePlay(p,m,g,{line,side,odds:price,average:avg,projection:proj});
+    const play=basePlay(p,m,g,{line,side,odds:price,average:avg,projection:proj,prob,edge,rating});
     const label=x?((side==='Over'?'o':'u')+line+' '+(price??'')):line!=null?(goals?'Goal':(side==='Over'?'o':'u')+line):'—';
     const res=(archive().logs?.[p.id]||[]).find(r=>r[0]===g.id);
     const end=res?getLog(res,m):null;
