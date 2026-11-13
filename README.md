@@ -18,26 +18,37 @@ Each section uses its own accent color and the same dashboard typography, boards
 
 **GOING UP Suggested Parlays.** The builder uses the existing NBA archives, ESPN game lines and injury reports, and captured Kalshi player quotes. It can return a shorter ticket or no ticket when the available data and filters leave too few eligible legs. Combined odds multiply the individual quotes. The adjusted chance uses season win counts plus five wins and five losses per leg before multiplying, with no same-game correlation adjustment. Generated tickets, filter settings, and manually logged results are stored in this browser.
 
-**GOING LONG Suggested Parlays.** The same generator for NFL player props: receiving, rushing and passing yards, anytime TD and first TD, using the public player prices. A leg is removed when it fails any check:
-- the player is listed out
-- too few games played
-- the season or last-five hit rate is below the minimum
-- a losing home or away split (with at least three games)
-- the hit rate, shrunk toward the price by sample size, is below the price's implied chance
-- for yardage props, the line is above the season average or most recent reads point the other way
-- the opponent ranks in the stingiest third of the league against the player's role
+**GOING LONG Suggested Parlays.** The NBA generator's approach, adapted to football in ten steps (`site/nfl-parlay-engine.mjs`). It covers receiving, rushing and passing yards, receptions, rush and pass attempts, completions, anytime TD and first TD.
 
-Roles split receivers by average depth of target (deep, intermediate and short WRs), plus tight ends, backs and quarterbacks. The legs that pass are ranked on hit rates, how much that defense allows to the role, value against the price, and game context:
-- EPA allowed
-- spread and team total
-- the ensemble model's win chance
-- wind and cold
-- target or carry share trend
-- red-zone touches
-- how often the team scores first
-- how the player did without injured teammates
+1. **Rules.** Leg count, stat types, sides, one leg per game and exclusions, as in GOING UP.
+2. **Game screen.** Spread, total and game script (spread blended with the ensemble model's margin). Passing-game Overs are cut outdoors in 15+ mph wind or rain, and a toggle turns that cut off. Domes are noted.
+3. **Role edge.** Each player has a role: slot or outside WR, TE, receiving or rushing RB, or QB. The role is matched against what the defense allows per target, carry or dropback to that role, measured in EPA and yards and adjusted for the offenses it has faced. Slot is estimated from middle-of-field targets and depth. Alignment, man versus zone coverage and shadow assignments aren't public, so the engine uses each defense's starting cornerbacks (PFR coverage stats) instead.
+4. **Weak defense.** The defense must rank in the weak third against the role, or the strong third for an Under.
+5. **Projection.** The line is compared to the last-5 average blended with a usage projection, such as recent targets times yards per target.
+6. **Hit rates.** Last-8 hit rate at the exact line, the home or away split and reads. A leg is dropped when its hit rate conflicts with the role edge.
+7. **Volume props.** Receptions and attempts use what the defense allows per game to the role. A snap share under 50% over the last three games removes yardage and volume Overs.
+8. **Context.**
+   - starting QB, offensive line and opposing cornerbacks out
+   - teammate-out splits
+   - pace and pass rate over expected
+   - red-zone share
+   - rush yards over expected (Next Gen Stats)
+   - rest
+   - weather
+9. **Build.** One leg per game with a mix of stats. An optional toggle allows correlated same-game stacks, such as a QB Over with his receiver's Over. Opposite sides on the same passing game get a negative-correlation warning.
+10. **Price.** Hit rates shrink harder toward 50% than in GOING UP (8 wins and 8 losses added). Touchdown props shrink toward their price instead, and touchdown legs are capped at one by default. Kicking and longest-play props aren't offered.
 
-First TD is off by default because no player scores first often enough to clear a 60% hit rate. Kalshi rarely prices NFL Unders, so most legs are Overs. Tickets and filters are saved in this browser, separately from GOING UP's.
+Questionable players are flagged to re-check after inactives, which post about 90 minutes before kickoff. The page reads ESPN's live injury report when it opens. Every leg shows its quote time and can be locked.
+
+Data for the engine comes from the nflverse play-by-play (with expected pass rate and win probability), snap counts, PFR coverage stats and Next Gen Stats, all stored in `nfl-extra-<season>.json`. Kickoff forecasts come from Open-Meteo (`scripts/weather.mjs`, written each hour to `live/weather-nfl.json`).
+
+**NFL Leg Tracker.** Each hourly run screens every priced NFL prop with the engine, keeps its last pregame quote, and records whether it was selected, eligible or rejected, and why (`scripts/track-nfl-parlays.mjs`). Legs are graded from the nflverse play-by-play, usually the morning after the game. Snap counts mark players who didn't play as void. The page (`long/parlay-tracker.html`) reports:
+- results by decision
+- each rule's passed, failed and "only this rule failed" records
+- breakdowns by role, defense third, projection gap, game script, weather, snap share and injuries
+- calibration
+
+The NBA and NFL pages share `parlay-ui.mjs` and `parlay-tracker-ui.mjs`.
 
 **Parlay Leg Tracker.** Each Pages refresh archives the priced NBA legs the builder can match, including available alternate thresholds and both quoted sides. It records every applicable screening rule, the default ticket's selection, and the first and latest pregame observations for each line and side. Final ESPN box scores grade hits, misses, pushes and confirmed DNPs. Missing final results stay pending. Compare rules by hit rate, hypothetical flat-stake ROI, and the subset where only one rule failed. Results start with the first successful capture. Empty quote feeds cannot be backfilled from box scores.
 

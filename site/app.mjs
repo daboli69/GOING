@@ -17,8 +17,11 @@ const loaders={
   college:()=>import('./college.mjs'),
   tracker:()=>import('./tracker.mjs'),
   parlayTracker:()=>import('./nba-parlay-tracker.mjs'),
+  nflParlayTracker:()=>import('./nfl-parlay-tracker.mjs'),
 };
 const M={};
+// Parlay leg tracker pages and the module that draws each.
+const trackerOf=id=>({'nba-parlay-tracker':'parlayTracker','nfl-parlay-tracker':'nflParlayTracker'})[id];
 const need=(...names)=>Promise.all(names.map(n=>M[n]?M[n]:loaders[n]().then(x=>M[n]=x)));
 const defaults=viewDefaults;
 S.today=today;
@@ -54,7 +57,7 @@ function render(options={}){
   if(S.error)main.innerHTML=box('',empty(S.error)+tools(btn('Try again','retry','')));
   else if(!S.loaded)main.innerHTML=box('',empty(S.route.id==='home'?'Loading today’s slates…':'Loading the slate…'));
   else{
-    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?M.tracker.trackerPage():S.route.id==='nba-parlay-tracker'?M.parlayTracker.parlayTrackerPage():isCollege(S.route.sport)?M.college.collegePage():isModel(S.route.id)?M.models.modelPage():M[S.route.sport].page();}
+    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?M.tracker.trackerPage():trackerOf(S.route.id)?M[trackerOf(S.route.id)].parlayTrackerPage():isCollege(S.route.sport)?M.college.collegePage():isModel(S.route.id)?M.models.modelPage():M[S.route.sport].page();}
     catch(e){console.error(e);main.innerHTML=box('',empty('This view could not be rendered.')+tools(btn('Try again','retry','')));}
   }
   const next=main.querySelector('.matchup-row');
@@ -88,6 +91,9 @@ async function slateFor(s,d){
   if(s==='nba')return get(`${ESPN}/${sportPath.nba}/scoreboard?dates=${d.replaceAll('-','')}`,null).then(j=>j&&scoreboard(j,'nba'));
   return null;
 }
+const nflParlayInputs=year=>Promise.all([get(dataURL('models/nfl.json'),null),get(dataURL('nfl-extra-'+year+'.json'),null),
+  get(dataURL('live/weather-nfl.json'),null),get(`${ESPN}/${sportPath.nfl}/injuries`,null).then(j=>j?.injuries?.length?compactInjuries(j):null).catch(()=>null)])
+  .then(([models,extra,weather,injuries])=>({models,extra,weather,injuries}));
 const injuriesFor=s=>get(dataURL('live/injuries-'+s+'.json'),null).then(x=>x??get(`${ESPN}/${sportPath[s]}/injuries`,{}).then(compactInjuries).catch(()=>({})));
 const oddsFor=(s,d)=>get(dataURL('live/odds-'+s+(s==='nfl'?'':'-'+d)+'.json'),[]);
 const savedGames={};
@@ -126,8 +132,8 @@ async function load(){
     S.data=data;
     S.loaded=true;render();tickScores();return;
   }
-  if(id==='nba-parlay-tracker'){
-    try{await need('parlayTracker');await M.parlayTracker.parlayTrackerLoad();if(token!==req)return;S.loaded=true;render();}
+  if(trackerOf(id)){
+    try{await need(trackerOf(id));await M[trackerOf(id)].parlayTrackerLoad();if(token!==req)return;S.loaded=true;render();}
     catch(e){if(token!==req)return;S.error=failed('The parlay leg record could not load. Try again in a moment.');console.error(e);render();}
     return;
   }
@@ -169,10 +175,14 @@ async function load(){
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
       injuriesFor(s),oddsFor(s,d),
       s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{},
-      id==='nfl-parlays'?get(dataURL('models/nfl.json'),null):null]);
+      id==='nfl-parlays'?nflParlayInputs(year):null]);
     if(token!==req)return;
     if(s==='nba')S.hoops=year;if(s==='nhl')S.ice=year;
-    S.data=data;S.odds=odds;S.injuries=injuries;S.lineups=lineups;S.models=models;
+    S.data=data;S.odds=odds;S.injuries=injuries;S.lineups=lineups;
+    // GOING LONG Suggested Parlays: model feed, snap and coverage data, kickoff forecasts, and the live injury report
+    // (inactives post about 90 minutes before kickoff, often between hourly refreshes).
+    S.models=models?.models||null;S.extra=models?.extra||null;S.weather=models?.weather||null;
+    if(models?.injuries)S.injuries=models.injuries;
     if(s==='nfl'){
       const sched=data.schedule?.filter(g=>+g.id.slice(0,4)===S.year)||[];
       S.week??=sched.find(g=>g.date>=today)?.week??sched.at(-1)?.week??1;
@@ -354,7 +364,7 @@ document.addEventListener('click',e=>{
   if(act==='retry'){S.error=null;load();return;}
   if(isModel(S.route.id)&&M.models?.modelAction(act,v)){render();return;}
   if(S.route.id==='tracker'&&M.tracker?.trackerAction(act,v)){render();return;}
-  if(S.route.id==='nba-parlay-tracker'&&M.parlayTracker?.parlayTrackerAction(act,v)){render();return;}
+  if(trackerOf(S.route.id)&&M[trackerOf(S.route.id)]?.parlayTrackerAction(act,v)){render();return;}
   if(act==='game'){chooseGame(S.games.find(g=>g.id===v));return;}
   if(act==='gameStep'){chooseGame(S.games[S.games.indexOf(S.game)+Number(v)],true);return;}
   if(act==='set'){

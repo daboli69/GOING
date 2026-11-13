@@ -1,8 +1,8 @@
 import { nflTeams } from './config.mjs';
 import {total,mean,round,pct,div,rate,heat,american,implied,signed,seasonLimit,poissonTail} from './math.mjs';
 import {current as S,esc,box,grid,card,metric,logo,color,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,notes,person,market,basePlay,propOdds,gameDay,final,local,dialog,badge,playCheck,propQuotes} from './ui.mjs';
-import {allowedRanks} from './parlay-core.mjs';
-import {markets as parlayMarkets,yardMarkets} from './nfl-parlay-engine.mjs';
+import {allowedRanks,format as fmt} from './parlay-core.mjs';
+import {markets as parlayMarkets,tdMarkets} from './nfl-parlay-engine.mjs';
 import {nflParlayPage,nflParlayAction} from './nfl-parlays.mjs';
 
 const names=Object.keys(nflTeams).sort((a,b)=>nflTeams[a][0].localeCompare(nflTeams[b][0]));
@@ -70,12 +70,13 @@ function footballPlayers(t){
   const set={};
   for(const q of logs(t)){
     const game={};
-    const rec=(id)=>id?(game[id]??={id,targets:0,rec:0,recY:0,yac:0,air:0,rush:0,rushY:0,pass:0,passY:0,comp:0,td:0,first:0,rz:0,rzFirst:0,rzRush:0,rzTgt:0,l20:0,l40:0,long:0,depth:[0,0,0,0],lanes:{},passZones:{}}):null;
+    const rec=(id)=>id?(game[id]??={id,targets:0,mid:0,rec:0,recY:0,yac:0,air:0,rush:0,rushY:0,pass:0,passY:0,comp:0,td:0,first:0,rz:0,rzFirst:0,rzRush:0,rzTgt:0,l20:0,l40:0,long:0,depth:[0,0,0,0],lanes:{},passZones:{}}):null;
     let beforeFirst=true;
     for(const p of q.all){
       if(p[0]===t&&p[1]==='pass'){
-        const passer=rec(p[10]);if(passer){passer.pass++;passer.comp+=p[15];passer.passY+=p[15]?p[2]:0;passer.passZones[p[18]||'middle']=(passer.passZones[p[18]||'middle']||0)+1;}
-        const r=rec(p[11]);if(r){r.targets++;r.rec+=p[15];r.recY+=p[15]?p[2]:0;r.yac+=p[14]||0;r.air+=p[13]||0;
+        // p[28] marks a sack: a dropback, not an official pass attempt.
+        const passer=rec(p[10]);if(passer&&!p[28]){passer.pass++;passer.comp+=p[15];passer.passY+=p[15]?p[2]:0;passer.passZones[p[18]||'middle']=(passer.passZones[p[18]||'middle']||0)+1;}
+        const r=rec(p[11]);if(r){r.targets++;r.rec+=p[15];if(p[18]==='middle')r.mid++;r.recY+=p[15]?p[2]:0;r.yac+=p[14]||0;r.air+=p[13]||0;
           const dep=p[13]??0;r.depth[dep>=20?0:dep>=10?1:dep>=0?2:3]++;
           if(p[3]!=null&&p[3]<=20){r.rz++;r.rzTgt++;if(beforeFirst)r.rzFirst++;}
           if(p[15]&&p[2]>=20)r.l20++;if(p[15]&&p[2]>=40)r.l40++;
@@ -288,7 +289,7 @@ function endzone(){
     table(['#','Player','Opp','Upside','Longest TD','20+ / G','40+ / G','ADOT','Opp 20+ / G'],rows.slice(0,S.f.more?250:48).map(({p,long,explosive,big,air,allow,opp,value},i)=>[i+1,person(p),team(opp),cell(pct((rows.length-i)/rows.length),heat(value,.55,.22)),long,round(explosive,2),round(big,2),round(air),round(allow)]),{sort:'endzone',cls:'compact'})+
     tools(btn(S.f.more?'Show less':'Show all','flip','more'))+box('Winners',table(['Date','Matchup','Player','Longest TD'],history.slice(0,40).map(([g,p])=>[esc(g.date),versus(g),person(getPlayer(p[9],p[8]),false),tdDist(p)+' yd']),{sort:'endzonehistory'}));
 }
-// ---- Suggested Parlays: one row per priced player prop, with everything nfl-parlay-engine.mjs scores. ----
+// ---- Suggested Parlays: one row per priced player prop, with every input nfl-parlay-engine.mjs reads. ----
 const nflName=x=>String(x||'').normalize('NFKD').replace(/[^\p{L}\p{N}]/gu,'').toLowerCase().replace(/(jr|sr|ii|iii|iv|v)$/,'');
 // Schedule rows give an Eastern date and clock; turn them into an exact kickoff instant.
 export function kickoff(date,time){
@@ -299,94 +300,197 @@ export function kickoff(date,time){
   const local=Date.UTC(+parts.year,+parts.month-1,+parts.day,+parts.hour%24,+parts.minute);
   return new Date(guess-(local-guess)).toISOString();
 }
-const valueKey={Receiving:'recY',Rushing:'rushY',Passing:'passY','Anytime TD':'td','First TD':'td'};
-const plural={QB:'QBs',RB:'RBs',WR:'WRs',TE:'TEs'};
-// Receivers split by average depth of target, so a defense that gives up deep shots is told apart from one beaten underneath.
-function receivingRole(p){
-  if(p.pos!=='WR')return plural[p.pos]||null;
-  const adot=div(total(p.logs,x=>x.air),total(p.logs,x=>x.targets));
-  return adot==null?'WRs':adot>=13?'deep WRs':adot>=9?'intermediate WRs':'short WRs';
+export const marketValue={Receiving:'recY',Receptions:'rec',Rushing:'rushY','Rush Attempts':'rush',Passing:'passY','Pass Attempts':'pass',
+  Completions:'comp','Anytime TD':'td','First TD':'first'};
+const marketGroup=m=>tdMarkets.has(m)?'td':['Receiving','Receptions'].includes(m)?'catch':['Rushing','Rush Attempts'].includes(m)?'rush':'pass';
+const OL=new Set(['T','G','C','OL','OT','OG']);
+const outNow=x=>/^(out|injured reserve|suspen|physically unable|pup|non-football)/i.test(x||'');
+const doubtful=x=>/^doubtful/i.test(x||'');
+// Roles, the NFL version of player types. Slot is estimated from where a receiver is targeted (middle of the field)
+// and how deep; alignment and man/zone coverage are not in the public data.
+export function playerRole(p){
+  const sum=k=>total(p.logs,x=>x[k]||0);
+  if(p.pos==='QB')return 'QBs';
+  if(p.pos==='TE')return 'TEs';
+  if(p.pos==='RB'||p.pos==='FB')return sum('targets')/Math.max(1,sum('targets')+sum('rush'))>=.26?'receiving RBs':'rushing RBs';
+  if(p.pos==='WR'){
+    const t=sum('targets'),mid=t?sum('mid')/t:0,adot=t?sum('air')/t:null;
+    return mid>=.27||mid>=.21&&adot!=null&&adot<9.6?'slot WRs (est.)':'outside WRs';
+  }
+  return null;
 }
-const roleFor=(p,m)=>m==='Receiving'?receivingRole(p):m==='Passing'?(p.pos==='QB'?'QBs':null):plural[p.pos]||null;
 let parlayMemo={};
-// League tables for the slate's week: every team's players, and what each defense allows by role and market.
+// League tables for the slate's week: players and roles, what each defense allows by role (opponent-adjusted), team
+// tendencies, cornerback rooms and starting offensive lines.
 function league(){
-  if(parlayMemo.archive===S.data&&parlayMemo.week===S.week&&parlayMemo.year===S.year)return parlayMemo.league;
-  const byTeam=new Map(names.map(t=>[t,footballPlayers(t)]));
-  const allowed={},games={};
-  for(const t of names)games[t]=stats(t,true).gp;
-  for(const [t,players] of byTeam)for(const p of players)for(const m of parlayMarkets){
-    const role=roleFor(p,m);if(!role)continue;
-    for(const x of p.logs){
-      const cell=((allowed[x.opponent]??={})[m+'|'+role]??={sum:0,n:0});
-      cell.sum+=x[valueKey[m]]||0;cell.n++;
-    }
+  const X=S.extra||{};
+  if(parlayMemo.archive===S.data&&parlayMemo.extra===X&&parlayMemo.week===S.week&&parlayMemo.year===S.year)return parlayMemo.league;
+  const byTeam=new Map(names.map(t=>[t,footballPlayers(t)])), roles=new Map(), byId=new Map();
+  for(const players of byTeam.values())for(const p of players){roles.set(p.id,playerRole(p));byId.set(p.id,p);}
+  const season=allGames().filter(g=>+g.id.slice(0,4)===S.year&&g.week<S.week&&S.data.events?.[g.id]);
+  // Per-play efficiency by role, against each offense's own average to that role, so a defense that faced strong
+  // offenses is not punished for it.
+  const plays=[];
+  const team={};
+  for(const g of season)for(const p of S.data.events[g.id]){
+    if(p[1]!=='pass'&&p[1]!=='run')continue;
+    const off=p[0],def=off===g.a?g.h:off===g.h?g.a:null;if(!def)continue;
+    const T=team[off]??={plays:0,games:new Set(),proe:[],pass:0,rush:0};
+    T.plays++;T.games.add(g.id);if(p[1]==='pass'&&!p[28])T.pass++;if(p[1]==='run')T.rush++;
+    if(p[26]!=null&&p[27]!=null&&p[27]>=.2&&p[27]<=.8&&p[4]<=4)T.proe.push((p[1]==='pass'?1:0)-p[26]);
+    if(p[17]==null)continue;
+    if(p[1]==='pass'&&p[10])plays.push({kind:'pass',role:'QBs',off,def,epa:p[17],yd:p[2]});
+    if(p[1]==='pass'&&p[11]&&!p[28]){const role=roles.get(p[11]);if(role)plays.push({kind:'catch',role,off,def,epa:p[17],yd:p[2]});}
+    if(p[1]==='run'&&p[12]){const role=roles.get(p[12]);if(role)plays.push({kind:'rush',role,off,def,epa:p[17],yd:p[2]});}
   }
+  const avg=(list,k)=>list.length?list.reduce((a,x)=>a+x[k],0)/list.length:null;
+  const by=(list,keyFn)=>{const m=new Map();for(const x of list){const k=keyFn(x);(m.get(k)||m.set(k,[]).get(k)).push(x);}return m;};
+  const offMean=new Map([...by(plays,x=>x.kind+'|'+x.role+'|'+x.off)].map(([k,l])=>[k,{epa:avg(l,'epa'),yd:avg(l,'yd')}]));
   const tables={};
-  // Keys are market|role, e.g. "Receiving|deep WRs".
-  for(const key of new Set(Object.values(allowed).flatMap(o=>Object.keys(o)))){
-    const perGame=names.filter(t=>games[t]).map(t=>[t,(allowed[t]?.[key]?.sum||0)/games[t]]);
-    tables[key]={ranks:allowedRanks(perGame),perGame:new Map(perGame),league:mean(perGame,x=>x[1]),
-      perPlayer:new Map(names.map(t=>{const c=allowed[t]?.[key];return [t,c?.n?c.sum/c.n:null];}))};
+  const unit={catch:'target',rush:'carry',pass:'dropback'};
+  for(const [key,list] of by(plays,x=>x.kind+'|'+x.role)){
+    const [kind,role]=key.split('|'), lgEpa=avg(list,'epa'), lgYd=avg(list,'yd');
+    const perDef=[...by(list,x=>x.def)].filter(([,l])=>l.length>=12).map(([d,l])=>{
+      const resid=k=>avg(l.map(x=>({v:x[k]-(offMean.get(kind+'|'+role+'|'+x.off)?.[k]??0)})),'v');
+      return [d,lgEpa+resid('epa'),lgYd+resid('yd'),l.length];
+    });
+    tables[key]={ranks:allowedRanks(perDef.map(x=>[x[0],x[1]])),value:new Map(perDef.map(x=>[x[0],x])),league:lgEpa,
+      label:x=>fmt(x[1],2)+' EPA and '+fmt(x[2],1)+' yds per '+unit[kind]+', opponent-adjusted',scale:.2};
   }
-  const epa=kind=>allowedRanks(names.filter(t=>games[t]).map(t=>{const x=scheme(t,true);return [t,mean((kind==='pass'?x.pass:kind==='run'?x.run:x.p).filter(r=>r[17]!=null),r=>r[17])];}));
-  const value={byTeam,tables,epa:{pass:epa('pass'),run:epa('run'),all:epa('all')}};
-  parlayMemo={archive:S.data,week:S.week,year:S.year,league:value};
+  // Volume and touchdowns allowed per game to each role (raw, like GOING UP's rebounds and assists by position).
+  const defGames={};for(const t of names)defGames[t]=stats(t,true).gp;
+  const counted={};
+  for(const players of byTeam.values())for(const p of players)for(const m of ['Receptions','Rush Attempts','Pass Attempts','Completions','Anytime TD','Receiving','Rushing','Passing']){
+    const role=roles.get(p.id);if(!role||(marketGroup(m)==='pass'&&role!=='QBs'))continue;
+    for(const x of p.logs){const c=((counted[x.opponent]??={})[m+'|'+role]??={sum:0,n:0});c.sum+=x[marketValue[m]]||0;c.n++;}
+  }
+  const keys=new Set(Object.values(counted).flatMap(o=>Object.keys(o)));
+  const perGameTables={};
+  for(const key of keys){
+    const rows=names.filter(t=>defGames[t]).map(t=>[t,(counted[t]?.[key]?.sum||0)/defGames[t],counted[t]?.[key]?.sum&&counted[t][key].sum/counted[t][key].n]);
+    const [m,role]=key.split('|'), noun={Receptions:'receptions','Rush Attempts':'rush attempts','Pass Attempts':'pass attempts',Completions:'completions','Anytime TD':'TDs',Receiving:'receiving yds',Rushing:'rushing yds',Passing:'passing yds'}[m];
+    perGameTables[key]={ranks:allowedRanks(rows.map(x=>[x[0],x[1]])),value:new Map(rows.map(x=>[x[0],x])),league:mean(rows,x=>x[1]),
+      perPlayer:new Map(rows.map(x=>[x[0],x[2]||null])),label:x=>fmt(x[1],1)+' '+noun+' allowed per game',scale:null};
+  }
+  // Team tendencies: pass rate over expected in neutral situations, offensive plays per game, last game date.
+  const teamInfo={};
+  for(const t of names){
+    const T=team[t];
+    teamInfo[t]={proe:T?.proe.length>=40?mean(T.proe):null,pace:T?.games.size?T.plays/T.games.size:null,
+      passAtt:T?.games.size?T.pass/T.games.size:null,carries:T?.games.size?T.rush/T.games.size:null,
+      last:season.filter(g=>g.a===t||g.h===t).map(g=>g.date).sort().at(-1)||null};
+  }
+  const leaguePace=mean(Object.values(teamInfo).filter(x=>x.pace),x=>x.pace);
+  // Snap counts, cornerback rooms and starting linemen from the last three games each team played.
+  const snapsIn=(id,t)=>X.snaps?.[id]?.[t]||[];
+  const recentIds=t=>season.filter(g=>g.a===t||g.h===t).sort((a,b)=>a.date.localeCompare(b.date)).slice(-3).map(g=>g.id);
+  const starters=(t,test,pctIndex)=>{
+    const ids=recentIds(t),count=new Map();
+    for(const id of ids)for(const r of snapsIn(id,t))if(test(r[1])&&r[pctIndex]>=(pctIndex===2?.8:.7))count.set(nflName(r[0]),r[0]);
+    return [...new Set(ids.flatMap(id=>snapsIn(id,t).filter(r=>test(r[1])&&r[pctIndex]>=(pctIndex===2?.8:.7)).map(r=>nflName(r[0]))))]
+      .filter(n=>ids.filter(id=>snapsIn(id,t).some(r=>nflName(r[0])===n&&r[pctIndex]>=(pctIndex===2?.8:.7))).length>=Math.min(2,ids.length)).map(n=>count.get(n));
+  };
+  const cbStarters={},olStarters={},cbRoom={};
+  for(const t of names){
+    cbStarters[t]=starters(t,pos=>pos==='CB',3);olStarters[t]=starters(t,pos=>OL.has(pos),2);
+    const set=new Set(cbStarters[t].map(nflName));let tg=0,yd=0;
+    for(const g of season)for(const r of X.cover?.[g.id]?.[t]||[])if(set.has(nflName(r[0]))){tg+=r[1];yd+=r[3];}
+    cbRoom[t]=tg>=20?yd/tg:null;
+  }
+  const cbLeague=mean(Object.values(cbRoom).filter(x=>x!=null));
+  // Rush yards over expected: each rusher's own, and what each defense allows, from Next Gen Stats.
+  const ryoePlayer=new Map(), ryoeDef={};
+  for(const [id,rows] of Object.entries(X.ngs_rushing||{})){
+    let att=0,over=0;
+    for(const [week,t,a,ryoe] of rows){
+      if(week>=S.week||a==null||ryoe==null)continue;
+      att+=a;over+=ryoe;
+      const g=season.find(x=>x.week===week&&(x.a===t||x.h===t));if(!g)continue;
+      const d=(ryoeDef[g.a===t?g.h:g.a]??={att:0,over:0});d.att+=a;d.over+=ryoe;
+    }
+    if(att>=20)ryoePlayer.set(id,over/att);
+  }
+  const value={byTeam,byId,roles,tables,perGameTables,teamInfo,leaguePace,cbStarters,olStarters,cbRoom,cbLeague,ryoePlayer,
+    ryoeDef:Object.fromEntries(Object.entries(ryoeDef).filter(([,d])=>d.att>=40).map(([t,d])=>[t,d.over/d.att])),recentIds,snapsIn};
+  parlayMemo={archive:S.data,extra:X,week:S.week,year:S.year,league:value};
   return value;
 }
 export function nflParlayData(quotes=S.odds){
-  const key=[S.data,S.week,S.year,quotes,S.injuries,S.games,S.models];
-  if(parlayMemo.dataKey&&parlayMemo.dataKey.every((x,i)=>x===key[i]))return parlayMemo.data;
+  const key=[S.data,S.extra,S.week,S.year,quotes,S.injuries,S.games,S.models,S.weather];
+  if(parlayMemo.dataKey&&parlayMemo.dataKey.length===key.length&&parlayMemo.dataKey.every((x,i)=>x===key[i]))return parlayMemo.data;
   const L=league(), schedule=new Map(allGames().map(g=>[g.id,g])), rows=[], roster=new Map();
   const forecasts=new Map((S.models?.games||[]).map(x=>[x.game_id,x.forecast?.champion]));
   for(const g of S.games){
     const iso=kickoff(g.date,g.time), game={...g,iso};
-    const indoor=/dome|closed/i.test(g.roof||'');
+    const weather=S.weather?.[g.id]||(g.wind!=null||g.temp!=null?{roof:/dome|closed/i.test(g.roof||'')?'dome':g.roof||'outdoors',wind:g.wind,temp:g.temp}:null);
     for(const t of [g.a,g.h]){
-      const home=g.h===t, opp=home?g.a:g.h, players=L.byTeam.get(t)||[];
+      const home=g.h===t, opp=home?g.a:g.h, players=L.byTeam.get(t)||[], info=L.teamInfo[t]||{};
       const teamGames=pool(t).map(x=>x.id), recentGames=new Set(teamGames.slice(-3));
       const teamSpread=g.spread==null?null:home?-g.spread:g.spread;
-      const report=S.injuries[teamName(t)]||[];
+      const model=forecasts.get(g.id), modelP=model?.p_home==null?null:home?model.p_home:1-model.p_home;
+      const modelMargin=model?.margin_home==null?null:home?model.margin_home:-model.margin_home;
+      const script=teamSpread==null&&modelMargin==null?null:mean([teamSpread==null?null:-teamSpread,modelMargin].filter(x=>x!=null));
+      const report=S.injuries[teamName(t)]||[], oppReport=S.injuries[teamName(opp)]||[];
       const statusOf=name=>report.find(x=>nflName(x.name)===nflName(name))?.status;
-      const outNow=x=>/^(out|injured reserve|suspen|physically unable|pup|non-football)/i.test(x||'');
+      const listedOut=(list,name)=>list.some(x=>nflName(x.name)===nflName(name)&&(outNow(x.status)||doubtful(x.status)));
       const usage=p=>mean(p.logs,x=>x.targets+x.rush);
       const missing=report.filter(x=>outNow(x.status)).flatMap(x=>{
         const mate=players.find(p=>nflName(p.name)===nflName(x.name));
         if(!mate||usage(mate)<4||mate.logs.filter(r=>recentGames.has(r.game)).length<2)return [];
         return [{name:mate.name,played:new Set(mate.logs.map(r=>r.game))}];
       });
+      const lastGame=teamGames.at(-1), qb=players.filter(p=>p.pos==='QB').map(p=>[p,p.logs.find(x=>x.game===lastGame)?.pass||0]).sort((a,b)=>b[1]-a[1])[0]?.[0];
+      const qbOut=qb&&outNow(statusOf(qb.name))?qb.name:null;
+      const olOut=L.olStarters[t].filter(n=>listedOut(report,n));
+      const cbOut=L.cbStarters[opp].filter(n=>listedOut(oppReport,n));
       const teamTotals=k=>new Map(teamGames.map(id=>[id,total(players,p=>p.logs.find(r=>r.game===id)?.[k]||0)]));
-      const targets=teamTotals('targets'), carries=teamTotals('rush');
-      const model=forecasts.get(g.id);
+      const targets=teamTotals('targets'), carries=teamTotals('rush'), redZone=teamTotals('rz');
+      const rest=info.last?Math.round((Date.parse(g.date)-Date.parse(info.last))/86400000):null;
       const s=stats(t);
       for(const p of players){
-        const status=statusOf(p.name);
+        const status=statusOf(p.name), role=L.roles.get(p.id);
         for(const m of parlayMarkets){
           const matches=propQuotes(p,m,quotes);
           if(!matches.length)continue;
-          const role=roleFor(p,m), table=role?L.tables[m+'|'+role]:null;
-          const k=valueKey[m], values=p.logs.map(x=>x[k]||0), avg=mean(values);
-          const venueValues=p.logs.filter(x=>(schedule.get(x.game)?.h===t)===home).map(x=>x[k]||0);
-          const shareKey=m==='Receiving'?'targets':m==='Rushing'?'rush':null, teamCount=shareKey==='targets'?targets:carries;
-          // Share of the team's targets or carries in the games this player played (all of them, and his last three).
+          const k=marketValue[m], logs=p.logs, values=logs.map(x=>x[k]||0), avg=mean(values), last5=logs.slice(-5);
+          const venueValues=logs.filter(x=>(schedule.get(x.game)?.h===t)===home).map(x=>x[k]||0);
+          const sum=f=>total(logs,x=>x[f]||0), recent=f=>mean(last5,x=>x[f]||0);
+          const recentAvg=mean(values.slice(-5));
+          const usageProj={Receiving:sum('targets')?recent('targets')*sum('recY')/sum('targets'):null,
+            Receptions:sum('targets')?recent('targets')*sum('rec')/sum('targets'):null,
+            Rushing:sum('rush')?recent('rush')*sum('rushY')/sum('rush'):null,
+            'Rush Attempts':info.carries&&sum('rush')?info.carries*total(last5,x=>x.rush)/Math.max(1,total(last5,x=>carries.get(x.game)||0)):null,
+            Passing:sum('pass')?recent('pass')*sum('passY')/sum('pass'):null,
+            'Pass Attempts':info.passAtt??null,
+            Completions:sum('pass')?recent('pass')*sum('comp')/sum('pass'):null}[m]??null;
+          const projection=tdMarkets.has(m)||recentAvg==null?null:usageProj==null?recentAvg:(recentAvg+usageProj)/2;
+          const shareKey=['Receiving','Receptions'].includes(m)?'targets':['Rushing','Rush Attempts'].includes(m)?'rush':null;
+          const teamCount=shareKey==='targets'?targets:carries;
           const share=list=>{if(!shareKey||!list.length)return null;const all=total(list,x=>teamCount.get(x.game)||0);return all?total(list,x=>x[shareKey])/all:null;};
-          const allowedPerPlayer=table?.perPlayer.get(opp);
+          const kind=marketGroup(m), table=role?(kind==='td'||['Receptions','Rush Attempts','Pass Attempts','Completions'].includes(m)?L.perGameTables[(kind==='td'?'Anytime TD':m)+'|'+role]:L.tables[kind+'|'+role]):null;
+          const dv=table?.value.get(opp);
+          const defense=table&&dv&&table.ranks.get(opp)?{rank:table.ranks.get(opp),value:dv[1],league:table.league,label:table.label(dv),role,scale:table.scale}:null;
+          const allowedPerPlayer=L.perGameTables[(kind==='td'?'Anytime TD':m)+'|'+role]?.perPlayer.get(opp)??null;
+          const snapList=L.recentIds(t).map(id=>L.snapsIn(id,t).find(r=>nflName(r[0])===nflName(p.name))?.[2]).filter(x=>x!=null);
+          const ryoe=['Rushing','Rush Attempts'].includes(m)?[L.ryoePlayer.get(p.id),L.ryoeDef[opp]].filter(x=>x!=null):[];
           roster.set(p.id,{id:p.id,name:p.name,team:t});
-          for(const quote of matches)rows.push({date:g.date,player:p,game,opp,stat:m,quote,home,avg,
-            form:{season:values,last5:values.slice(-5),last3:values.slice(-3),venue:venueValues,
-              home:p.logs.filter(x=>schedule.get(x.game)?.h===t).map(x=>x[k]||0),away:p.logs.filter(x=>schedule.get(x.game)?.h!==t).map(x=>x[k]||0)},
-            reads:yardMarkets.has(m)?[mean(values.slice(-3)),mean(values.slice(-5)),avg,mean(venueValues),allowedPerPlayer].filter(x=>x!=null):[],
-            role:role||p.pos,roleRank:table?.ranks.get(opp)||null,roleAllowed:table?.perGame.get(opp)??null,roleLeague:table?.league??null,
-            epaRank:L.epa[m==='Rushing'?'run':yardMarkets.has(m)?'pass':'all'].get(opp)||null,epaKind:m==='Rushing'?'run':yardMarkets.has(m)?'pass':'overall',
-            spread:g.spread==null?null:Math.abs(g.spread),teamSpread,total:g.total??null,
+          for(const quote of matches)rows.push({date:g.date,player:p,game,opp,stat:m,quote,home,avg,recentAvg,usage:usageProj,projection,
+            form:{season:values,last8:values.slice(-8),last5:values.slice(-5),venue:venueValues,
+              home:logs.filter(x=>schedule.get(x.game)?.h===t).map(x=>x[k]||0),away:logs.filter(x=>schedule.get(x.game)?.h!==t).map(x=>x[k]||0)},
+            reads:tdMarkets.has(m)?[]:[mean(values.slice(-3)),recentAvg,mean(values.slice(-8)),avg,mean(venueValues),projection,allowedPerPlayer].filter(x=>x!=null),
+            role:role||p.pos,defense,
+            spread:g.spread==null?null:Math.abs(g.spread),script,total:g.total??null,
             teamTotal:g.total==null||teamSpread==null?null:g.total/2-teamSpread/2,
-            model:model?.p_home==null?null:{p:home?model.p_home:1-model.p_home,margin:home?model.margin_home:-model.margin_home},
-            wind:indoor?null:g.wind??null,temp:indoor?null:g.temp??null,
-            share:share(p.logs),recentShare:p.logs.length>=5?share(p.logs.slice(-3)):null,shareLabel:shareKey==='targets'?'Target share':'Carry share',
-            redZone:mean(p.logs,x=>x.rz),firstRate:s.gp?s.first.length/s.gp:null,
-            out:outNow(status),uncertain:/questionable|doubtful/i.test(status||'')?status:null,injuryReport:Object.hasOwn(S.injuries,teamName(t)),
+            model:modelP==null?null:{p:modelP,margin:modelMargin},weather,
+            proe:info.proe,pace:info.pace,leaguePace:L.leaguePace,
+            share:share(logs),recentShare:logs.length>=5?share(logs.slice(-3)):null,shareLabel:shareKey==='targets'?'Target share':'Carry share',
+            snaps:snapList.length?mean(snapList):null,
+            rzShare:(()=>{const all=total(logs,x=>redZone.get(x.game)||0);return all?sum('rz')/all:null;})(),
+            firstRate:s.gp?s.first.length/s.gp:null,ryoe:ryoe.length?mean(ryoe):null,
+            cbRoom:L.cbRoom[opp],cbLeague:L.cbLeague,cbOut,qbOut:qbOut&&qbOut!==p.name?qbOut:null,olOut,rest,
+            out:outNow(status),status:/questionable|doubtful/i.test(status||'')?status:null,injuryReport:Object.hasOwn(S.injuries,teamName(t)),
             absences:missing.filter(x=>x.name!==p.name).map(({name,played})=>{
-              const without=p.logs.filter(r=>!played.has(r.game)).map(r=>r[k]||0);
+              const without=logs.filter(r=>!played.has(r.game)).map(r=>r[k]||0);
               return {name,n:without.length,delta:without.length>=2&&avg!=null?mean(without)-avg:null};
             })});
         }

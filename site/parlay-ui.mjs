@@ -44,6 +44,11 @@ const baseHints={'Odds range':'Widen the odds range.','Existing tickets':'Allow 
    legText(leg)             how a leg reads, e.g. "Over 6.5 Assists"
    noRows                   message when no priced props exist
    hints                    cut reason -> suggestion
+   checks                   extra on/off filters: [{key,label}]
+   rules(cfg)               ticket rules passed to buildTicket (same-game stacks, leg limits)
+   warnings(ticket)         notes shown under a ticket (correlation)
+   prior                    wins and losses added per leg for the adjusted chance (default 5)
+   chanceNote               how the adjusted chance is described
 */
 export function createParlays(opts){
   const {settingsKey,ticketsKey,engine,weightNames}=opts;
@@ -67,6 +72,8 @@ export function createParlays(opts){
   const takenLegs=except=>new Set(saved().filter(ticket=>ticket.id!==except)
     .flatMap(ticket=>ticket.legs.filter(leg=>leg.result!=='Void').map(legKey)));
   const legText=opts.legText||(leg=>leg.side+' '+leg.line+' '+leg.stat);
+  const ticketRules=cfg=>opts.rules?opts.rules(cfg):{};
+  const booleans=['perGame','skipTickets',...(opts.checks||[]).map(c=>c.key)];
 
   function exclusions(data,cfg){
     const playerLabel=id=>data.roster.find(p=>p.id===id)?.name||id;
@@ -85,6 +92,7 @@ export function createParlays(opts){
         check('One leg per game','perGame',cfg.perGame))+
       tools(markets.map(stat=>btn(esc(stat),'parlayStat',stat,cfg.stats.includes(stat)?'on':'')).join(''))+
       tools(opts.fields.map(f=>number(f.label,f.key,cfg[f.key],f.min,f.max,f.step??1)).join(''))+
+      (opts.checks?.length?tools(opts.checks.map(c=>check(c.label,c.key,cfg[c.key])).join('')):'')+
       tools(number('Min. odds','minOdds',toAmerican(cfg.minOdds),-10000,10000,5)+number('Max. odds','maxOdds',toAmerican(cfg.maxOdds),-10000,10000,5)+
         '<span class="subtle">American odds, e.g. -200 to +150</span>')+
       exclusions(data,cfg)+
@@ -105,12 +113,14 @@ export function createParlays(opts){
   }
 
   function mathSummary(ticket){
-    const m=ticketMath(ticket);
+    const m=ticketMath(ticket,opts.prior);
+    const warnings=opts.warnings?opts.warnings(ticket):[];
     return grid(4,[metric('Combined line odds',esc(american(m.quoted)), 'Gross return $'+round(10*m.decimal,2)+' per $10'),
-      metric('Adjusted chance estimate',pct(m.adjusted,2),'Season rates shrunk toward 50%'),
+      metric('Adjusted chance estimate',pct(m.adjusted,2),opts.chanceNote||'Season rates shrunk toward 50%'),
       metric('Raw hit-rate product',pct(m.naive,2),'Season rates multiplied'),
       metric('Quote-implied chance',pct(m.quoted,2),'Individual quotes multiplied')])+
-      `<p class="subtle">Historical hit rates can differ from future results. The estimates assume independent legs, and the theoretical return excludes fees.${m.sameGame?' Same-game correlation makes the estimates less reliable.':''}</p>`;
+      `<p class="subtle">Historical hit rates can differ from future results. The estimates assume independent legs, and the theoretical return excludes fees.${m.sameGame?' Same-game correlation makes the estimates less reliable.':''}</p>`+
+      warnings.map(w=>`<p class="callout">${esc(w)}</p>`).join('');
   }
 
   function resultSummary(legs){
@@ -162,7 +172,7 @@ export function createParlays(opts){
 
   function page(data){
     const cfg=config(), state=draft(), report=evaluate(data.rows,cfg,{taken:takenLegs()});
-    const preview=buildTicket(report.eligible,cfg).ticket;
+    const preview=buildTicket(report.eligible,cfg,{rules:ticketRules(cfg)}).ticket;
     const current=new Map(report.eligible.map(leg=>[legKey(leg),leg]));
     const overlaps=takenLegs(state.savedId);
     const ticket=state.ticket.map(leg=>{
@@ -209,7 +219,7 @@ export function createParlays(opts){
         cfg[key]=numbers(val,bounds[key],defaults[key]);
         if(integers.has(key))cfg[key]=Math.round(cfg[key]);
         if(target)target.value=cfg[key];
-      }else if(['perGame','skipTickets'].includes(key))cfg[key]=val===true;
+      }else if(booleans.includes(key))cfg[key]=val===true;
       else if(key==='side'&&['Both','Over','Under'].includes(val))cfg.side=val;
       else if(val&&key==='game')cfg.games=toggle(cfg.games,val);
       else if(val&&key==='player')cfg.players=toggle(cfg.players,val);
@@ -231,7 +241,7 @@ export function createParlays(opts){
       const locked=act==='parlaySwap'?current.filter(key=>key!==value):state.locked;
       const avoid=new Set(act==='parlayRegenerate'?current:[]);
       const excluded=new Set(act==='parlaySwap'?[value]:[]);
-      const {ticket,invalidLock}=buildTicket(eligible,cfg,{locked,avoid,excluded});
+      const {ticket,invalidLock}=buildTicket(eligible,cfg,{locked,avoid,excluded,rules:ticketRules(cfg)});
       if(invalidLock){state.message='A retained leg no longer qualifies. Unlock it or regenerate with different filters.';return true;}
       if(act==='parlaySwap'&&ticket.length<state.ticket.length){state.message='No eligible replacement matches this ticket.';return true;}
       if(act==='parlaySwap'){

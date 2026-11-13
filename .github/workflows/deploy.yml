@@ -141,6 +141,9 @@ jobs:
       - name: Capture and grade NBA parlay legs
         run: node scripts/track-nba-parlays.mjs || echo "::warning::NBA parlay tracker failed; the previous record is still published."
 
+      - name: Capture and grade NFL parlay legs
+        run: node scripts/track-nfl-parlays.mjs || echo "::warning::NFL parlay tracker failed; the previous record is still published."
+
       - name: Save pick record
         run: |
           set -e

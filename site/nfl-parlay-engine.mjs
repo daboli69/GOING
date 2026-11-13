@@ -1,29 +1,51 @@
 // GOING LONG Suggested Parlays: which priced NFL player props qualify for a ticket, and how they rank.
-// Same premise as the GOING UP engine: hard checks remove a leg (the first failed check is its cut), and the legs that
-// pass are scored on hit rates, matchup, value against the price, and game context. nfl.mjs builds the rows from the
-// play-by-play archive, the schedule lines, injuries, the ensemble model feed and the public player prices.
+// Same premise as GOING UP: hard checks remove a leg (the first failed check is its cut), and the legs that pass are
+// scored on hit rates, matchup, value against the price, and context. nfl.mjs builds the rows from the play-by-play
+// archive, snap counts, coverage and Next Gen stats, schedule lines, the ensemble model, injuries, weather and prices.
+//
+// The ten steps, in order:
+//  1 Rules: leg count, stat types, sides, one leg per game, exclusions (parlay-ui.mjs).
+//  2 Game screen: spread, total, game script; wind or rain removes passing-game Overs outdoors; domes noted.
+//  3 Role edge: the player's role (slot or outside WR, TE, receiving or rushing RB, QB) against what this defense allows
+//    to that role, per play and adjusted for the offenses it has faced. Man and zone splits are not public.
+//  4 The defense must rank in the weak third against that role (the strong third for an Under).
+//  5 Line vs projection: recent average (last 5) blended with a usage projection (targets x yards per target, ...).
+//  6 Hit rate on the last 8, home or away split, reads; a hit rate that conflicts with the role edge removes the leg.
+//  7 Volume props (receptions, attempts, completions) use what the defense allows to the position, plus snap share.
+//  8 Context: QB, WR1, offensive line and starting cornerbacks out, teammate-out splits, pace, pass rate over expected,
+//    red-zone share, rest and weather.
+//  9 Build: one leg per game, a mix of stats, optional correlated same-game stacks, negative-correlation warnings.
+// 10 Price: hit rates shrink toward 50% harder than GOING UP (8 wins and 8 losses added; touchdown props shrink toward
+//    their price instead, since a fair TD chance is rarely near 50%), and touchdown legs are limited.
 import {implied,mean} from './math.mjs';
 import {clamp,favorable,format,legKey,percent,record,signed} from './parlay-core.mjs';
 
-export const markets=['Receiving','Rushing','Passing','Anytime TD','First TD'];
 export const yardMarkets=new Set(['Receiving','Rushing','Passing']);
-export const weights={form:4,matchup:3,line:2,context:1,mix:1};
-// First TD is off by default: no player scores first often enough to clear a 60% hit rate.
-export const defaults={legs:4,stats:['Receiving','Rushing','Passing','Anytime TD'],side:'Both',hit:60,sample:4,spread:10,total:0,
-  minOdds:1.01,maxOdds:101,perGame:true,skipTickets:true,players:[],games:[],weights};
+export const volumeMarkets=new Set(['Receptions','Rush Attempts','Pass Attempts','Completions']);
+export const tdMarkets=new Set(['Anytime TD','First TD']);
+export const passingGame=new Set(['Receiving','Passing','Receptions','Pass Attempts','Completions']);
+const rushingGame=new Set(['Rushing','Rush Attempts']);
+const qbMarkets=new Set(['Passing','Pass Attempts','Completions']);
+const catchMarkets=new Set(['Receiving','Receptions']);
+export const markets=['Receiving','Receptions','Rushing','Rush Attempts','Passing','Pass Attempts','Completions','Anytime TD','First TD'];
+export const weights={form:4,matchup:3,line:2,context:1.5,mix:1};
+export const PRIOR=8;
+// First TD is off by default: no player scores first often enough to clear the hit-rate floor.
+export const defaults={legs:4,stats:markets.filter(m=>m!=='First TD'),side:'Both',hit:60,sample:4,spread:10,total:0,tdMax:1,
+  minOdds:1.01,maxOdds:101,perGame:true,stacks:false,weather:true,skipTickets:true,players:[],games:[],weights};
 
 const done=g=>['FINAL','OFF','LIVE','CRIT'].includes(g.status)||g.sa!=null&&g.sh!=null;
-// The opposite third of the league: the defense allows the least for an Over, or the most for an Under.
-const unfavorable=(rank,over)=>favorable(rank,!over);
 const rankText=r=>r.rank+'/'+r.total;
-// Sample-weighted blend of the player's hit rate and the price, the same shrinkage Best Plays uses.
-export const blended=(hits,n,price)=>price==null?null:n?price+(hits/n-price)*n/(n+6):price;
+// Wins and losses added before dividing: small NFL samples move toward 50% faster than GOING UP's.
+// Touchdown props are yes/no bets whose fair chance is often far from 50%, so they shrink toward the price instead.
+export const shrunk=(s,prior=PRIOR,toward=.5)=>s?.n==null?null:(s.hits+2*prior*toward)/(s.n+2*prior);
+export const badWeather=w=>!!w&&w.roof!=='dome'&&((w.wind??0)>=15||(w.rain??0)>=.1);
 
 export function assess(row,side,cfg,context){
-  const {quote,player,game,stat,avg,form,reads}=row;
-  const over=side==='Over', direction=over?1:-1, yards=yardMarkets.has(stat);
+  const {quote,player,game,stat,form,reads}=row;
+  const over=side==='Over', direction=over?1:-1, yards=yardMarkets.has(stat), volume=volumeMarkets.has(stat), td=tdMarkets.has(stat);
   const price=quote[over?'over':'under'], prob=implied(price);
-  const leg={date:row.date,game:String(game.id),tip:game.iso,player:player.id,name:player.name,
+  const leg={date:row.date,game:String(game.id),tip:game.iso,player:player.id,name:player.name,pos:player.pos,
     team:player.team,opp:row.opp,stat,side,line:quote.line,price,provider:quote.provider,
     capturedAt:quote.capturedAt||null,reasons:[],flags:[],score:0};
   const checks={};
@@ -31,119 +53,147 @@ export function assess(row,side,cfg,context){
   const overlap=context.taken.has(legKey(leg));
   const start=Date.parse(game.iso);
   if(overlap)leg.flags.push('On an existing ticket');
+
+  // 1 and 2: rules, price and the game screen.
   check('Kickoff',done(game)||!Number.isFinite(start)||start<=context.now?'Game already started or kickoff time missing':null);
   check('Exclusions',cfg.games.includes(leg.game)?'Excluded matchup':cfg.players.includes(leg.player)?'Excluded player':
     cfg.skipTickets&&overlap?'Existing tickets':null);
   check('Quote',!Number.isFinite(leg.line)||!prob||!leg.provider?'No price for selected side':null);
-  const decimal=1/prob;
-  check('Odds range',decimal<cfg.minOdds||decimal>cfg.maxOdds?'Odds range':null);
+  check('Odds range',1/prob<cfg.minOdds||1/prob>cfg.maxOdds?'Odds range':null);
   check('Spread',row.spread==null?'Spread unavailable':row.spread>cfg.spread?'Maximum spread':null);
   check('Total',row.total==null?'Game total unavailable':row.total<cfg.total?'Minimum total':null);
+  const w=row.weather;
+  if(passingGame.has(stat)){
+    check('Weather',cfg.weather&&over&&badWeather(w)?'Wind or rain':null);
+    if(badWeather(w))leg.flags.push('Forecast '+[w.wind!=null?w.wind+' mph wind':'',w.rain?w.rain+' in rain':''].filter(Boolean).join(', '));
+  }
   check('Availability',row.out?'Player listed out':null);
-  if(row.uncertain)leg.flags.push(row.uncertain);
+  if(row.status){
+    leg.flags.push(row.status+': re-check after inactives');
+    if(Number.isFinite(start)&&start-context.now<=90*60000)leg.flags.push('Inactives are out now');
+  }
   if(!row.injuryReport)leg.flags.push('Injury report unavailable');
   const captured=Date.parse(leg.capturedAt);
   if(!Number.isFinite(captured)||captured>context.now)leg.flags.push('Quote time unknown');
   else if(context.now-captured>90*60000)leg.flags.push('Stale quote');
-
-  // Form: every game this season, the last five, and home or away.
-  const season=record(form.season,leg.line,side), last5=record(form.last5,leg.line,side), venue=record(form.venue,leg.line,side);
   check('Games played',form.season.length<cfg.sample?'Too few games played':null);
-  if(!checks['Games played'])check('Hit rate',season.rate==null||last5.rate==null||season.rate<cfg.hit/100||last5.rate<cfg.hit/100?'Season or L5 hit rate':null);
+
+  // 3 and 4: role edge, and the defense must be weak (or strong for an Under) against that role.
+  let matchup=0;
+  const d=row.defense;
+  if(d?.rank){
+    check('Defense vs role',favorable(d.rank,over)?null:'Defense rank vs role');
+    if(favorable(d.rank,over)){
+      matchup=1+clamp(direction*(d.value-d.league)/Math.max(Math.abs(d.league),d.scale||1),0,1);
+      leg.reasons.push(row.opp+' ranks '+rankText(d.rank)+' vs '+d.role+' ('+d.label+')');
+    }
+  }else check('Defense vs role','Defense sample vs role');
+
+  // 5: line against the projection.
+  let gap=null;
+  if(!td){
+    check('Projection',row.projection==null?'Projection unavailable':null);
+    if(row.projection!=null){
+      gap=direction*(row.projection-leg.line);
+      check('Line vs projection',gap<0?'Line vs projection':null);
+      if(gap>=0)leg.reasons.push('Line '+leg.line+' vs projection '+format(row.projection)+' (L5 '+format(row.recentAvg)+(row.usage!=null?', usage '+format(row.usage):'')+')');
+    }
+  }
+
+  // 6: hit rates on the last 8, venue, reads, and agreement with the role edge.
+  const last8=record(form.last8,leg.line,side), season=record(form.season,leg.line,side), venue=record(form.venue,leg.line,side);
+  if(!checks['Games played'])check('Hit rate',last8.rate==null||last8.rate<cfg.hit/100?'Last 8 hit rate':null);
+  if(last8.n)leg.reasons.push('Cleared '+leg.line+' in '+last8.hits+' of '+last8.n+' (last 8)');
   if(venue.n>=3){
     check('Venue split',venue.rate<.5?'Home or away split':null);
     if(!checks['Venue split'])leg.reasons.push((row.home?'Home':'Away')+' '+percent(venue.rate)+' ('+venue.hits+'/'+venue.n+')');
   }
-
-  // Value: the hit rate, shrunk toward the price by sample size, against the price's implied chance.
-  const fair=blended(season.hits,season.n,prob), edge=fair==null||prob==null?null:fair-prob;
-  if(edge!=null){
-    check('Value',edge<0?'Hit rate below the price':null);
-    if(edge>=0)leg.reasons.push('Hit '+season.hits+'/'+season.n+' vs '+percent(prob)+' implied');
-  }
-  let gap=null;
-  if(yards){
-    check('Season average',avg==null?'Season average unavailable':null);
-    gap=avg!=null&&Number.isFinite(leg.line)?direction*(avg-leg.line):null;
-    if(gap!=null){
-      check('Line vs average',gap<0?'Line vs season average':null);
-      if(gap>=0)leg.reasons.push('Line '+leg.line+' vs avg '+format(avg));
-    }
+  if(!td&&reads.length){
     const forSide=reads.filter(x=>direction*(x-leg.line)>0).length, against=reads.filter(x=>direction*(x-leg.line)<0).length;
-    if(reads.length)check('Reads',against>forSide?'Reads favor the other side':null);
+    check('Reads',against>forSide?'Reads favor the other side':null);
     leg.readsFor=forSide;leg.readsAgainst=against;
   }
+  if(d?.rank&&favorable(d.rank,over))check('Hit rate vs role',last8.rate!=null&&last8.rate<.5?'Hit rate conflicts with role edge':null);
 
-  // Matchup: what this defense allows to the player's role (deep, intermediate or short receiver, tight end, back,
-  // quarterback). The opposite third of the league removes the leg; the favorable third adds to its score.
-  let matchup=0;
-  const r=row.roleRank;
-  if(r){
-    check('Defense vs role',unfavorable(r,over)?'Defense rank vs role':null);
-    if(favorable(r,over)){
-      matchup=1+clamp(direction*(row.roleAllowed-row.roleLeague)/Math.max(row.roleLeague,1),0,1);
-      leg.reasons.push(row.opp+' ranks '+rankText(r)+' in '+(yards?'yards':'TDs')+' allowed to '+row.role);
-    }
-  }else check('Defense vs role','Defense sample vs role');
+  // 10: value after shrinking toward 50%.
+  const chance=shrunk(season,PRIOR,td&&prob!=null?prob:.5), edge=chance==null||prob==null?null:chance-prob;
+  if(edge!=null){
+    check('Value',edge<0?'Shrunk hit rate below the price':null);
+    if(edge>=0)leg.reasons.push('Shrunk chance '+percent(chance)+' vs '+percent(prob)+' implied');
+  }
 
-  // Context: efficiency allowed, game script, team total, weather, usage trend, red-zone work, teammates out.
+  // 7: usage. A part-time snap share removes yardage and volume Overs.
+  if(!td&&player.pos!=='QB'&&row.snaps!=null){
+    check('Snap share',over&&row.snaps<.5?'Snap share under 50%':null);
+    if(row.snaps>=.5)leg.reasons.push('Snaps '+percent(row.snaps)+' L3');
+  }
+
+  // 8: context.
   let impact=0;
-  const e=row.epaRank;
-  if(e){
-    impact+=clamp(direction*(e.rank/e.total-.5),-.5,.5);
-    if(direction*(e.rank/e.total-.5)>.15)leg.reasons.push(row.opp+' '+row.epaKind+' defense '+rankText(e)+' in EPA allowed');
+  const lift=(x,limit,text)=>{const v=clamp(x,-limit,limit);impact+=direction*v;if(text&&direction*v>=limit/3)leg.reasons.push(text);};
+  if(row.script!=null){
+    // Positive script means the team is expected to lead: more runs late, fewer throws.
+    const s=row.script/14;
+    lift(rushingGame.has(stat)?s:passingGame.has(stat)?-s:0,.4,(row.script>0?player.team+' favored by '+format(row.script):player.team+' underdog by '+format(-row.script))+' (game script)');
   }
-  if(row.teamSpread!=null){
-    // Favorites lean on the run late; underdogs throw. TDs follow the team's implied points.
-    const fav=-row.teamSpread;
-    const script=stat==='Rushing'?fav/14:stat==='Receiving'||stat==='Passing'?-fav/14:0;
-    impact+=direction*clamp(script,-.4,.4);
-    if(direction*script>=.15)leg.reasons.push(row.player.team+' '+(fav>0?'favored by '+format(fav):'underdog by '+format(-fav)));
+  if(row.teamTotal!=null)lift((row.teamTotal-22.5)/(td?10:25),.5,'Team total '+format(row.teamTotal));
+  if(row.model)leg.reasons.push('Model: '+player.team+' '+percent(row.model.p)+' to win');
+  if(row.proe!=null){
+    const p=passingGame.has(stat)?row.proe:rushingGame.has(stat)?-row.proe:0;
+    lift(p*4,.3,player.team+' pass rate over expected '+signed(row.proe*100)+'%');
   }
-  if(row.teamTotal!=null){
-    const lift=(row.teamTotal-22.5)/(yards?20:10);
-    impact+=direction*clamp(lift,-.5,.5);
-    if(!yards||direction*lift>=.1)leg.reasons.push('Team total '+format(row.teamTotal));
-  }
-  if(row.model){
-    leg.reasons.push('Model: '+row.player.team+' '+percent(row.model.p)+' to win');
-    if(stat==='Rushing'||!yards)impact+=direction*clamp((row.model.p-.5)*.6,-.2,.2);
-  }
-  if(row.wind!=null&&row.wind>=15&&(stat==='Passing'||stat==='Receiving')){
-    impact-=direction*.4;leg.flags.push('Wind '+row.wind+' mph');
-  }
-  if(row.temp!=null&&row.temp<=25&&(stat==='Passing'||stat==='Receiving')){
-    impact-=direction*.15;leg.flags.push(row.temp+'°F');
+  if(row.pace!=null&&(volume||yards))lift((row.pace-row.leaguePace)/12,.3,'Pace '+format(row.pace)+' plays per game');
+  if(w){
+    if(w.roof==='dome')leg.reasons.push('Dome');
+    else if(passingGame.has(stat)){
+      if((w.wind??0)>=10&&(w.wind??0)<15)lift(-.15,.15);
+      if(w.temp!=null&&w.temp<=25){lift(-.15,.15);leg.flags.push(w.temp+'°F');}
+      if((w.rainChance??0)>=60&&!badWeather(w))lift(-.1,.1);
+      if(w.roof==='retractable')leg.flags.push('Retractable roof');
+    }
   }
   if(row.share!=null&&row.recentShare!=null&&row.share>0){
-    const trend=(row.recentShare-row.share)/row.share;
-    impact+=direction*clamp(trend,-.3,.3);
-    if(Math.abs(trend)>=.15)leg.reasons.push(row.shareLabel+' L3 '+percent(row.recentShare)+' vs '+percent(row.share)+' season');
+    const t=(row.recentShare-row.share)/row.share;
+    impact+=direction*clamp(t,-.3,.3);
+    if(Math.abs(t)>=.15)leg.reasons.push(row.shareLabel+' L3 '+percent(row.recentShare)+' vs '+percent(row.share)+' season');
   }
-  if(!yards&&row.redZone!=null){
-    impact+=direction*clamp((row.redZone-1)/3,-.3,.4);
-    leg.reasons.push(format(row.redZone)+' red-zone touches per game');
+  if(td){
+    if(row.rzShare!=null){impact+=direction*clamp((row.rzShare-.2)*2,-.3,.4);leg.reasons.push('Red-zone share '+percent(row.rzShare));}
+    if(stat==='First TD'&&row.firstRate!=null){impact+=direction*clamp(row.firstRate-.5,-.3,.3);leg.reasons.push(player.team+' scored first in '+percent(row.firstRate));}
   }
-  if(stat==='First TD'&&row.firstRate!=null){
-    impact+=direction*clamp(row.firstRate-.5,-.3,.3);
-    leg.reasons.push(row.player.team+' scored first in '+percent(row.firstRate)+' of games');
+  if(row.ryoe!=null&&rushingGame.has(stat)){
+    lift(row.ryoe/2,.4,(row.ryoe>=0?'Rush yards over expected ':'Rush yards under expected ')+signed(row.ryoe)+' per carry (player and defense)');
+  }
+  if(row.cbRoom!=null&&catchMarkets.has(stat)&&player.pos!=='RB'){
+    lift((row.cbRoom-row.cbLeague)/4,.3,row.opp+' starting corners allow '+format(row.cbRoom)+' yards per target');
+  }
+  if(row.cbOut?.length&&catchMarkets.has(stat)&&player.pos==='WR'){
+    lift(.2*row.cbOut.length,.4);leg.reasons.push(row.opp+' CB out: '+row.cbOut.join(', '));
+  }
+  if(row.qbOut&&player.pos!=='QB'&&passingGame.has(stat)){lift(-.4,.4);leg.flags.push('Starting QB '+row.qbOut+' out');}
+  if(row.olOut?.length&&(passingGame.has(stat)||rushingGame.has(stat))){
+    lift(-.12*row.olOut.length,.4);leg.flags.push(row.olOut.length+' starting OL out');
   }
   for(const absent of row.absences){
     leg.reasons.push(absent.name+' out'+(absent.delta==null?'':' · '+signed(absent.delta)+' in '+absent.n+' games without'));
-    if(absent.delta!=null)impact+=clamp(direction*absent.delta/Math.max(avg||1,1),-.3,.3);
+    if(absent.delta!=null)impact+=clamp(direction*absent.delta/Math.max(row.avg||1,1),-.3,.3);
   }
-  if(row.uncertain)impact-=.25;
+  if(row.rest!=null){
+    if(row.rest<=5){impact-=.1;leg.flags.push('Short week ('+row.rest+' days)');}
+    else if(row.rest>=13){impact+=.1;leg.reasons.push('Off a bye');}
+  }
+  if(row.status)impact-=.25;
 
-  leg.form={season,last5,venue,last3:record(form.last3,leg.line,side),home:record(form.home,leg.line,side),away:record(form.away,leg.line,side)};
-  leg.avg=avg;
-  leg.edge=edge;
+  leg.form={season,last8,venue,last5:record(form.last5,leg.line,side),home:record(form.home,leg.line,side),away:record(form.away,leg.line,side)};
+  leg.avg=row.avg;leg.recentAvg=row.recentAvg;leg.projection=row.projection;leg.edge=edge;leg.chance=chance;
   leg.checks=checks;
-  leg.context={spread:row.spread,teamSpread:row.teamSpread,total:row.total,teamTotal:row.teamTotal,role:row.role,roleRank:r,
-    epaRank:e,model:row.model,wind:row.wind,temp:row.temp,share:row.share,recentShare:row.recentShare,absences:row.absences};
+  leg.context={role:row.role,defense:d?{rank:d.rank,value:d.value,league:d.league,label:d.label}:null,spread:row.spread,script:row.script,total:row.total,
+    teamTotal:row.teamTotal,model:row.model,weather:w||null,proe:row.proe,pace:row.pace,snaps:row.snaps,share:row.share,recentShare:row.recentShare,
+    rzShare:row.rzShare,ryoe:row.ryoe,cbRoom:row.cbRoom,cbOut:row.cbOut,qbOut:row.qbOut,olOut:row.olOut,rest:row.rest,absences:row.absences,status:row.status};
   leg.cut=Object.values(checks).find(Boolean)||null;
   if(!leg.cut){
     const value=clamp((edge||0)*5,0,1)+(gap==null?0:clamp(gap/Math.max(Math.abs(leg.line),1),0,1));
-    leg.score=cfg.weights.form*mean([season.rate,last5.rate,venue.n>=3?venue.rate:null].filter(x=>x!=null))+cfg.weights.matchup*matchup+
+    leg.score=cfg.weights.form*mean([last8.rate,shrunk(season),venue.n>=3?venue.rate:null].filter(x=>x!=null))+cfg.weights.matchup*matchup+
       cfg.weights.line*value+cfg.weights.context*impact;
   }
   return leg;
@@ -163,4 +213,25 @@ export function evaluate(rows,cfg,{now=Date.now(),taken=new Set()}={}){
     }
   }
   return {eligible,cuts,screened};
+}
+
+// 9: same-team correlation. A QB's passing Over and his receiver's Over rise and fall together; opposite sides fight.
+export function correlation(a,b){
+  if(a.game!==b.game||a.team!==b.team||a.player===b.player)return 0;
+  const qb=x=>qbMarkets.has(x.stat), catcher=x=>catchMarkets.has(x.stat);
+  if(!(qb(a)&&catcher(b)||qb(b)&&catcher(a)))return 0;
+  return a.side===b.side?1:-1;
+}
+export const ticketRules=cfg=>({
+  sameGame:(leg,inGame)=>cfg.stacks&&inGame.every(x=>correlation(leg,x)>0),
+  allow:(leg,ticket)=>!tdMarkets.has(leg.stat)||ticket.filter(x=>tdMarkets.has(x.stat)).length<cfg.tdMax
+});
+export function warnings(ticket){
+  const out=[];
+  for(let i=0;i<ticket.length;i++)for(let j=i+1;j<ticket.length;j++){
+    const c=correlation(ticket[i],ticket[j]), a=ticket[i], b=ticket[j];
+    if(c<0)out.push('Negative correlation: '+a.name+' '+a.side+' '+a.stat+' with '+b.name+' '+b.side+' '+b.stat+'. One leg needs the passing game to go well and the other needs it to go badly.');
+    if(c>0)out.push('Correlated stack: '+a.name+' and '+b.name+' tend to hit or miss together. The chance estimates assume independent legs, so they understate how often both hit and overstate how often exactly one does.');
+  }
+  return out;
 }

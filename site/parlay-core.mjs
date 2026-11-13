@@ -29,10 +29,13 @@ export const format=(x,n=1)=>Number(x).toFixed(n);
 export const signed=x=>(x>0?'+':'')+format(x);
 export const percent=x=>format(x*100,0)+'%';
 
-export function buildTicket(eligible,cfg,{locked=[],avoid=new Set(),excluded=new Set()}={}){
+// rules (optional, per sport): sameGame(leg,legsInThatGame) may allow a second leg in a game while one leg per game is
+// on (NFL correlated stacks); allow(leg,ticket) can refuse a leg (NFL touchdown limit).
+export function buildTicket(eligible,cfg,{locked=[],avoid=new Set(),excluded=new Set(),rules={}}={}){
   const available=new Map(eligible.map(leg=>[legKey(leg),leg]));
   const ticket=[], players=new Set(), games=new Set(), counts=new Map();
-  const fits=leg=>!players.has(leg.player)&&(!cfg.perGame||!games.has(leg.game));
+  const fits=leg=>!players.has(leg.player)&&(!cfg.perGame||!games.has(leg.game)||!!rules.sameGame?.(leg,ticket.filter(x=>x.game===leg.game)))&&
+    (rules.allow?rules.allow(leg,ticket):true);
   const add=leg=>{
     ticket.push(leg);players.add(leg.player);games.add(leg.game);
     counts.set(leg.stat,(counts.get(leg.stat)||0)+1);
@@ -56,10 +59,11 @@ export function buildTicket(eligible,cfg,{locked=[],avoid=new Set(),excluded=new
   return {ticket,invalidLock:false};
 }
 
-export function ticketMath(ticket){
+// prior: wins and losses added to each leg's season record before multiplying (GOING UP 5, GOING LONG 8).
+export function ticketMath(ticket,prior=5){
   const combine=fn=>ticket.reduce((p,leg)=>p*fn(leg),1);
   const quoted=combine(leg=>implied(leg.price));
   const naive=combine(leg=>leg.form.season.rate);
-  const adjusted=combine(leg=>(leg.form.season.hits+5)/(leg.form.season.n+10));
+  const adjusted=combine(leg=>(leg.form.season.hits+prior)/(leg.form.season.n+2*prior));
   return {quoted,naive,adjusted,decimal:1/quoted,sameGame:new Set(ticket.map(leg=>leg.game)).size<ticket.length};
 }
