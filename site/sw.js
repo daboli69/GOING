@@ -1,8 +1,9 @@
 // Offline support and faster repeat visits. scripts/build.mjs fills in VERSION and CORE; under `npm start` (unbuilt
 // site/) the app does not register this worker at all.
-//   Pages:            network first, so a deploy shows up at once; the saved copy (or the app shell) when offline.
+//   Pages:            network first, checked with the server every time (GitHub Pages otherwise lets the browser reuse a
+//                     page for 10 minutes), so a deploy shows up on the next load; the saved copy when offline.
 //   Code (?v=…):      cache first. Each build gets new URLs, so a cached file is never stale.
-//   Data (data/*):    network first, saved copy when offline. Only the newest 80 files are kept.
+//   Data (data/*):    network first, also checked with the server every time; saved copy when offline. Newest 80 kept.
 //   Fonts and brand:  saved copy at once, refreshed in the background for the next visit.
 // Other sites (ESPN, NHL and MLB images and scores) go straight to the network and the browser's own cache.
 const VERSION='__VERSION__';
@@ -25,7 +26,9 @@ async function trim(name,limit){
 }
 async function networkFirst(req,name,fallback){
   try{
-    const res=await fetch(req);
+    // 'no-cache' revalidates with the server (a cheap 304 when nothing changed) instead of trusting the browser cache.
+    // A navigation request cannot be copied with new options, so pages are fetched by URL.
+    const res=await fetch(req.mode==='navigate'?req.url:req,{cache:'no-cache',credentials:'same-origin'});
     if(res.ok){const c=await caches.open(name);await c.delete(req);await c.put(req,res.clone());if(name===DATA)trim(DATA,DATA_LIMIT);}
     return res;
   }catch(err){
