@@ -2,6 +2,10 @@ import { footers,nflTeams,nhlColors,mlbTeams,sections,BASE } from './config.mjs'
 import {round,pct} from './math.mjs';
 export const esc=(v='')=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const $=q=>document.querySelector(q);
+export function sportWordmark(section,alt=section.name){
+  const word=section.word.toLowerCase();
+  return `<img class="going-wordmark sport-wordmark" src="${BASE}brand/going-${word}.svg" width="912" height="100" alt="${esc(alt)}">`;
+}
 export const dateKey=(d=new Date())=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
 export const today=dateKey();
 export const dateAdd=(d,n)=>new Date(Date.parse(d+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);

@@ -1,6 +1,6 @@
 import {menus,routes,sections,BASE,href,viewDefaults,viewSetup} from './config.mjs';
 import {trackerLoad,trackerPage,trackerAction} from './tracker.mjs';
-import {$,current as S,today,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus} from './ui.mjs';
+import {$,current as S,today,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus,sportWordmark} from './ui.mjs';
 import {ESPN,sportPath,scoreboard,compactInjuries} from './feeds.mjs';
 import {nflPage,nflPlayer,nflAction,nflResult} from './nfl.mjs';
 import {nbaPage,nbaPlayer,nbaAction,nbaResult} from './nba.mjs';
@@ -31,7 +31,7 @@ function header(){
   const sportMenu=Object.entries(sections).map(([k,x])=>x.home?['GOING '+x.word+' · '+x.league,x.home]:null).filter(Boolean);
   const nav=sec&&menus[s]?Object.entries(menus[s]).map(([k,items])=>menuHTML(k,items)).join('')+menuHTML('Sports',sportMenu):
     Object.entries(sections).filter(([,x])=>x.home).map(([k,x])=>`<a class="navbutton" href="${href(x.home)}">${x.league}</a>`).join('');
-  $('#site-header').innerHTML=`<a class="brand" href="${href('')}" aria-label="${sec?`${esc(sec.name)} | `:''}GOING home">${sec?`<span class="brand-chip">${sec.league}</span>`:''}<span class="brand-type"><img class="going-wordmark" src="${href('brand/going-wordmark.svg')}" width="461" height="100" alt="">${sec?`<em>${sec.word}</em>`:''}</span></a><nav class="nav" aria-label="${sec?esc(sec.name)+' tools':'Sports'}">${nav}<a class="navbutton ${S.route.id==='tracker'?'active':''}" href="${href('tracker.html')}">Tracker</a><a class="navbutton ${S.route.id==='myplays'?'active':''}" href="${href('plays.html')}">My Plays</a></nav><div class="head-actions"><button type="button" class="icon" aria-label="Switch light/dark theme" title="Switch light/dark theme" ${action('theme','')}>${document.documentElement.dataset.theme==='light'?'☾':'☼'}</button></div>`;
+  $('#site-header').innerHTML=`<a class="brand" href="${href('')}" aria-label="${sec?`${esc(sec.name)} | `:''}GOING home">${sec?`<span class="brand-chip">${sec.league}</span>`:''}${sec?sportWordmark(sec,''):`<img class="going-wordmark brand-main" src="${href('brand/going-wordmark.svg')}" width="461" height="100" alt="">`}</a><nav class="nav" aria-label="${sec?esc(sec.name)+' tools':'Sports'}">${nav}<a class="navbutton ${S.route.id==='tracker'?'active':''}" href="${href('tracker.html')}">Tracker</a><a class="navbutton ${S.route.id==='myplays'?'active':''}" href="${href('plays.html')}">My Plays</a></nav><div class="head-actions"><button type="button" class="icon" aria-label="Switch light/dark theme" title="Switch light/dark theme" ${action('theme','')}>${document.documentElement.dataset.theme==='light'?'☾':'☼'}</button></div>`;
 }
 function render(options={}){
   if(!S.route)return;

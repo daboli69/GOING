@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 912 100">
+  <style>
+    .letters { fill: #F5F8FA; }
+    .accent { fill: #FF6B6B; }
+    @media (prefers-color-scheme: light) {
+      .letters { fill: #12203A; }
+      .accent { fill: #B91C1C; }
+    }
+  </style>
+  <defs>
+    <g id="g">
+      <path class="letters" d="M 102 30 H 78 C 76 24 68 20 55 20 C 34 20 22 33 22 50 C 22 68 34 80 55 80 C 65 80 75 78 81 73 V 60 H 104 V 83 C 94 95 77 100 55 100 C 22 100 0 80 0 50 C 0 20 22 0 55 0 C 82 0 100 11 102 30 Z"/>
+      <path class="accent" d="M 52 45 H 104 V 61 H 41 Z"/>
+    </g>
+  </defs>
+  <use href="#g"/>
+  <path class="letters" fill-rule="evenodd" transform="translate(116)" d="M 51 0 C 82 0 102 20 102 50 C 102 80 82 100 51 100 C 20 100 0 80 0 50 C 0 20 20 0 51 0 Z M 51 21 C 33 21 22 32 22 50 C 22 68 33 79 51 79 C 69 79 80 68 80 50 C 80 32 69 21 51 21 Z"/>
+  <path class="letters" transform="translate(232)" d="M 0 2 H 22 V 98 H 0 Z"/>
+  <path class="letters" transform="translate(268)" d="M 0 2 H 21 L 68 62 V 2 H 89 V 98 H 68 L 21 38 V 98 H 0 Z"/>
+  <use href="#g" x="357"/>
+  <g class="accent">
+    <path fill-rule="evenodd" transform="translate(498)" d="M 0 2 H 25 L 46 39 L 67 2 H 92 L 57 61 V 98 H 35 V 61 Z"/>
+    <path fill-rule="evenodd" transform="translate(593)" d="M 37 2 H 61 L 98 98 H 75 L 68 78 H 30 L 23 98 H 0 Z M 37 59 H 61 L 49 26 Z"/>
+    <path fill-rule="evenodd" transform="translate(703)" d="M 0 2 H 47 C 70 2 84 15 84 35 C 84 51 76 62 64 66 L 87 98 H 61 L 41 69 H 22 V 98 H 0 Z M 22 22 V 49 H 45 C 56 49 62 44 62 35 C 62 27 56 22 45 22 Z"/>
+    <path fill-rule="evenodd" transform="translate(803)" d="M 0 2 H 41 C 75 2 96 21 96 50 C 96 79 75 98 41 98 H 0 Z M 22 23 V 77 H 40 C 61 77 74 68 74 50 C 74 32 61 23 40 23 Z"/>
+  </g>
+</svg>

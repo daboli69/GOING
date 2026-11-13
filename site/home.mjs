@@ -1,6 +1,6 @@
 // GOING landing: one door per sport, each carrying today's real slate and model numbers.
 import {sections,menus,href} from './config.mjs';
-import {esc,get,dataURL,pct,dateLabel,today} from './ui.mjs';
+import {esc,get,dataURL,pct,dateLabel,today,sportWordmark} from './ui.mjs';
 
 let summary={};
 export async function homeLoad(){
@@ -34,7 +34,7 @@ function facts(s){
 }
 export function homePage(){
   const doors=Object.entries(sections).map(([s,x])=>{
-    const name=`<span>GOING</span> <b>${esc(x.word)}</b>`;
+    const name=sportWordmark(x);
     if(!x.home)return `<article class="door soon" data-door="${s}"><h2 class="door-name">${name}</h2><p class="door-sport">${esc(x.sport)} · ${esc(x.league)}</p><p class="door-soon">Coming soon. Baseball dashboards and models are not built yet.</p></article>`;
     return `<article class="door" data-door="${s}"><h2 class="door-name"><a href="${href(x.home)}">${name}</a></h2><p class="door-sport">${esc(x.sport)} · ${esc(x.league)}</p>`+
       `<dl class="door-facts">${facts(s)||'<div><dt>Today</dt><dd class="muted">No snapshot yet</dd></div>'}</dl><nav class="door-links" aria-label="${esc(x.name)} shortcuts">${quick[s].map(t=>link(s,t)).join('')}</nav></article>`;
