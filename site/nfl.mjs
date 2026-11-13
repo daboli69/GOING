@@ -1,6 +1,9 @@
 import { nflTeams } from './config.mjs';
 import {total,mean,round,pct,div,rate,heat,american,implied,signed,seasonLimit,poissonTail} from './math.mjs';
-import {current as S,esc,box,grid,card,metric,logo,color,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,notes,person,market,basePlay,propOdds,gameDay,final,local,dialog,badge,playCheck} from './ui.mjs';
+import {current as S,esc,box,grid,card,metric,logo,color,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,notes,person,market,basePlay,propOdds,gameDay,final,local,dialog,badge,playCheck,propQuotes} from './ui.mjs';
+import {allowedRanks} from './parlay-core.mjs';
+import {markets as parlayMarkets,yardMarkets} from './nfl-parlay-engine.mjs';
+import {nflParlayPage,nflParlayAction} from './nfl-parlays.mjs';
 
 const names=Object.keys(nflTeams).sort((a,b)=>nflTeams[a][0].localeCompare(nflTeams[b][0]));
 let statsMemo={archive:null,week:null,value:new Map()};
@@ -285,6 +288,115 @@ function endzone(){
     table(['#','Player','Opp','Upside','Longest TD','20+ / G','40+ / G','ADOT','Opp 20+ / G'],rows.slice(0,S.f.more?250:48).map(({p,long,explosive,big,air,allow,opp,value},i)=>[i+1,person(p),team(opp),cell(pct((rows.length-i)/rows.length),heat(value,.55,.22)),long,round(explosive,2),round(big,2),round(air),round(allow)]),{sort:'endzone',cls:'compact'})+
     tools(btn(S.f.more?'Show less':'Show all','flip','more'))+box('Winners',table(['Date','Matchup','Player','Longest TD'],history.slice(0,40).map(([g,p])=>[esc(g.date),versus(g),person(getPlayer(p[9],p[8]),false),tdDist(p)+' yd']),{sort:'endzonehistory'}));
 }
+// ---- Suggested Parlays: one row per priced player prop, with everything nfl-parlay-engine.mjs scores. ----
+const nflName=x=>String(x||'').normalize('NFKD').replace(/[^\p{L}\p{N}]/gu,'').toLowerCase().replace(/(jr|sr|ii|iii|iv|v)$/,'');
+// Schedule rows give an Eastern date and clock; turn them into an exact kickoff instant.
+export function kickoff(date,time){
+  if(!date||!/^\d{1,2}:\d{2}$/.test(time||''))return null;
+  const [y,m,d]=date.split('-').map(Number),[hh,mm]=time.split(':').map(Number),guess=Date.UTC(y,m-1,d,hh,mm);
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
+    .formatToParts(new Date(guess)).map(x=>[x.type,x.value]));
+  const local=Date.UTC(+parts.year,+parts.month-1,+parts.day,+parts.hour%24,+parts.minute);
+  return new Date(guess-(local-guess)).toISOString();
+}
+const valueKey={Receiving:'recY',Rushing:'rushY',Passing:'passY','Anytime TD':'td','First TD':'td'};
+const plural={QB:'QBs',RB:'RBs',WR:'WRs',TE:'TEs'};
+// Receivers split by average depth of target, so a defense that gives up deep shots is told apart from one beaten underneath.
+function receivingRole(p){
+  if(p.pos!=='WR')return plural[p.pos]||null;
+  const adot=div(total(p.logs,x=>x.air),total(p.logs,x=>x.targets));
+  return adot==null?'WRs':adot>=13?'deep WRs':adot>=9?'intermediate WRs':'short WRs';
+}
+const roleFor=(p,m)=>m==='Receiving'?receivingRole(p):m==='Passing'?(p.pos==='QB'?'QBs':null):plural[p.pos]||null;
+let parlayMemo={};
+// League tables for the slate's week: every team's players, and what each defense allows by role and market.
+function league(){
+  if(parlayMemo.archive===S.data&&parlayMemo.week===S.week&&parlayMemo.year===S.year)return parlayMemo.league;
+  const byTeam=new Map(names.map(t=>[t,footballPlayers(t)]));
+  const allowed={},games={};
+  for(const t of names)games[t]=stats(t,true).gp;
+  for(const [t,players] of byTeam)for(const p of players)for(const m of parlayMarkets){
+    const role=roleFor(p,m);if(!role)continue;
+    for(const x of p.logs){
+      const cell=((allowed[x.opponent]??={})[m+'|'+role]??={sum:0,n:0});
+      cell.sum+=x[valueKey[m]]||0;cell.n++;
+    }
+  }
+  const tables={};
+  // Keys are market|role, e.g. "Receiving|deep WRs".
+  for(const key of new Set(Object.values(allowed).flatMap(o=>Object.keys(o)))){
+    const perGame=names.filter(t=>games[t]).map(t=>[t,(allowed[t]?.[key]?.sum||0)/games[t]]);
+    tables[key]={ranks:allowedRanks(perGame),perGame:new Map(perGame),league:mean(perGame,x=>x[1]),
+      perPlayer:new Map(names.map(t=>{const c=allowed[t]?.[key];return [t,c?.n?c.sum/c.n:null];}))};
+  }
+  const epa=kind=>allowedRanks(names.filter(t=>games[t]).map(t=>{const x=scheme(t,true);return [t,mean((kind==='pass'?x.pass:kind==='run'?x.run:x.p).filter(r=>r[17]!=null),r=>r[17])];}));
+  const value={byTeam,tables,epa:{pass:epa('pass'),run:epa('run'),all:epa('all')}};
+  parlayMemo={archive:S.data,week:S.week,year:S.year,league:value};
+  return value;
+}
+export function nflParlayData(quotes=S.odds){
+  const key=[S.data,S.week,S.year,quotes,S.injuries,S.games,S.models];
+  if(parlayMemo.dataKey&&parlayMemo.dataKey.every((x,i)=>x===key[i]))return parlayMemo.data;
+  const L=league(), schedule=new Map(allGames().map(g=>[g.id,g])), rows=[], roster=new Map();
+  const forecasts=new Map((S.models?.games||[]).map(x=>[x.game_id,x.forecast?.champion]));
+  for(const g of S.games){
+    const iso=kickoff(g.date,g.time), game={...g,iso};
+    const indoor=/dome|closed/i.test(g.roof||'');
+    for(const t of [g.a,g.h]){
+      const home=g.h===t, opp=home?g.a:g.h, players=L.byTeam.get(t)||[];
+      const teamGames=pool(t).map(x=>x.id), recentGames=new Set(teamGames.slice(-3));
+      const teamSpread=g.spread==null?null:home?-g.spread:g.spread;
+      const report=S.injuries[teamName(t)]||[];
+      const statusOf=name=>report.find(x=>nflName(x.name)===nflName(name))?.status;
+      const outNow=x=>/^(out|injured reserve|suspen|physically unable|pup|non-football)/i.test(x||'');
+      const usage=p=>mean(p.logs,x=>x.targets+x.rush);
+      const missing=report.filter(x=>outNow(x.status)).flatMap(x=>{
+        const mate=players.find(p=>nflName(p.name)===nflName(x.name));
+        if(!mate||usage(mate)<4||mate.logs.filter(r=>recentGames.has(r.game)).length<2)return [];
+        return [{name:mate.name,played:new Set(mate.logs.map(r=>r.game))}];
+      });
+      const teamTotals=k=>new Map(teamGames.map(id=>[id,total(players,p=>p.logs.find(r=>r.game===id)?.[k]||0)]));
+      const targets=teamTotals('targets'), carries=teamTotals('rush');
+      const model=forecasts.get(g.id);
+      const s=stats(t);
+      for(const p of players){
+        const status=statusOf(p.name);
+        for(const m of parlayMarkets){
+          const matches=propQuotes(p,m,quotes);
+          if(!matches.length)continue;
+          const role=roleFor(p,m), table=role?L.tables[m+'|'+role]:null;
+          const k=valueKey[m], values=p.logs.map(x=>x[k]||0), avg=mean(values);
+          const venueValues=p.logs.filter(x=>(schedule.get(x.game)?.h===t)===home).map(x=>x[k]||0);
+          const shareKey=m==='Receiving'?'targets':m==='Rushing'?'rush':null, teamCount=shareKey==='targets'?targets:carries;
+          // Share of the team's targets or carries in the games this player played (all of them, and his last three).
+          const share=list=>{if(!shareKey||!list.length)return null;const all=total(list,x=>teamCount.get(x.game)||0);return all?total(list,x=>x[shareKey])/all:null;};
+          const allowedPerPlayer=table?.perPlayer.get(opp);
+          roster.set(p.id,{id:p.id,name:p.name,team:t});
+          for(const quote of matches)rows.push({date:g.date,player:p,game,opp,stat:m,quote,home,avg,
+            form:{season:values,last5:values.slice(-5),last3:values.slice(-3),venue:venueValues,
+              home:p.logs.filter(x=>schedule.get(x.game)?.h===t).map(x=>x[k]||0),away:p.logs.filter(x=>schedule.get(x.game)?.h!==t).map(x=>x[k]||0)},
+            reads:yardMarkets.has(m)?[mean(values.slice(-3)),mean(values.slice(-5)),avg,mean(venueValues),allowedPerPlayer].filter(x=>x!=null):[],
+            role:role||p.pos,roleRank:table?.ranks.get(opp)||null,roleAllowed:table?.perGame.get(opp)??null,roleLeague:table?.league??null,
+            epaRank:L.epa[m==='Rushing'?'run':yardMarkets.has(m)?'pass':'all'].get(opp)||null,epaKind:m==='Rushing'?'run':yardMarkets.has(m)?'pass':'overall',
+            spread:g.spread==null?null:Math.abs(g.spread),teamSpread,total:g.total??null,
+            teamTotal:g.total==null||teamSpread==null?null:g.total/2-teamSpread/2,
+            model:model?.p_home==null?null:{p:home?model.p_home:1-model.p_home,margin:home?model.margin_home:-model.margin_home},
+            wind:indoor?null:g.wind??null,temp:indoor?null:g.temp??null,
+            share:share(p.logs),recentShare:p.logs.length>=5?share(p.logs.slice(-3)):null,shareLabel:shareKey==='targets'?'Target share':'Carry share',
+            redZone:mean(p.logs,x=>x.rz),firstRate:s.gp?s.first.length/s.gp:null,
+            out:outNow(status),uncertain:/questionable|doubtful/i.test(status||'')?status:null,injuryReport:Object.hasOwn(S.injuries,teamName(t)),
+            absences:missing.filter(x=>x.name!==p.name).map(({name,played})=>{
+              const without=p.logs.filter(r=>!played.has(r.game)).map(r=>r[k]||0);
+              return {name,n:without.length,delta:without.length>=2&&avg!=null?mean(without)-avg:null};
+            })});
+        }
+      }
+    }
+  }
+  const data={rows,roster:[...roster.values()],games:S.games};
+  parlayMemo.dataKey=key;parlayMemo.data=data;
+  return data;
+}
 export function nflPlayer(id){
   const p=matchup().map(t=>footballPlayers(t).find(x=>x.id===id)).find(Boolean)||names.map(t=>footballPlayers(t).find(x=>x.id===id)).find(Boolean);
   if(!p)return;
@@ -292,14 +404,15 @@ export function nflPlayer(id){
   dialog(p.name,teamBanner(p.team,p.pos)+tools(market(o?.line==null?'Save '+m:o.line+' '+(o.over||''),basePlay(p,m,undefined,{line:o?.line,odds:o?.over,side:'Over'})))+
     table(['Date','Opp','Rec','Rec Yd','Rush','Rush Yd','Pass Yd','TD','First TD'],[...p.logs].reverse().map(g=>[esc(g.date),team(g.opponent),g.rec,g.recY,g.rush,g.rushY,g.passY,g.td,g.first])),true);
 }
-export function nflAction(act,v){
+export function nflAction(act,v,target){
   if(act==='driveDetail'){
     const [a,h]=matchup();dialog(v,grid(2,[a,h].map(t=>card(team(t),table(['Week','Opponent','Results','Plays','Yards'],opening(t,false,S.f.window,S.f.view).map(x=>[x.g.week,team(x.o),esc(x.drives.join(', ')),x.plays,x.yards]))))),true);return true;
   }
+  if(S.route.id==='nfl-parlays'&&act.startsWith('parlay'))return nflParlayAction(act,v,nflParlayData(),target);
   if(act==='pickplayers'){const [a,h]=matchup();dialog('Pick players',grid(2,[tdPlayers(a),tdPlayers(h)]),true);return true;}
   return false;
 }
-export function nflPage(){return ({td:tdPage,drives:drivesPage,'nfl-preview':nflPreview,'nfl-props':nflProps,'nfl-best':bestNfl,endzone})[S.route.id]();}
+export function nflPage(){return ({'nfl-parlays':()=>nflParlayPage(nflParlayData()),td:tdPage,drives:drivesPage,'nfl-preview':nflPreview,'nfl-props':nflProps,'nfl-best':bestNfl,endzone})[S.route.id]();}
 export function nflResult(p){
   const g=allGames().find(x=>x.id===p.game);
   if(!g||!final(g))return null;

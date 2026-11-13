@@ -38,11 +38,9 @@ function header(){
   const menuHTML=(k,items)=>`<div class="navitem"><button type="button" class="navbutton ${k!=='Sports'&&items.some(([,p])=>p===S.route.path)?'active':''}" aria-expanded="${menu===k}" ${action('menu',k)}>${esc(k)} <small aria-hidden="true">▾</small></button><div class="navmenu" ${menu===k?'':'hidden'}>${items.map(([t,p])=>p?`<a href="${href(p)}" ${S.route.path===p?'aria-current="page"':''}>${esc(t)}</a>`:`<span class="nav-label">${esc(t)}</span>`).join('')}</div></div>`;
   const sportMenu=Object.entries(sections).map(([k,x])=>x.home?['GOING '+x.word+' · '+x.league,x.home]:null).filter(Boolean);
   const nav=sec&&menus[s]?Object.entries(menus[s]).map(([k,items])=>{
-    if(s==='nba'&&k==='Parlays'){
-      const [[title,path]]=items, active=S.route.path===path;
-      const [, [tracker,trackerPath]]=items, tracking=S.route.path===trackerPath;
-      return `<a class="navbutton${active?' active':''}" href="${href(path)}" ${active?'aria-current="page"':''}>${esc(title)}</a><a class="navbutton${tracking?' active':''}" href="${href(trackerPath)}" ${tracking?'aria-current="page"':''}>${esc(tracker)}</a>`;
-    }
+    // Parlay pages sit in the nav bar as direct links rather than a one- or two-item menu.
+    if((s==='nba'||s==='nfl')&&k==='Parlays')return items.map(([title,path])=>{const on=S.route.path===path;
+      return `<a class="navbutton${on?' active':''}" href="${href(path)}" ${on?'aria-current="page"':''}>${esc(title)}</a>`;}).join('');
     return menuHTML(k,items);
   }).join('')+menuHTML('Sports',sportMenu):
     Object.entries(sections).filter(([k,x])=>x.home&&!isCollege(k)).map(([,x])=>`<a class="navbutton" href="${href(x.home)}">${x.league}</a>`).join('')+
@@ -167,13 +165,14 @@ async function load(){
   }
   try{
     const d=S.day,year=s==='nfl'?S.year:seasonFor(s,d);
-    const [,data,dayGames,injuries,odds,lineups]=await Promise.all([need(s),dataFor(s,year),
+    const [,data,dayGames,injuries,odds,lineups,models]=await Promise.all([need(s),dataFor(s,year),
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
       injuriesFor(s),oddsFor(s,d),
-      s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{}]);
+      s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{},
+      id==='nfl-parlays'?get(dataURL('models/nfl.json'),null):null]);
     if(token!==req)return;
     if(s==='nba')S.hoops=year;if(s==='nhl')S.ice=year;
-    S.data=data;S.odds=odds;S.injuries=injuries;S.lineups=lineups;
+    S.data=data;S.odds=odds;S.injuries=injuries;S.lineups=lineups;S.models=models;
     if(s==='nfl'){
       const sched=data.schedule?.filter(g=>+g.id.slice(0,4)===S.year)||[];
       S.week??=sched.find(g=>g.date>=today)?.week??sched.at(-1)?.week??1;
@@ -422,8 +421,8 @@ document.addEventListener('change',e=>{
   if(k==='hideThin'){S.f.hideThin=t.checked;render();return;}
   if(S.route.sport==='mlb'&&M.mlb){const r=M.mlb.input(t);if(r){if(r!=='keep')render();return;}}
   if(t.dataset.yardPrice&&M.mlb){M.mlb.setPrice(t.dataset.yardPrice,t.value);render();return;}
-  if(S.route.id==='nba-parlays'&&t.dataset.parlay){
-    M.nba.action('parlayField',JSON.stringify([t.dataset.parlay,t.type==='checkbox'?t.checked:t.value]),t);
+  if((S.route.id==='nba-parlays'||S.route.id==='nfl-parlays')&&t.dataset.parlay){
+    M[S.route.sport].action('parlayField',JSON.stringify([t.dataset.parlay,t.type==='checkbox'?t.checked:t.value]),t);
     if(t.type!=='number')render();
     return;
   }

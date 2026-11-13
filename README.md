@@ -18,6 +18,27 @@ Each section uses its own accent color and the same dashboard typography, boards
 
 **GOING UP Suggested Parlays.** The builder uses the existing NBA archives, ESPN game lines and injury reports, and captured Kalshi player quotes. It can return a shorter ticket or no ticket when the available data and filters leave too few eligible legs. Combined odds multiply the individual quotes. The adjusted chance uses season win counts plus five wins and five losses per leg before multiplying, with no same-game correlation adjustment. Generated tickets, filter settings, and manually logged results are stored in this browser.
 
+**GOING LONG Suggested Parlays.** The same generator for NFL player props: receiving, rushing and passing yards, anytime TD and first TD, using the public player prices. A leg is removed when it fails any check:
+- the player is listed out
+- too few games played
+- the season or last-five hit rate is below the minimum
+- a losing home or away split (with at least three games)
+- the hit rate, shrunk toward the price by sample size, is below the price's implied chance
+- for yardage props, the line is above the season average or most recent reads point the other way
+- the opponent ranks in the stingiest third of the league against the player's role
+
+Roles split receivers by average depth of target (deep, intermediate and short WRs), plus tight ends, backs and quarterbacks. The legs that pass are ranked on hit rates, how much that defense allows to the role, value against the price, and game context:
+- EPA allowed
+- spread and team total
+- the ensemble model's win chance
+- wind and cold
+- target or carry share trend
+- red-zone touches
+- how often the team scores first
+- how the player did without injured teammates
+
+First TD is off by default because no player scores first often enough to clear a 60% hit rate. Kalshi rarely prices NFL Unders, so most legs are Overs. Tickets and filters are saved in this browser, separately from GOING UP's.
+
 **Parlay Leg Tracker.** Each Pages refresh archives the priced NBA legs the builder can match, including available alternate thresholds and both quoted sides. It records every applicable screening rule, the default ticket's selection, and the first and latest pregame observations for each line and side. Final ESPN box scores grade hits, misses, pushes and confirmed DNPs. Missing final results stay pending. Compare rules by hit rate, hypothetical flat-stake ROI, and the subset where only one rule failed. Results start with the first successful capture. Empty quote feeds cannot be backfilled from box scores.
 
 Two sources feed the site, and neither commits data to `main`.

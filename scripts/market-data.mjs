@@ -62,5 +62,5 @@ export async function publicQuotes(s,games,{onAlternates}={}){
   const rows=all.flatMap(r=>r.status==='fulfilled'?r.value:[]);
   const quotes=chooseQuotes(rows);
   if(s==='nba'&&onAlternates)onAlternates(chooseQuotes(rows,true).map(q=>({...q,capturedAt})));
-  return s==='nba'?quotes.map(q=>({...q,capturedAt})):quotes;
+  return quotes.map(q=>({...q,capturedAt}));
 }

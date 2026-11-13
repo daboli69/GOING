@@ -1,39 +1,15 @@
 import {implied,mean} from './math.mjs';
+import {legKey,clamp,record,allowedRanks,favorable,format,signed,percent,buildTicket,ticketMath} from './parlay-core.mjs';
+export {legKey,record,allowedRanks,buildTicket,ticketMath};
 
 export const markets=['Points','Threes','Rebounds','Assists'];
 export const weights={form:4,matchup:3,line:2,context:1,mix:1};
 export const defaults={legs:6,stats:markets,side:'Both',hit:60,sample:5,spread:6.5,total:0,
   minOdds:1.01,maxOdds:101,perGame:true,skipTickets:true,players:[],games:[],weights};
 
-export const legKey=leg=>[leg.date,leg.game,leg.player,leg.stat,leg.side,leg.line].join('|');
-const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 const active=g=>['FUT','PRE'].includes(g.status);
 const typed=stat=>stat==='Points'||stat==='Threes';
-export function record(values,line,side){
-  if(!Number.isFinite(line))return {hits:0,n:0,pushes:0,rate:null};
-  const hits=values.filter(value=>side==='Over'?value>line:value<line).length;
-  const pushes=values.filter(value=>value===line).length;
-  const n=values.length-pushes;
-  return {hits,n,pushes,rate:n?hits/n:null};
-}
 
-// Rank 1 allows the least. Keep tie boundaries so a tie spanning a cutoff can't qualify.
-export function allowedRanks(entries){
-  const sorted=[...entries].filter(([,value])=>Number.isFinite(value)).sort((a,b)=>a[1]-b[1]);
-  const ranks=new Map();
-  for(let i=0;i<sorted.length;){
-    let end=i+1;
-    while(end<sorted.length&&sorted[end][1]===sorted[i][1])end++;
-    for(const [team] of sorted.slice(i,end))ranks.set(team,{rank:i+1,end,total:sorted.length});
-    i=end;
-  }
-  return ranks;
-}
-const favorable=(rank,over)=>!!rank&&rank.total>=3&&
-  (over?rank.rank>rank.total-Math.floor(rank.total/3):rank.end<=Math.floor(rank.total/3));
-const format=(x,n=1)=>Number(x).toFixed(n);
-const signed=x=>(x>0?'+':'')+format(x);
-const percent=x=>format(x*100,0)+'%';
 
 export function assess(row,side,cfg,context){
   const {quote,player,game,stat,avg,form,reads}=row;
@@ -153,37 +129,4 @@ export function evaluate(rows,cfg,{now=Date.now(),taken=new Set()}={}){
   return {eligible,cuts,screened};
 }
 
-export function buildTicket(eligible,cfg,{locked=[],avoid=new Set(),excluded=new Set()}={}){
-  const available=new Map(eligible.map(leg=>[legKey(leg),leg]));
-  const ticket=[], players=new Set(), games=new Set(), counts=new Map();
-  const fits=leg=>!players.has(leg.player)&&(!cfg.perGame||!games.has(leg.game));
-  const add=leg=>{
-    ticket.push(leg);players.add(leg.player);games.add(leg.game);
-    counts.set(leg.stat,(counts.get(leg.stat)||0)+1);
-  };
-  for(const key of locked){
-    const leg=available.get(key);
-    if(!leg||!fits(leg)||ticket.length>=cfg.legs)return {ticket:[],invalidLock:true};
-    add(leg);
-  }
-  while(ticket.length<cfg.legs){
-    let best, bestScore=-Infinity;
-    for(const leg of eligible){
-      const key=legKey(leg);
-      if(!fits(leg)||excluded.has(key))continue;
-      const score=leg.score-cfg.weights.mix*(counts.get(leg.stat)||0)-(avoid.has(key)?1000:0);
-      if(score>bestScore){best=leg;bestScore=score;}
-    }
-    if(!best)break;
-    add(best);
-  }
-  return {ticket,invalidLock:false};
-}
 
-export function ticketMath(ticket){
-  const combine=fn=>ticket.reduce((p,leg)=>p*fn(leg),1);
-  const quoted=combine(leg=>implied(leg.price));
-  const naive=combine(leg=>leg.form.season.rate);
-  const adjusted=combine(leg=>(leg.form.season.hits+5)/(leg.form.season.n+10));
-  return {quoted,naive,adjusted,decimal:1/quoted,sameGame:new Set(ticket.map(leg=>leg.game)).size<ticket.length};
-}
