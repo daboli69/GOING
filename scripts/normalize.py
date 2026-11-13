@@ -133,6 +133,10 @@ def nba(y):
             if text in t: return key
         if three and has_assist: return "Catch & Shoot"
         return "Inside" if dist<6 else "Jumper"
+    # Opening possessions for the first-basket model: a possession is a run of offensive actions (shots, free throws,
+    # turnovers, offensive rebounds) by one team, which pbp does not label directly. The first 16 of each game are kept
+    # as [team, points, field-goal shooters, first free-throw shooter, first scorer].
+    opening = {}
     for r in rows(f"nba-pbp-{y}.csv"):
         if not regular(r): continue
         g=r["game_id"]; i=r["athlete_id_1"]
@@ -152,12 +156,31 @@ def nba(y):
             if field and "firstShot" not in z: z["firstShot"]=i
             if is_make and "firstPts" not in z: z["firstPts"]=i
             if is_make and field and "firstFg" not in z: z["firstFg"]=i
+        poss_no = 0
+        if num(r["period_number"])==1 and r["team_id"] in (r["home_team_id"],r["away_team_id"]):
+            st = opening.setdefault(g, {"cur": None, "n": {}})
+            offensive = r["shooting_play"]=="true" or "Turnover" in typ or "Offensive Rebound" in typ
+            if offensive and st["cur"] is not False:
+                pl = first.setdefault(g,{"date":r["game_date"],"by":{},"tip":""}).setdefault("poss", [])
+                if st["cur"] is None or st["cur"][0] != team:
+                    if len(pl) >= 16: st["cur"] = False
+                    else:
+                        st["n"][team] = st["n"].get(team,0)+1
+                        st["cur"] = [team, 0, [], "", ""]; pl.append(st["cur"])
+                cur = st["cur"]
+                if cur:
+                    if field and i: cur[2].append(i)
+                    if "Free Throw" in typ and i and not cur[3]: cur[3] = i
+                    if is_make:
+                        cur[1] += pts
+                        if not cur[4]: cur[4] = i
+                    poss_no = st["n"][team]
         if not field or not i: continue
         x=num(r["coordinate_x"]); yy=num(r["coordinate_y"]); ar=num(r["points_attempted"],pts)
         m=pat.search(r["text"]); dist=int(m[1]) if m else round(((abs(x)-41.75)**2+yy**2)**.5,1) if x is not None and yy is not None else (25 if ar==3 else 2)
         k=shot_type(typ,bool(r["athlete_id_2"]),dist,ar==3)
         shotGames.setdefault(g,[]).append([i,team,opp,x,yy,dist,ar,int(is_make),k,
-            int(num(r["period_number"])==1 and num(r["start_quarter_seconds_remaining"],0)>=540)])
+            int(num(r["period_number"])==1 and num(r["start_quarter_seconds_remaining"],0)>=540), poss_no])
         if is_make and r["athlete_id_2"] and r["athlete_id_2"]!=i:
             assists.setdefault(r["athlete_id_2"],[]).append([g,i,team,k,ar])
     write(f"nba-{y}",dict(teams=teams,players=players,pg=playerGames,tg=teamGames,first=first,assists=assists,dates=gameDates))

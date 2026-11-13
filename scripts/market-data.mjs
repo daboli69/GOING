@@ -3,7 +3,7 @@ const host='https://external-api.kalshi.com/trade-api/v2/markets';
 const series={
   nfl:{Receiving:'KXNFLRECYDS',Rushing:'KXNFLRSHYDS',Passing:'KXNFLPASSYDS','Anytime TD':'KXNFLTD','First TD':'KXNFLFIRSTTD',
     Receptions:'KXNFLREC','Rush Attempts':'KXNFLRSHATT','Pass Attempts':'KXNFLPASSATT',Completions:'KXNFLPASSCOMP'},
-  nba:{Points:'KXNBAPTS',Threes:'KXNBA3PT',Assists:'KXNBAAST',Rebounds:'KXNBAREB'},
+  nba:{Points:'KXNBAPTS',Threes:'KXNBA3PT',Assists:'KXNBAAST',Rebounds:'KXNBAREB','First Basket':'KXNBAFIRSTBASKET'},
   nhl:{'Anytime Goals':'KXNHLGOAL',Points:'KXNHLPTS',Saves:'KXNHLSAVE'}
 };
 const months='JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC'.split(' ');
@@ -20,7 +20,7 @@ export function quote(m,market,g){
   const yes=Number(m.yes_ask_dollars),no=Number(m.no_ask_dollars);
   const over=yes>0&&yes<1&&Number(m.yes_ask_size_fp)>0?american(yes):null,under=no>0&&no<1&&Number(m.no_ask_size_fp)>0?american(no):null;
   if(!over&&!under)return null;
-  const line=market==='First TD'?.5:m.floor_strike;
+  const line=market==='First TD'||market==='First Basket'?.5:m.floor_strike;
   if(line==null||!Number.isFinite(line)||['Anytime Goals','Anytime TD'].includes(market)&&line!==.5)return null;
   return {player,market,line,date:g.date,a:g.a,h:g.h,over,under,provider:'Kalshi',volume:Number(m.volume_fp)||0,yes:over?yes:null,no:under?no:null};
 }

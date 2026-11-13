@@ -55,3 +55,4 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .site-header{min-height:82px}.slate:not(.tight){margin-bottom:16px}.period-label{padding-inline:1px}.section-label{margin-top:5px}.pill{padding-top:6px;padding-bottom:6px}
 @media(max-width:860px){.site-header{min-height:66px}}
 .game .badge{font-size:9px}.period-label{font-size:18px}.tools .sq.pill{display:inline-grid;place-items:center;padding:0}.panel .section-label{font-weight:700;letter-spacing:.07em}.pill .team-mark{width:19px;height:19px}
+.fb-price{width:5.6em}

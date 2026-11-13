@@ -1,7 +1,8 @@
 import {nbaPropTabs,href} from './config.mjs';
 import {total,mean,round,pct,div,rate,heat,signed,seasonLimit,distanceZone,nbaType,leaderShares} from './math.mjs';
-import {current as S,esc,box,plain,grid,card,metric,logo,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,person,market,basePlay,propOdds,gameDay,gamesFor,final,dialog,badge,action} from './ui.mjs';
+import {current as S,esc,box,plain,grid,card,metric,logo,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,person,market,basePlay,propOdds,gameDay,gamesFor,final,dialog,badge,action,local,keep,et} from './ui.mjs';
 import {parlayPage,parlayAction} from './nba-parlays.mjs';
+import {openingTables,teamFirst,shotTables,makeEdge,earlyShares,blendShare,scorerShares,fairChances,impliedChance,americanFrom,roundRobin} from './first-basket.mjs';
 import {propQuotes} from './ui.mjs';
 import {allowedRanks,markets} from './nba-parlay-engine.mjs';
 
@@ -318,8 +319,117 @@ function shotCharts(){
         return [esc(k),a.fg+'/'+a.n,cell(pct(a.p),heat(a.p,c.p,.06)),a.p!=null&&c.p!=null?signed((a.p-c.p)*100)+'%':'—',pct(a.s),b.fg+'/'+b.n,cell(pct(b.p),heat(b.p,c.p,.06,true)),b.p!=null&&c.p!=null?signed((b.p-c.p)*100)+'%':'—',pct(b.s),pct(c.p),pct(c.s),a.n&&b.p>c.p?'Favorable':'—'];
       }),{groups:[group('',1),group(esc(p?.name||'Offense'),4),group(o+' Defense Allows',4),group('League',2),group('',1)],sort:'shot-zones',wrap:'box'}));
 }
+// ---- First basket: the whole-slate board (first-basket.mjs holds the model). ----
+const fbOutNow=x=>/^(out|injured reserve|suspension|suspended)$/i.test(x||'');
+const fbPrices=()=>local('fb-prices:'+S.day,{});
+const fbScratched=()=>local('fb-out:'+S.day,[]);
+export function fbPrice(id,value){const all=fbPrices();if(String(value).trim())all[id]=String(value).trim();else delete all[id];keep('fb-prices:'+S.day,all);}
+// Projected starters: who started the team's last game, minus anyone listed out or scratched here, filled by recent starts.
+function projectedStarters(t,report,scratched){
+  const roster=players().filter(p=>p.team===t);
+  const games=(source().tg?.[t]||[]).filter(r=>r[1]<S.day).sort((a,b)=>a[1].localeCompare(b[1]));
+  const last=games.at(-1)?.[0], recent=new Set(games.slice(-5).map(r=>r[0]));
+  const status=p=>report.find(x=>nbaName(x.name)===nbaName(p.name))?.status;
+  const starts=p=>p.logs.filter(r=>r[16]&&recent.has(r[0])).length;
+  const ranked=[...roster].sort((a,b)=>Number(b.logs.some(r=>r[0]===last&&r[16]))-Number(a.logs.some(r=>r[0]===last&&r[16]))||starts(b)-starts(a)||b.min-a.min);
+  const out=roster.filter(p=>fbOutNow(status(p))||scratched.includes(p.id));
+  return {starters:ranked.filter(p=>!out.includes(p)).slice(0,5).map(p=>({p,status:status(p)||null,lastStarted:p.logs.some(r=>r[0]===last&&r[16])})),
+    out:out.filter(p=>ranked.indexOf(p)<5).map(p=>({p,status:scratched.includes(p.id)?'Scratched here':status(p)}))};
+}
+export function firstBasketBoard(){
+  const m=reset(), key=JSON.stringify([fbScratched(),S.games.map(g=>g.id)]);
+  if(m.fb&&m.fbKey===key&&m.fbInjuries===S.injuries)return m.fb;
+  const src=source(), first=src.first||{}, opening=openingTables(first,S.day), shotT=shotTables(src.shots,S.day,src.dates), sh=shots();
+  const scratched=fbScratched(), games=[];
+  for(const g of S.games){
+    const tf=teamFirst(opening,g.a,g.h), side={};
+    for(const t of [g.a,g.h]){
+      const opp=t===g.a?g.h:g.a, report=S.injuries[teamName(t)]||[], {starters,out}=projectedStarters(t,report,scratched);
+      const tg=new Map((src.tg?.[t]||[]).map(r=>[r[0],r]));
+      const startsBy=Object.fromEntries(starters.map(({p})=>[p.id,p.logs.filter(r=>r[16]&&r[2]===t).map(r=>r[0])]));
+      const early=earlyShares(first,t,startsBy,S.day);
+      const cands=starters.map(({p})=>{
+        const l=p.logs, att=total(l,r=>r[10]+.44*r[12]), mins=total(l,r=>r[5]), teamAtt=total(l,r=>{const x=tg.get(r[0]);return x?x[7]+.44*x[10]:0;});
+        const usage=mins&&teamAtt?Math.min(.45,att/mins*48*l.length/teamAtt):.2;
+        const fta=total(l,r=>r[12]), ftm=total(l,r=>r[6]-2*r[15]-r[7]), ftPct=(ftm+20*.78)/(fta+20);
+        const edge=makeEdge(sh.players[p.id]||[],opp,shotT);
+        return {id:p.id,share:blendShare(early[p.id]||{},usage),usage,make:shotT.early*edge,edge,
+          ftShare:att?.44*fta/att:.15,ftScore:1-(1-ftPct)**2,parts:early[p.id]||{}};
+      });
+      const given=scorerShares(cands,shotT.early);
+      side[t]={opp,out,bench:given.bench,starters:starters.map(({p,status,lastStarted},i)=>{
+        const c=cands[i], s=given.players[p.id];
+        return {p,status,lastStarted,team:t,opp,game:g,teamFirst:tf.first[t],share:s.share,given:s.given,prob:tf.first[t]*s.given,
+          usage:c.usage,edge:c.edge,ftShare:c.ftShare,early:c.parts.early,firstShot:c.parts.firstShot,games:c.parts.games||0};
+      })};
+    }
+    const rows=[g.a,g.h].flatMap(t=>side[t].starters);
+    games.push({g,tf,side,rows,sum:rows.reduce((a,r)=>a+r.prob,0),opening});
+  }
+  m.fb={games,rows:games.flatMap(x=>x.rows),league:opening.league,early:shotT.early};m.fbKey=key;m.fbInjuries=S.injuries;
+  return m.fb;
+}
+function firstBasketView(){
+  const board=firstBasketBoard(), f=S.f, prices=fbPrices(), hold=(+f.fbHold||30)/100, minEdge=(+f.fbMinEdge||0)/100, ratio=+f.fbRatio||1;
+  if(!board.rows.length)return box('First Basket Board · Whole Slate',empty('No games on this slate.'));
+  const kalshi=r=>propQuotes(r.p,'First Basket',S.odds)[0]?.over;
+  const priceOf=r=>prices[r.p.id]??kalshi(r)??'';
+  const fair={};
+  for(const x of board.games)Object.assign(fair,fairChances(Object.fromEntries(x.rows.map(r=>[r.p.id,priceOf(r)]).filter(([,v])=>v!=='')),hold).fair);
+  const verdict=r=>{const fc=fair[r.p.id];if(fc==null)return null;const e=r.prob-fc;return {fair:fc,edge:e,play:e>=minEdge&&r.prob>=ratio*fc};};
+  const rows=[...board.rows].sort((a,b)=>b.prob-a.prob), shown=f.fbShow==='All starters'?rows:rows.slice(0,30);
+  const plays=rows.map(r=>({r,v:verdict(r)})).filter(x=>x.v?.play).map(x=>({...x,edge:x.v.edge,game:x.r.game.id}));
+  const rr=roundRobin(plays,Math.max(2,Math.min(8,+f.fbRR||3)),Math.max(2,Math.min(4,+f.fbBy||2)));
+  const nameCell=r=>cell(person(r.p).html+(r.status?' '+badge(r.status,'r'):'')+(!r.lastStarted?' '+badge('Fill-in starter'):''),'player-cell');
+  const board1=table(['#','Player','Game','Team 1st','Share if team 1st','First basket','Fair odds','Price','No-vig','Edge','Call',''],shown.map((r,i)=>{
+    const v=verdict(r);
+    return [i+1,nameCell(r),esc(r.game.a+' @ '+r.game.h+' · '+et(r.game)),pct(r.teamFirst,1),pct(r.given,1),cell(pct(r.prob,1),heat(r.prob,.08,.04)),
+      esc(americanFrom(r.prob)),`<input class="fb-price" type="text" inputmode="numeric" placeholder="+600" aria-label="Price for ${esc(r.p.name)}" data-fb-price="${esc(r.p.id)}" value="${esc(priceOf(r))}">`,
+      v?pct(v.fair,1):'—',v?cell((v.edge>=0?'+':'')+pct(v.edge,1),heat(v.edge,0,.03)):'—',v?badge(v.play?'Play':'Skip',v.play?'g':''):'—',btn('Scratch','fbOut',r.p.id,'outline')];
+  }),{wrap:'box',cls:'compact'});
+  const scratched=board.games.flatMap(x=>Object.values(x.side).flatMap(s=>s.out)).map(o=>btn(esc(o.p.name+' · '+(o.status||'out'))+(fbScratched().includes(o.p.id)?' ×':''),fbScratched().includes(o.p.id)?'fbOut':'noop',o.p.id,'outline')).join('');
+  const checks=table(['Game','Tip','Score per possession','Team scores first','Starters total',''],board.games.map(x=>{
+    const {g,tf}=x, ok=x.sum>=.9&&x.sum<=1.001;
+    return [esc(g.a+' @ '+g.h),esc(g.a+' '+pct(tf.tip,0)+' ('+tf.tipRecord[g.a].join('/')+' tips) · '+g.h+' '+pct(1-tf.tip,0)+' ('+tf.tipRecord[g.h].join('/')+')'),
+      esc(g.a+' '+pct(tf.pos[g.a].p,0)+' · '+g.h+' '+pct(tf.pos[g.h].p,0)),esc(g.a+' '+pct(tf.first[g.a],1)+' · '+g.h+' '+pct(tf.first[g.h],1)),
+      cell(pct(x.sum,1),ok?'good heat':'bad heat'),ok?'':badge('Check model','r')];
+  }),{wrap:'box',cls:'compact'});
+  const rrBody=rr.picks.length<2?empty('Fewer than two plays clear the edge filters. Enter prices to compare, or lower the minimum edge.'):
+    `<p class="subtle">${rr.picks.length} plays, one per game, by ${rr.combos[0].length}s: ${rr.combos.length} tickets. Each ticket pays only if every player in it scores first in his game.</p>`+
+    table(['Ticket','Players','Model chance','Price (combined)'],rr.combos.map((c,i)=>{
+      const p=c.reduce((a,x)=>a*x.r.prob,1), q=c.reduce((a,x)=>a*impliedChance(priceOf(x.r)),1);
+      return [i+1,esc(c.map(x=>x.r.p.name).join(' + ')),pct(p,2),esc(americanFrom(q))];
+    }),{wrap:'box',cls:'compact'});
+  return box('First Basket Board · Whole Slate',
+    `<p class="subtle">P(first basket) = P(team scores first) × P(he scores | team scores first). Team: tip rate shrunk toward 50%, then alternating possessions scored at each team's opening-possession rate against what the opponent allows (league ${pct(board.league,0)}). Player: share of the team's attempts in its first 8 possessions, blended with first-shot share and shrunk toward usage, times a ${pct(board.early,0)} early make rate adjusted only for a real shot-type edge, plus free throws. Free throws count as the first basket.</p>`+
+    tools(select('Show','fbShow',['Top 30','All starters'])+`<label class="field">Min. edge (pts) <input type="number" min="0" max="20" step=".5" data-field="fbMinEdge" value="${esc(f.fbMinEdge)}"></label>`+
+      `<label class="field">Min. ratio <input type="number" min="1" max="3" step=".05" data-field="fbRatio" value="${esc(f.fbRatio)}"></label>`+
+      `<label class="field">Hold for partial boards % <input type="number" min="0" max="80" step="1" data-field="fbHold" value="${esc(f.fbHold)}"></label>`)+
+    (scratched?tools('<span class="subtle">Out or scratched:</span>'+scratched):'')+board1+
+    `<p class="subtle">Type your sportsbook price for any player (Kalshi prices fill in when Kalshi lists this market). No-vig: a full board is normalized to 100%; a partial board is divided by the hold above. A play needs the edge and the ratio (model ÷ no-vig) both. Starters are projected from the last game and the injury report; scratch anyone ruled out when lineups post and the board re-runs.</p>`,
+    'Your prices are saved in this browser for this date. First basket is a hard market: even good picks hit single digits to low double digits per leg, so size it as a small side bet.')+
+  box('Round Robin',tools(`<label class="field">Plays <input type="number" min="2" max="8" data-field="fbRR" value="${esc(f.fbRR)}"></label>`+select('By','fbBy',[['2','2s'],['3','3s'],['4','4s']]))+rrBody)+
+  box('Model Check',checks+'<p class="subtle">Across a game\'s ten starters the first-basket chances should total about 95–100% (the bench takes the rest). A total outside 90–100% means a starter is missing or a share is off.</p>')+
+  fbCalibration();
+}
+function fbCalibration(){
+  const summary=(list,label)=>{
+    const graded=list.filter(x=>x.actual!=null), nights=new Set(graded.map(x=>x.date)).size;
+    const rows=graded.flatMap(x=>x.players.map(([id,,,p])=>({p,hit:x.actual===id?1:0})));
+    const bins=[[0,.05],[.05,.1],[.1,.15],[.15,.2],[.2,.3],[.3,1]].map(([a,b])=>{const r=rows.filter(x=>x.p>=a&&x.p<b);return [pct(a,0)+'–'+pct(b,0),r.length,r.length?pct(mean(r,x=>x.p),1):'—',r.length?pct(mean(r,x=>x.hit),1):'—'];});
+    const brier=rows.length?mean(rows,x=>(x.p-x.hit)**2):null, even=rows.length?mean(rows,x=>(.097-x.hit)**2):null;
+    const teamRight=graded.filter(x=>x.actualTeam).filter(x=>{const t=k=>x.players.filter(p=>p[2]===k).reduce((a,p)=>a+p[3],0);return (t(x.a)>t(x.h))===(x.actualTeam===x.a);}).length;
+    const missed=graded.filter(x=>!x.players.some(p=>p[0]===x.actual)).length;
+    return card(label,`<p class="subtle">${graded.length} games over ${nights} game-nights.${brier!=null?' Brier '+round(brier,4)+' vs '+round(even,4)+' for an even split among starters (lower is better).':''}${graded.length?' Team side right in '+teamRight+' of '+graded.length+'. First scorer not on the board: '+missed+'.':''}</p>`+
+      table(['Model chance','Starters','Average model','Scored first'],bins,{wrap:'box',cls:'compact'}));
+  };
+  const log=S.fbLog||{live:[],backtest:[]}, nights=new Set((log.live||[]).filter(x=>x.actual!=null).map(x=>x.date)).size;
+  return box('Calibration Log',`<p class="subtle">${nights<100?'Under 100 live game-nights: treat the numbers as rough.':'Use this to adjust the shrinkage and weights.'} The backtest replays each past night with only the data available before it and starters projected from the previous game, without injury reports, so most of its misses are lineup changes.</p>`+
+    grid(2,[summary(log.live||[],'Live: saved before tip'),summary(log.backtest||[],'Backtest: this season')]),
+    'Each hourly run saves the board before tip; the archive\'s first scorer (free throws count) grades it the next morning.');
+}
 function basket(){
-  const g=S.game;if(!g)return slate()+box('1st Basket',empty('No game selected.'));
+  const g=S.game;if(!g)return slate()+firstBasketView();
   const first=source().first||{},sh=shots();
   const roster=t=>players().filter(p=>p.team===t&&p.logs.some(x=>x[16])).sort((a,b)=>total(b.logs.slice(-5),x=>x[16])-total(a.logs.slice(-5),x=>x[16])||b.min-a.min).slice(0,5);
   const item=(t,o)=>teamBanner(t,'Recent starters')+table(['Player','Shot Early','1st Shot','Scored 1st','Team Share','1st FG','Defense Type','Best'],roster(t).map(p=>{
@@ -329,7 +439,7 @@ function basket(){
     return [person(p),pct(div(open.length,all.length)),pct(event('firstShot')),pct(event('firstPts')),pct(event('shot',true)),pct(event('firstFg')),type(p.id),cell(pct(event('pts',true)),heat(event('pts',true),.14,.1))];
   }),{sort:'basket-'+t});
   const history=t=>Object.values(first).filter(x=>x.date<S.day&&x.by[t]);
-  return slate()+hero(g)+tools(btn((S.hoops-1)+'–'+String(S.hoops).slice(-2),'noop','','on'))+box('Starters',
+  return slate()+firstBasketView()+hero(g)+tools(btn((S.hoops-1)+'–'+String(S.hoops).slice(-2),'noop','','on'))+box('Starters',
     '<p class="subtle">Starting candidates from recent box scores. First points include free throws.</p>'+grid(2,[item(g.a,g.h),item(g.h,g.a)]),'Click a player to see game-by-game stats.')+
     box('The Matchup',table([team(g.a),'The Tip',team(g.h)],[['Tip win rate','Season','Tip win rate'],[pct(rate(history(g.a),x=>x.tip===g.a)),'Jump ball',pct(rate(history(g.h),x=>x.tip===g.h))]]))+
     box('By Player Type: Every Letter Against Tonight’s Defense',table(['Team',...letters],[g.a,g.h].map(t=>[team(t),...letters.map(k=>history(t).filter(x=>x.by[t]?.pts&&type(x.by[t].pts)===k).length)]),{sort:'basket-types'}));
@@ -371,6 +481,7 @@ export function nbaPlayer(id){
 }
 export function nbaAction(act,v,target){
   if(S.route.id==='nba-parlays'&&act.startsWith('parlay'))return parlayAction(act,v,parlayData(),target);
+  if(act==='fbOut'){const list=fbScratched();keep('fb-out:'+S.day,list.includes(v)?list.filter(x=>x!==v):[...list,v]);return true;}
   if(act==='allSummaries'){dialog('All Matchup Summaries',S.games.map(g=>plain(versus(g),getSummary(g,S.f.window||'Season'))).join(''),true);return true;}
   if(act==='history'){dialog('Historical Data',nightly(75),true);return true;}
   return false;
