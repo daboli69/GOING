@@ -1,8 +1,8 @@
 name: Refresh and deploy
 
 # Hourly, all day: slates, injuries, public prices and NHL lineups (about a minute).
-# 7am Eastern every morning (the first run after 7:00, DST-proof) and 17:07 UTC: also rebuild the season
-# archives (nflverse, hoopR, NHL), so the day starts on fresh data for every sport.
+# The first run after 7am Eastern every morning (DST-proof), and the first after 17:00 UTC, also rebuilds the
+# season archives (nflverse, hoopR, NHL), so the day starts on fresh data for every sport.
 # The local model publisher starts a run with mode=models whenever forecasts change.
 on:
   schedule:
@@ -58,9 +58,13 @@ jobs:
         id: mode
         run: |
           mode="${{ inputs.mode || 'live' }}"
-          hour=$(date -u +%H)
-          east=$(TZ=America/New_York date +%H)
-          if [ "${{ github.event_name }}" = "schedule" ] && { [ "$east" = "07" ] || [ "$hour" = "17" ]; }; then mode=full; fi
+          # Rebuild the archives on the first run of any kind after 7am Eastern and after 17:00 UTC. Comparing against
+          # the last rebuild time (not the clock hour) means a late or skipped scheduled run cannot miss it.
+          now=$(date +%s)
+          last=$(node -e "try{console.log(Math.floor(Date.parse(require('./site/data/archive.json').updated)/1000)||0)}catch{console.log(0)}")
+          for due in $(TZ=America/New_York date -d 'today 07:00' +%s) $(date -u -d 'today 17:00' +%s); do
+            if [ "$now" -ge "$due" ] && [ "$last" -lt "$due" ]; then mode=full; fi
+          done
           deep=""
           if [ -z "${{ steps.archive.outputs.cache-matched-key }}" ]; then mode=full; deep="--deep"; fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
