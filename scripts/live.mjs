@@ -7,6 +7,7 @@ import { ESPN,sportPath,scoreboard,nhlSlate,compactInjuries } from '../site/feed
 import { lineupUrl,parseLineups } from './lineups.mjs';
 import { publicQuotes } from './market-data.mjs';
 import { recentLines } from './lines-data.mjs';
+import { nflWeather } from './weather.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const data=join(root,'site','data'), out=join(data,'live'), tmp=out+'.next';
@@ -79,6 +80,8 @@ const nflWeek=nextWeek?schedule.filter(g=>g.week===nextWeek.week&&g.id.slice(0,4
 const firstDay=s=>[today,add(today,1)].find(d=>slates[s][d]?.length)||today;
 const nbaDay=firstDay('nba'),nhlDay=firstDay('nhl');
 const archiveStamp=await read('archive.json');
+// NFL kickoff weather for this week's games (Open-Meteo, no key): temperature, wind, gusts and rain at the stadium.
+await save('weather-nfl.json',await nflWeather(nflWeek.filter(g=>g.sa==null)).catch(e=>{note.push('weather nfl');console.warn(e.message);return {};}));
 await save('manifest.json',{updated:new Date().toISOString(),archive_updated:archiveStamp?.updated||null,
   nba:{date:nbaDay,games:slates.nba[nbaDay]?.length??null},
   nhl:{date:nhlDay,games:slates.nhl[nhlDay]?.length??null,lineups:nhlDay===today?Object.keys(lineups).length:null},

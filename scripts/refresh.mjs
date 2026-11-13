@@ -57,6 +57,11 @@ const archives=async()=>{
     ['nfl-schedule.csv','https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv'],
     [`nfl-${year}.csv.gz`,`${nflBase}/pbp/play_by_play_${year}.csv.gz`],
     [`nfl-roster-${year}.csv`,`${nflBase}/rosters/roster_${year}.csv`],
+    // GOING LONG Suggested Parlays: snap share, coverage allowed by each defender, rush yards over expected, separation.
+    [`nfl-snaps-${year}.csv`,`${nflBase}/snap_counts/snap_counts_${year}.csv`],
+    [`nfl-coverage-${year}.csv`,`${nflBase}/pfr_advstats/advstats_week_def_${year}.csv`],
+    ['nfl-ngs-rushing.csv.gz',`${nflBase}/nextgen_stats/ngs_rushing.csv.gz`],
+    ['nfl-ngs-receiving.csv.gz',`${nflBase}/nextgen_stats/ngs_receiving.csv.gz`],
     [`nba-box-${hoops}.csv`,`${nbaBase}/espn_nba_player_boxscores/player_box_${hoops}.csv`],
     [`nba-team-${hoops}.csv`,`${nbaBase}/espn_nba_team_boxscores/team_box_${hoops}.csv`],
     [`nba-pbp-${hoops}.csv`,`${nbaBase}/espn_nba_pbp/play_by_play_${hoops}.csv`]

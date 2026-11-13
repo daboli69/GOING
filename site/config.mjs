@@ -18,6 +18,7 @@ export const menus={
     Models:[['Ensemble Forecasts','long/','nfl-models']],
     Previews:[['Game Previews','long/game-previews.html','nfl-preview'],['TD Data','long/td-data.html','td'],['Opening Drive Tool','long/opening-drives.html','drives']],
     Props:[['Best Plays','long/best-plays.html','nfl-best'],['Receiving','long/player-props.html#receiving','nfl-props'],['Rushing','long/player-props.html#rushing','nfl-props'],['Passing','long/player-props.html#passing','nfl-props']],
+    Parlays:[['Suggested Parlays','long/suggested-parlays.html','nfl-parlays'],['NFL Leg Tracker','long/parlay-tracker.html','nfl-parlay-tracker']],
     Promos:[['King of the Endzone','long/promo-tools.html','endzone']]
   },
   nba:{
@@ -58,6 +59,7 @@ export const viewDefaults={
   myplays:{when:'Everything',playType:'Every Type',grade:'All'},
   tracker:{sport:'All',kind:'All picks',window:'Season',lean:true},
   'nba-parlay-tracker':{legDecision:'All',legMarket:'All',legSide:'All',legResult:'All',legWindow:'Last 30 days',legSource:'All',legRule:'All'},
+  'nfl-parlay-tracker':{legDecision:'All',legMarket:'All',legSide:'All',legResult:'All',legWindow:'All time',legSource:'All',legRule:'All'},
   'college-players':{collegeSample:'3'},
   'yard-board':{floor:'All',bats:'All',gameFilter:'All games',lineup:'All lineups',hideThin:false},
   'yard-hits':{view:'Hits'},'yard-arms':{view:'Starting pitchers'},'yard-parlays':{view:'Cross-game parlays'},'yard-record':{view:'Heat tiers'}

@@ -68,8 +68,42 @@ def nfl(y):
             num(r["success"]), num(r["epa"]), r["pass_location"], r["run_location"],
             int(fga), r["field_goal_result"], int(r["return_touchdown"]=="1"),
             r["desc"] if istd else "", num(r.get("down")), num(r.get("ydstogo")),
+            num(r.get("xpass")), num(r.get("wp")), int(r.get("sack")=="1"),
         ])
     write(f"nfl-{y}",dict(players=used, events=events))
+
+OFFENSE = {"QB","RB","FB","WR","TE","T","G","C","OL","OT","OG"}
+SECONDARY = {"CB","DB","S","FS","SS"}
+def nfl_extra(y):
+    """Snap counts, coverage allowed by each defender, and Next Gen rushing and receiving, for the parlay engine."""
+    out = {}
+    def optional(name, fn):
+        try: fn()
+        except FileNotFoundError: print(f"NFL extra source not published: {name}", file=sys.stderr)
+    def snaps():
+        s = out.setdefault("snaps", {})
+        for r in rows(f"nfl-snaps-{y}.csv"):
+            if r["game_type"] != "REG": continue
+            pos, off, de = r["position"], num(r["offense_pct"],0), num(r["defense_pct"],0)
+            if (pos in OFFENSE and off) or (pos in SECONDARY and de):
+                s.setdefault(r["game_id"], {}).setdefault(r["team"], []).append([r["player"], pos, off, de])
+    def cover():
+        c = out.setdefault("cover", {})
+        for r in rows(f"nfl-coverage-{y}.csv"):
+            t = num(r["def_targets"],0)
+            if r["game_type"] != "REG" or not t: continue
+            c.setdefault(r["game_id"], {}).setdefault(r["team"], []).append([r["pfr_player_name"], t,
+                num(r["def_completions_allowed"],0), num(r["def_yards_allowed"],0), num(r["def_receiving_td_allowed"],0)])
+    def ngs(kind, fields):
+        n = out.setdefault("ngs_"+kind, {})
+        for r in rows(f"nfl-ngs-{kind}.csv.gz"):
+            if num(r["season"]) != y or r["season_type"] != "REG" or not num(r["week"],0): continue
+            n.setdefault(r["player_gsis_id"], []).append([num(r["week"]), r["team_abbr"], *[num(r[k]) for k in fields]])
+    optional("snap counts", snaps)
+    optional("coverage", cover)
+    optional("NGS rushing", lambda: ngs("rushing", ("rush_attempts","rush_yards_over_expected","expected_rush_yards")))
+    optional("NGS receiving", lambda: ngs("receiving", ("targets","avg_separation","avg_cushion","percent_share_of_intended_air_yards")))
+    write(f"nfl-extra-{y}", out)
 
 def nba(y):
     teams, players, playerGames, teamGames, shotGames, first, assists, gameDates = {},{},{},{},{},{},{},{}
@@ -133,5 +167,6 @@ write("nfl-schedule", list(games()))
 for mode, target in (("nfl", year), ("nba", hoops_year)):
     try:
         (nfl if mode=="nfl" else nba)(target)
+        if mode == "nfl": nfl_extra(target)
     except FileNotFoundError as e:
         print(f"{mode.upper()} archive not published: {e.filename}",file=sys.stderr)

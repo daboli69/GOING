@@ -1,21 +1,28 @@
 import {menus,routes,sections,BASE,href,viewDefaults,viewSetup} from './config.mjs';
-import {trackerLoad,trackerPage,trackerAction} from './tracker.mjs';
-import {parlayTrackerLoad,parlayTrackerPage,parlayTrackerAction} from './nba-parlay-tracker.mjs';
 import {$,current as S,today,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus,sportWordmark} from './ui.mjs';
 import {ESPN,sportPath,scoreboard,compactInjuries} from './feeds.mjs';
-import {nflPage,nflPlayer,nflAction,nflResult} from './nfl.mjs';
-import {nbaPage,nbaPlayer,nbaAction,nbaResult} from './nba.mjs';
-import {nhlPage,nhlPlayer,nhlAction,nhlResult} from './nhl.mjs';
-import {modelLoad,modelPage,modelAction,modelStep} from './models.mjs';
 import {homeLoad,homePage} from './home.mjs';
-import {collegeLoad,collegePage} from './college.mjs';
 import {isCollege} from './college-core.mjs';
+import {refreshScores} from './live-scores.mjs';
 
-import {yardPage,yardPlayer,yardAction,yardResult,yardField,yardInput,ENGINE_VIEWS} from './yard.mjs';
-import {setYardData} from './yard-engine.mjs';
-import {setPrice} from './yard-more.mjs';
-
-const modules={nfl:[nflPage,nflPlayer,nflAction,nflResult],nba:[nbaPage,nbaPlayer,nbaAction,nbaResult],nhl:[nhlPage,nhlPlayer,nhlAction,nhlResult],mlb:[yardPage,yardPlayer,yardAction,yardResult]};
+// Each section's code loads the first time one of its pages opens, so a visit downloads only what it shows.
+// The build adds a modulepreload hint for the page's own section, so this costs no extra round trip.
+const loaders={
+  nfl:()=>import('./nfl.mjs').then(m=>({page:m.nflPage,player:m.nflPlayer,action:m.nflAction,result:m.nflResult})),
+  nba:()=>import('./nba.mjs').then(m=>({page:m.nbaPage,player:m.nbaPlayer,action:m.nbaAction,result:m.nbaResult})),
+  nhl:()=>import('./nhl.mjs').then(m=>({page:m.nhlPage,player:m.nhlPlayer,action:m.nhlAction,result:m.nhlResult})),
+  mlb:()=>Promise.all([import('./yard.mjs'),import('./yard-engine.mjs'),import('./yard-more.mjs')]).then(([y,e,more])=>({page:y.yardPage,player:y.yardPlayer,
+    action:y.yardAction,result:y.yardResult,field:y.yardField,input:y.yardInput,engineViews:y.ENGINE_VIEWS,setYardData:e.setYardData,setPrice:more.setPrice})),
+  models:()=>import('./models.mjs'),
+  college:()=>import('./college.mjs'),
+  tracker:()=>import('./tracker.mjs'),
+  parlayTracker:()=>import('./nba-parlay-tracker.mjs'),
+  nflParlayTracker:()=>import('./nfl-parlay-tracker.mjs'),
+};
+const M={};
+// Parlay leg tracker pages and the module that draws each.
+const trackerOf=id=>({'nba-parlay-tracker':'parlayTracker','nfl-parlay-tracker':'nflParlayTracker'})[id];
+const need=(...names)=>Promise.all(names.map(n=>M[n]?M[n]:loaders[n]().then(x=>M[n]=x)));
 const defaults=viewDefaults;
 S.today=today;
 const memory={};
@@ -26,18 +33,17 @@ const isModel=id=>/-models$/.test(id);
 const relPath=()=>decodeURIComponent(location.pathname.startsWith(BASE)?location.pathname.slice(BASE.length):location.pathname.replace(/^\//,'')).replace(/(^|\/)index\.html$/,'$1');
 function route(){
   const p=relPath();
-  return routes.find(x=>x.path===p+location.hash)||routes.find(x=>x.path===p)||routes[0];
+  // A page whose tabs all live behind a hash (long/player-props.html#receiving) opens its first tab when the hash is missing.
+  return routes.find(x=>x.path===p+location.hash)||routes.find(x=>x.path===p)||(p&&routes.find(x=>x.path.split('#')[0]===p))||routes[0];
 }
 function header(){
   const s=S.route.sport, sec=sections[s];
   const menuHTML=(k,items)=>`<div class="navitem"><button type="button" class="navbutton ${k!=='Sports'&&items.some(([,p])=>p===S.route.path)?'active':''}" aria-expanded="${menu===k}" ${action('menu',k)}>${esc(k)} <small aria-hidden="true">▾</small></button><div class="navmenu" ${menu===k?'':'hidden'}>${items.map(([t,p])=>p?`<a href="${href(p)}" ${S.route.path===p?'aria-current="page"':''}>${esc(t)}</a>`:`<span class="nav-label">${esc(t)}</span>`).join('')}</div></div>`;
   const sportMenu=Object.entries(sections).map(([k,x])=>x.home?['GOING '+x.word+' · '+x.league,x.home]:null).filter(Boolean);
   const nav=sec&&menus[s]?Object.entries(menus[s]).map(([k,items])=>{
-    if(s==='nba'&&k==='Parlays'){
-      const [[title,path]]=items, active=S.route.path===path;
-      const [, [tracker,trackerPath]]=items, tracking=S.route.path===trackerPath;
-      return `<a class="navbutton${active?' active':''}" href="${href(path)}" ${active?'aria-current="page"':''}>${esc(title)}</a><a class="navbutton${tracking?' active':''}" href="${href(trackerPath)}" ${tracking?'aria-current="page"':''}>${esc(tracker)}</a>`;
-    }
+    // Parlay pages sit in the nav bar as direct links rather than a one- or two-item menu.
+    if((s==='nba'||s==='nfl')&&k==='Parlays')return items.map(([title,path])=>{const on=S.route.path===path;
+      return `<a class="navbutton${on?' active':''}" href="${href(path)}" ${on?'aria-current="page"':''}>${esc(title)}</a>`;}).join('');
     return menuHTML(k,items);
   }).join('')+menuHTML('Sports',sportMenu):
     Object.entries(sections).filter(([k,x])=>x.home&&!isCollege(k)).map(([,x])=>`<a class="navbutton" href="${href(x.home)}">${x.league}</a>`).join('')+
@@ -51,7 +57,7 @@ function render(options={}){
   if(S.error)main.innerHTML=box('',empty(S.error)+tools(btn('Try again','retry','')));
   else if(!S.loaded)main.innerHTML=box('',empty(S.route.id==='home'?'Loading today’s slates…':'Loading the slate…'));
   else{
-    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?trackerPage():S.route.id==='nba-parlay-tracker'?parlayTrackerPage():isCollege(S.route.sport)?collegePage():isModel(S.route.id)?modelPage():modules[S.route.sport][0]();}
+    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?M.tracker.trackerPage():trackerOf(S.route.id)?M[trackerOf(S.route.id)].parlayTrackerPage():isCollege(S.route.sport)?M.college.collegePage():isModel(S.route.id)?M.models.modelPage():M[S.route.sport].page();}
     catch(e){console.error(e);main.innerHTML=box('',empty('This view could not be rendered.')+tools(btn('Try again','retry','')));}
   }
   const next=main.querySelector('.matchup-row');
@@ -85,6 +91,9 @@ async function slateFor(s,d){
   if(s==='nba')return get(`${ESPN}/${sportPath.nba}/scoreboard?dates=${d.replaceAll('-','')}`,null).then(j=>j&&scoreboard(j,'nba'));
   return null;
 }
+const nflParlayInputs=year=>Promise.all([get(dataURL('models/nfl.json'),null),get(dataURL('nfl-extra-'+year+'.json'),null),
+  get(dataURL('live/weather-nfl.json'),null),get(`${ESPN}/${sportPath.nfl}/injuries`,null).then(j=>j?.injuries?.length?compactInjuries(j):null).catch(()=>null)])
+  .then(([models,extra,weather,injuries])=>({models,extra,weather,injuries}));
 const injuriesFor=s=>get(dataURL('live/injuries-'+s+'.json'),null).then(x=>x??get(`${ESPN}/${sportPath[s]}/injuries`,{}).then(compactInjuries).catch(()=>({})));
 const oddsFor=(s,d)=>get(dataURL('live/odds-'+s+(s==='nfl'?'':'-'+d)+'.json'),[]);
 const savedGames={};
@@ -102,6 +111,8 @@ function start(){
   document.title=S.route.id==='home'?'GOING':(sec?sec.name:'GOING')+' · '+S.route.title;
   header();render();load();
 }
+// Offline, a page fails only when this device has never opened it (its code or data was never saved), so say that.
+const failed=msg=>navigator.onLine?msg:'You are offline, and this page has not been opened on this device before. It loads once you are back online.';
 async function load(){
   const token=++req,{sport:s,id}=S.route;
   if(id==='home'){
@@ -109,25 +120,28 @@ async function load(){
     if(token!==req)return;S.loaded=true;render();return;
   }
   if(id==='tracker'){
-    try{await trackerLoad();if(token!==req)return;S.loaded=true;render();}
-    catch(e){if(token!==req)return;S.error='The pick record could not load. Try again in a moment.';console.error(e);render();}
+    try{await need('tracker');await M.tracker.trackerLoad();if(token!==req)return;S.loaded=true;render();}
+    catch(e){if(token!==req)return;S.error=failed('The pick record could not load. Try again in a moment.');console.error(e);render();}
     return;
   }
   if(isCollege(s)){
-    const data=await collegeLoad(s,id);
+    let data;
+    try{await need('college');data=await M.college.collegeLoad(s,id);}
+    catch(e){if(token!==req)return;S.error=failed('The college data could not load. Try again in a moment.');console.error(e);render();return;}
     if(token!==req)return;
     S.data=data;
-    S.loaded=true;render();return;
+    S.loaded=true;render();tickScores();return;
   }
-  if(id==='nba-parlay-tracker'){
-    try{await parlayTrackerLoad();if(token!==req)return;S.loaded=true;render();}
-    catch(e){if(token!==req)return;S.error='The parlay leg record could not load. Try again in a moment.';console.error(e);render();}
+  if(trackerOf(id)){
+    try{await need(trackerOf(id));await M[trackerOf(id)].parlayTrackerLoad();if(token!==req)return;S.loaded=true;render();}
+    catch(e){if(token!==req)return;S.error=failed('The parlay leg record could not load. Try again in a moment.');console.error(e);render();}
     return;
   }
   if(id==='myplays'){
     S.loaded=true;
     render();
     const all=local('plays',[]);
+    await need(...new Set(all.map(p=>p.sport).filter(x=>loaders[x]))).catch(e=>console.error(e));
     const loadSports=await Promise.all([...new Set(all.map(p=>p.sport+':'+seasonFor(p.sport,p.date)))].map(async k=>{
       const [s,y]=k.split(':');return [k,await dataFor(s,+y)];
     }));
@@ -135,34 +149,40 @@ async function load(){
     playArchive=Object.fromEntries(loadSports);render();return;
   }
   if(isModel(id)){
-    try{await modelLoad(s);if(token!==req)return;S.loaded=true;render();}
-    catch(e){if(token!==req)return;S.error='The model feed could not load. Try again in a moment.';console.error(e);render();}
+    try{await need('models');await M.models.modelLoad(s);if(token!==req)return;S.loaded=true;render();}
+    catch(e){if(token!==req)return;S.error=failed('The model feed could not load. Try again in a moment.');console.error(e);render();}
     return;
   }
   if(s==='mlb'){
     // GOING YARD reads hr-board's published slate; there is one slate at a time.
     try{
-      const engine=ENGINE_VIEWS.has(id);
+      await need('mlb');
+      const engine=M.mlb.engineViews.has(id);
       const [board,odds,results,history,backtest]=await Promise.all([get(dataURL(engine?'yard/board-full.json':'yard/board.json')),get(dataURL('yard/odds.json'),{}),
         id==='yard-record'?get(dataURL('yard/results.json'),{}):null,engine?get(dataURL('yard/history.json'),{days:[]}):null,engine?get(dataURL('yard/backtest.json'),{}):null]);
       if(token!==req)return;
-      if(engine){setYardData({board,odds,history,backtest});S.yardHistory=history;}
+      if(engine){M.mlb.setYardData({board,odds,history,backtest});S.yardHistory=history;}
       const seen=new Set();
       Object.assign(S,{data:board,odds:[],injuries:{},yardOdds:odds,yardResults:results,day:board.slate_date||today,game:null,
         games:(board.games||[]).filter(g=>!seen.has(g.game_pk)&&seen.add(g.game_pk)).map(g=>({id:String(g.game_pk),a:g.away,h:g.home,iso:g.time,park:g.park,status:Date.parse(g.time)>Date.now()?'FUT':'STARTED'}))});
       S.f.allGames=true;S.loaded=true;render();
-    }catch(e){if(token!==req)return;S.error='The GOING YARD board could not load. Try again in a moment.';console.error(e);render();}
+    }catch(e){if(token!==req)return;S.error=failed('The GOING YARD board could not load. Try again in a moment.');console.error(e);render();}
     return;
   }
   try{
     const d=S.day,year=s==='nfl'?S.year:seasonFor(s,d);
-    const [data,dayGames,injuries,odds,lineups]=await Promise.all([dataFor(s,year),
+    const [,data,dayGames,injuries,odds,lineups,models]=await Promise.all([need(s),dataFor(s,year),
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
       injuriesFor(s),oddsFor(s,d),
-      s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{}]);
+      s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{},
+      id==='nfl-parlays'?nflParlayInputs(year):null]);
     if(token!==req)return;
     if(s==='nba')S.hoops=year;if(s==='nhl')S.ice=year;
     S.data=data;S.odds=odds;S.injuries=injuries;S.lineups=lineups;
+    // GOING LONG Suggested Parlays: model feed, snap and coverage data, kickoff forecasts, and the live injury report
+    // (inactives post about 90 minutes before kickoff, often between hourly refreshes).
+    S.models=models?.models||null;S.extra=models?.extra||null;S.weather=models?.weather||null;
+    if(models?.injuries)S.injuries=models.injuries;
     if(s==='nfl'){
       const sched=data.schedule?.filter(g=>+g.id.slice(0,4)===S.year)||[];
       S.week??=sched.find(g=>g.date>=today)?.week??sched.at(-1)?.week??1;
@@ -185,7 +205,8 @@ async function load(){
     S.loaded=true;
     render();
     loadLineStats();
-  }catch(e){if(token!==req)return;S.error='The public data could not load. Check your connection and try again.';console.error(e);render();}
+    tickScores();
+  }catch(e){if(token!==req)return;S.error=failed('The public data could not load. Check your connection and try again.');console.error(e);render();}
 }
 function chooseGame(g,scroll=false){
   if(!g)return;
@@ -227,7 +248,7 @@ function updateField(k,v){
   render();
 }
 function changePeriod(n){
-  if(isModel(S.route.id)){if(modelStep(n))render();return;}
+  if(isModel(S.route.id)){if(M.models?.modelStep(n))render();return;}
   if(S.route.sport==='nfl'){
     const list=[...new Set((S.data.schedule||[]).filter(g=>+g.id.slice(0,4)===S.year).map(g=>g.week))].sort((a,b)=>a-b);
     const next=list[list.indexOf(S.week)+n];if(next==null)return;
@@ -252,7 +273,7 @@ function graded(p){
   if(!data)return {value:null,label:'Pending'};
   const old=S.data;S.data=data;
   let value;
-  try{value=modules[p.sport][3](p);}finally{S.data=old;}
+  try{value=M[p.sport]?M[p.sport].result(p):null;}finally{S.data=old;}
   if(value==null||p.line==null)return {value,label:value==null?'Pending':'Tracked'};
   const threshold=Number(p.line)*(p.market==='Spread'?-1:1);
   return {value,label:value===threshold?'Push':(p.side==='Under'?value<threshold:value>threshold)?'Won':'Lost'};
@@ -267,9 +288,38 @@ function myPlays(){
   return `<h1>My Plays ${info('Check the box next to a player line to save it. When the public archive has a result, priced plays are graded against the saved line.')}</h1>`+
     tools(grades.map(k=>btn(k+' ('+(k==='All'?all.length:all.filter(p=>graded(p).label===k).length)+')','set','grade:'+k,S.f.grade===k?'on':'')).join('')+
       select('When','when',['Everything',...new Set(all.map(p=>p.date))])+select('Type','playType',['Every Type',...new Set(all.map(p=>p.market))])+
-      `<span class="right"></span>`+btn('Parlay Wheel','wheel','','primary')+btn('Photo Export','photo','','primary'))+
+      `<span class="right"></span>`+btn('Parlay Wheel','wheel','','primary')+btn('Photo Export','photo','','primary')+
+      btn('Back up','backup','')+`<label class="pill" title="Restore a GOING backup file">Restore<input type="file" accept=".json,application/json" data-restore hidden></label>`)+
     box('',show.length?table(['Play','League','Date','Line','Price','Result','Status',''],show.map(({p,r})=>[esc(p.title),p.sport.toUpperCase(),esc(p.date),esc(p.line??'—'),esc(p.odds??'—'),r.value??'—',cell(r.label,r.label==='Won'?'good heat':r.label==='Lost'?'bad heat':''),btn('Remove','remove',playKey(p))]),{sort:'myplays',wrap:'box'}):
       empty('Nothing saved yet. Check the box beside a play on any research page and it shows up here.'));
+}
+// Backups hold every GOING setting saved in this browser: plays, picks, notes, saved parlays and filters.
+const PREFIX='suite:';
+function backup(){
+  const data={};
+  for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.startsWith(PREFIX))data[k.slice(PREFIX.length)]=localStorage.getItem(k);}
+  const blob=new Blob([JSON.stringify({app:'GOING',version:1,saved:new Date().toISOString(),data},null,1)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`going-backup-${today}.json`;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  toast(`Backed up ${local('plays',[]).length} plays and ${Object.keys(data).length} saved settings.`);
+}
+// Restoring merges: plays from the file are added to the ones here, and other settings fill in only where this browser has none.
+async function restore(file){
+  let parsed;
+  try{parsed=JSON.parse(await file.text());}catch{toast('That file is not a GOING backup.');return;}
+  if(parsed?.app!=='GOING'||typeof parsed.data!=='object'){toast('That file is not a GOING backup.');return;}
+  let added=0,filled=0;
+  for(const [k,raw] of Object.entries(parsed.data)){
+    if(typeof raw!=='string')continue;
+    if(k==='plays'){
+      let incoming=[];try{incoming=JSON.parse(raw);}catch{}
+      const list=local('plays',[]),have=new Set(list.map(playKey));
+      for(const p of Array.isArray(incoming)?incoming:[])if(p&&!have.has(playKey(p))){list.push(p);have.add(playKey(p));added++;}
+      keep('plays',list);
+    }else if(localStorage.getItem(PREFIX+k)==null){localStorage.setItem(PREFIX+k,raw);filled++;}
+  }
+  toast(`Restored ${added} new ${added===1?'play':'plays'} and ${filled} ${filled===1?'setting':'settings'}.`);
+  load();
 }
 const wheelState={checked:new Set(),pending:true,legs:2,result:[]};
 function wheel(reset=true){
@@ -298,7 +348,7 @@ function performance(s){
 const internal=a=>{
   if(!a||a.target||a.origin!==location.origin||!a.pathname.startsWith(BASE))return false;
   const rel=decodeURIComponent(a.pathname.slice(BASE.length)).replace(/(^|\/)index\.html$/,'$1');
-  return routes.some(r=>r.path===rel+a.hash||r.path===rel);
+  return routes.some(r=>r.path===rel+a.hash||r.path===rel||(rel&&r.path.split('#')[0]===rel));
 };
 document.addEventListener('click',e=>{
   const a=e.target.closest('a[href]');
@@ -312,9 +362,9 @@ document.addEventListener('click',e=>{
   if(act==='info'){dialog('How to read this','<p class="subtle">'+esc(v)+'</p>');return;}
   if(act==='step'){changePeriod(+v);return;}
   if(act==='retry'){S.error=null;load();return;}
-  if(isModel(S.route.id)&&modelAction(act,v)){render();return;}
-  if(S.route.id==='tracker'&&trackerAction(act,v)){render();return;}
-  if(S.route.id==='nba-parlay-tracker'&&parlayTrackerAction(act,v)){render();return;}
+  if(isModel(S.route.id)&&M.models?.modelAction(act,v)){render();return;}
+  if(S.route.id==='tracker'&&M.tracker?.trackerAction(act,v)){render();return;}
+  if(trackerOf(S.route.id)&&M[trackerOf(S.route.id)]?.parlayTrackerAction(act,v)){render();return;}
   if(act==='game'){chooseGame(S.games.find(g=>g.id===v));return;}
   if(act==='gameStep'){chooseGame(S.games[S.games.indexOf(S.game)+Number(v)],true);return;}
   if(act==='set'){
@@ -327,7 +377,8 @@ document.addEventListener('click',e=>{
     S.sort={table:key,col,desc:S.sort?.table===key&&S.sort?.col===col?!S.sort.desc:true};render();return;
   }
   if(act==='flip'){S.f[v]=!S.f[v];render();return;}
-  if(act==='player'){modules[S.route.sport][1](v);return;}
+  if(act==='moreRows'){const i=v.lastIndexOf(':');S.f['rows:'+v.slice(0,i)]=Number(v.slice(i+1));render();return;}
+  if(act==='player'){M[S.route.sport]?.player(v);return;}
   if(act==='line'){showLine(JSON.parse(v));return;}
   if(act==='export'){saveImage(v,lastDialog==='photo'?'#photo-preview':'main');return;}
   if(act==='performance'){performance(v);return;}
@@ -356,9 +407,10 @@ document.addEventListener('click',e=>{
     wheelState.result=list.slice(0,wheelState.legs);wheel(false);return;
   }
   if(act==='photo'){photo();return;}
+  if(act==='backup'){backup();return;}
   if(act==='photoCol'){photoState.columns=v;photo();return;}
-  if(S.route.sport==='mlb'){const r=yardAction(act,v);if(r){if(typeof r==='string')toast(r);render();return;}}
-  if(modules[S.route.sport]?.[2](act,v,t)&&act.startsWith('parlay'))render();
+  if(S.route.sport==='mlb'&&M.mlb){const r=M.mlb.action(act,v);if(r){if(typeof r==='string')toast(r);render();return;}}
+  if(M[S.route.sport]?.action?.(act,v,t)&&act.startsWith('parlay'))render();
 });
 document.addEventListener('input',e=>{
   const t=e.target,k=t.dataset.field;
@@ -368,6 +420,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',e=>{
   const t=e.target,k=t.dataset.field;
+  if(t.dataset.restore!=null){const f=t.files?.[0];t.value='';if(f)restore(f);return;}
   if(t.dataset.play){savePlay(JSON.parse(t.dataset.play),t.checked);return;}
   if(t.dataset.wheel){if(t.checked)wheelState.checked.add(t.dataset.wheel);else wheelState.checked.delete(t.dataset.wheel);wheel(false);return;}
   if(t.dataset.weight){const o=local('nfl-model',{Offense:35,Defense:35,'Recent form':20,'Home field':10});o[t.dataset.weight]=+t.value;keep('nfl-model',o);render();return;}
@@ -376,15 +429,15 @@ document.addEventListener('change',e=>{
   if(k==='photoResults'){photoState.results=t.checked;photo();return;}
   if(k==='lean'){S.f.lean=t.checked;render();return;}
   if(k==='hideThin'){S.f.hideThin=t.checked;render();return;}
-  if(S.route.sport==='mlb'){const r=yardInput(t);if(r){if(r!=='keep')render();return;}}
-  if(t.dataset.yardPrice){setPrice(t.dataset.yardPrice,t.value);render();return;}
-  if(S.route.id==='nba-parlays'&&t.dataset.parlay){
-    nbaAction('parlayField',JSON.stringify([t.dataset.parlay,t.type==='checkbox'?t.checked:t.value]),t);
+  if(S.route.sport==='mlb'&&M.mlb){const r=M.mlb.input(t);if(r){if(r!=='keep')render();return;}}
+  if(t.dataset.yardPrice&&M.mlb){M.mlb.setPrice(t.dataset.yardPrice,t.value);render();return;}
+  if((S.route.id==='nba-parlays'||S.route.id==='nfl-parlays')&&t.dataset.parlay){
+    M[S.route.sport].action('parlayField',JSON.stringify([t.dataset.parlay,t.type==='checkbox'?t.checked:t.value]),t);
     if(t.type!=='number')render();
     return;
   }
-  if(S.route.sport==='mlb'&&k&&yardField(k,t.value)){render();return;}
-  if(isModel(S.route.id)&&k&&modelAction('field',k+':'+t.value)){render();return;}
+  if(S.route.sport==='mlb'&&k&&M.mlb?.field(k,t.value)){render();return;}
+  if(isModel(S.route.id)&&k&&M.models?.modelAction('field',k+':'+t.value)){render();return;}
   if(k&&!['notes','search'].includes(k))updateField(k,t.value);
 });
 // Pages that change after an async fetch (box-score grading, backup restore) ask for a redraw.
@@ -392,5 +445,20 @@ document.addEventListener('going:render',()=>render());
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menu){menu=null;header();}});
 window.addEventListener('popstate',()=>{dateHash=location.hash;start();});
 window.addEventListener('hashchange',()=>{if(dateHash!==location.hash){dateHash=location.hash;start();}});
+// Live scores: once a minute while the tab is visible, and right away when it comes back into view.
+async function tickScores(){
+  if(document.visibilityState!=='visible'||!S.loaded||S.error||!S.route)return;
+  const s=S.route.sport,token=req;
+  const games=['nba','nhl','nfl'].includes(s)&&!isModel(S.route.id)?S.games:isCollege(s)&&S.route.id!=='college-players'?S.data?.games:null;
+  if(!games?.length)return;
+  if(await refreshScores(s,games).catch(()=>false)&&token===req)render();
+}
+setInterval(tickScores,60000);
+document.addEventListener('visibilitychange',tickScores);
 document.documentElement.dataset.theme=local('theme','dark');
 start();
+// Offline support (site/sw.js). Only built deploys register it: their module URLs carry ?v=, the unbuilt site/ does not.
+if('serviceWorker' in navigator&&new URL(import.meta.url).searchParams.has('v'))
+  addEventListener('load',()=>navigator.serviceWorker.register(BASE+'sw.js').catch(e=>console.warn('Offline support unavailable',e)));
+addEventListener('offline',()=>toast('You are offline. Pages show the data saved on this device.'));
+addEventListener('online',()=>{toast('Back online.');if(S.error){S.error=null;load();}});

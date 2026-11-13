@@ -1,7 +1,8 @@
 import {american} from '../site/math.mjs';
 const host='https://external-api.kalshi.com/trade-api/v2/markets';
 const series={
-  nfl:{Receiving:'KXNFLRECYDS',Rushing:'KXNFLRSHYDS',Passing:'KXNFLPASSYDS','Anytime TD':'KXNFLTD','First TD':'KXNFLFIRSTTD'},
+  nfl:{Receiving:'KXNFLRECYDS',Rushing:'KXNFLRSHYDS',Passing:'KXNFLPASSYDS','Anytime TD':'KXNFLTD','First TD':'KXNFLFIRSTTD',
+    Receptions:'KXNFLREC','Rush Attempts':'KXNFLRSHATT','Pass Attempts':'KXNFLPASSATT',Completions:'KXNFLPASSCOMP'},
   nba:{Points:'KXNBAPTS',Threes:'KXNBA3PT',Assists:'KXNBAAST',Rebounds:'KXNBAREB'},
   nhl:{'Anytime Goals':'KXNHLGOAL',Points:'KXNHLPTS',Saves:'KXNHLSAVE'}
 };
@@ -62,5 +63,5 @@ export async function publicQuotes(s,games,{onAlternates}={}){
   const rows=all.flatMap(r=>r.status==='fulfilled'?r.value:[]);
   const quotes=chooseQuotes(rows);
   if(s==='nba'&&onAlternates)onAlternates(chooseQuotes(rows,true).map(q=>({...q,capturedAt})));
-  return s==='nba'?quotes.map(q=>({...q,capturedAt})):quotes;
+  return quotes.map(q=>({...q,capturedAt}));
 }

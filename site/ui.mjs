@@ -9,7 +9,7 @@ export function sportWordmark(section,alt=section.name){
 export const dateKey=(d=new Date())=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
 export const today=dateKey();
 export const dateAdd=(d,n)=>new Date(Date.parse(d+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
-export const dateLabel=(d,short=false)=>new Intl.DateTimeFormat('en-US',{timeZone:'UTC',weekday:short?'short':'long',month:short?'short':'long',day:'numeric'}).format(new Date(d+'T12:00:00Z'));
+export const dateLabel=(d,short=false)=>!d?'':new Intl.DateTimeFormat('en-US',{timeZone:'UTC',weekday:short?'short':'long',month:short?'short':'long',day:'numeric'}).format(new Date(d+'T12:00:00Z'));
 export const gameDay=g=>g?.date|| (g?.iso?dateKey(new Date(g.iso)):today);
 export const et=(g)=>g?.iso?new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit'}).format(new Date(g.iso)):g?.time?new Intl.DateTimeFormat('en-US',{timeZone:'UTC',hour:'numeric',minute:'2-digit'}).format(new Date('2000-01-01T'+g.time+':00Z')):'TBD';
 export const final=g=>g&&(['OFF','FINAL'].includes(g.status)||(!g.status&&g.sa!=null&&g.sh!=null));
@@ -29,9 +29,12 @@ export function logoURL(t,s=current.route.sport){
   if(s==='nhl')return 'https://assets.nhle.com/logos/nhl/svg/'+t+'_dark.svg';
   if(s==='mlb')return 'https://www.mlbstatic.com/team-logos/team-cap-on-dark/'+(mlbTeams[t]?.[1]??0)+'.svg';
   const code=s==='nfl'?nflTeams[t]?.[2]||t:({WSH:'wsh',UTAH:'utah'}[t]||t);
-  return 'https://a.espncdn.com/i/teamlogos/'+s+'/500/'+(code||'').toLowerCase()+'.png';
+  return espnLogo(s+'/500/'+(code||'').toLowerCase()+'.png');
 }
-export const logo=(t,s=current.route.sport)=>t?`<img class="team-mark" src="${logoURL(t,s)}" alt="${esc(t)}" decoding="async">`:'';
+// ESPN's logo files are 500x500 (about 75 KB each); the largest place GOING shows one is 43px. Its image resizer serves
+// the same logo at 96px, about 5 KB, sharp on high-density screens.
+export const espnLogo=path=>'https://a.espncdn.com/combiner/i?img=/i/teamlogos/'+path+'&w=96&h=96';
+export const logo=(t,s=current.route.sport)=>t?`<img class="team-mark" src="${logoURL(t,s)}" alt="${esc(t)}" loading="lazy" decoding="async" onerror="this.remove()">`:'';
 export const team=(t,verbose=false)=>`<span class="team-inline">${logo(t)} ${esc(verbose?teamName(t):t)}</span>`;
 export const teamBanner=(t,sub='')=>`<div class="team-banner" style="--team:${color(t)}">${logo(t)} ${esc(teamName(t))}<span class="right">${esc(sub)}</span></div>`;
 export const action=(act,v)=>`data-act="${esc(act)}" data-v="${esc(v)}"`;
@@ -54,16 +57,27 @@ export const group=(t,span)=>({t,span});
 export function table(cols,rows,opts={}){
   if(!rows.length)return empty(opts.empty||'No rows match these filters.');
   const sorted=opts.sort?sortRows(rows,opts.sort):rows;
-  return `<div class="tablewrap ${opts.wrap||''}"><table class="board ${opts.cls||''}"><thead>${opts.groups?`<tr>${opts.groups.map(g=>`<th colspan="${g.span}" class="${g.t?'th-group':''}">${g.t}</th>`).join('')}</tr>`:''}<tr>${cols.map((h,i)=>{const p=typeof h==='object'?h:{t:h};return `<th class="${p.cls||''} ${i===0?'left':''}" ${p.span?`colspan="${p.span}"`:''} ${p.style?`style="${p.style}"`:''} ${opts.sort?action('sort',opts.sort+':'+i):''}>${p.t}${current.sort?.table===opts.sort&&current.sort?.col===i?(current.sort.desc?' ▾':' ▴'):''}</th>`;}).join('')}</tr>${opts.extra?`<tr>${opts.extra.map(x=>`<th>${x}</th>`).join('')}</tr>`:''}</thead><tbody>${sorted.map(r=>{const x=Array.isArray(r)?{cells:r}:r;return `<tr class="${x.cls||''}" ${x.act?action(x.act,x.v):''}>${x.cells.map(c=>typeof c==='object'&&c!==null?`<td class="${c.cls||''}" ${c.title?`title="${esc(c.title)}"`:''}>${c.html??'—'}</td>`:`<td>${c??'—'}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
+  // opts.limit draws the first rows of a long sorted table and adds a Show more button; sorting still covers every row.
+  const limit=opts.limit&&opts.sort?(current.f['rows:'+opts.sort]||opts.limit):Infinity,shown=sorted.length>limit?sorted.slice(0,limit):sorted;
+  const more=shown.length<sorted.length?tools(btn(`Show ${Math.min(opts.limit,sorted.length-shown.length)} more`,'moreRows',opts.sort+':'+(limit+opts.limit))+`<span class="subtle">${shown.length} of ${sorted.length}</span>`):'';
+  return `<div class="tablewrap ${opts.wrap||''}"><table class="board ${opts.cls||''}"><thead>${opts.groups?`<tr>${opts.groups.map(g=>`<th colspan="${g.span}" class="${g.t?'th-group':''}">${g.t}</th>`).join('')}</tr>`:''}<tr>${cols.map((h,i)=>{const p=typeof h==='object'?h:{t:h};return `<th class="${p.cls||''} ${i===0?'left':''}" ${p.span?`colspan="${p.span}"`:''} ${p.style?`style="${p.style}"`:''} ${opts.sort?action('sort',opts.sort+':'+i):''}>${p.t}${current.sort?.table===opts.sort&&current.sort?.col===i?(current.sort.desc?' ▾':' ▴'):''}</th>`;}).join('')}</tr>${opts.extra?`<tr>${opts.extra.map(x=>`<th>${x}</th>`).join('')}</tr>`:''}</thead><tbody>${shown.map(r=>{const x=Array.isArray(r)?{cells:r}:r;return `<tr class="${x.cls||''}" ${x.act?action(x.act,x.v):''}>${x.cells.map(c=>typeof c==='object'&&c!==null?`<td class="${c.cls||''}" ${c.title?`title="${esc(c.title)}"`:''}>${c.html??'—'}</td>`:`<td>${c??'—'}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`+more;
 }
 function sortRows(rows,name){
   const s=current.sort;if(s?.table!==name)return rows;
   const value=r=>{const x=(r.cells||r)[s.col];const v=x?.value??String(x?.html??x??'').replace(/<[^>]*>/g,' ').trim();const n=String(v).match(/^[+-]?\d+(?:\.\d+)?/);return n?+n[0]:v;};
   return [...rows].sort((a,b)=>{const x=value(a),y=value(b);return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y)))*(s.desc?-1:1);});
 }
+// Player photos are shown at 33px, but the sources send 600px (ESPN, ~190 KB) and 3400px (NFL, ~1 MB) originals.
+// Both hosts resize on request, so ask for 96px: a few KB each and still sharp on high-density screens.
+export function headshot(url){
+  if(/^https:\/\/a\.espncdn\.com\/i\/headshots\//.test(url))return 'https://a.espncdn.com/combiner/i?img='+url.slice('https://a.espncdn.com'.length)+'&w=96&h=70';
+  const nfl=url.match(/^(https:\/\/static\.www\.nfl\.com\/image\/upload\/)(?:([^/]*f_auto[^/]*)\/)?(.*)$/);
+  if(nfl)return nfl[1]+(nfl[2]?nfl[2].replace(/,?w_\d+/,'')+',w_96':'f_auto,q_auto,w_96')+'/'+nfl[3];
+  return url;
+}
 export function person(p,detail=true){
   if(!p)return '—';
-  const image=detail&&p.img&&/^https:\/\//.test(p.img)?`<img class="head" src="${esc(p.img)}" alt="" loading="lazy" decoding="async">`:'';
+  const image=detail&&p.img&&/^https:\/\//.test(p.img)?`<img class="head" src="${esc(headshot(p.img))}" alt="" loading="lazy" decoding="async">`:'';
   const text=image+`<span>${esc(p.name)}${p.team||p.pos?`<small>${p.team?logo(p.team)+' '+esc(p.team):''} ${esc(p.pos||'')}${p.gp!=null?' · '+p.gp+' GP':''}</small>`:''}</span>`;
   return cell(p.id?`<button class="person" ${action('player',p.id)}>${text}</button>`:`<span class="person">${text}</span>`,'player-cell');
 }
@@ -75,12 +89,12 @@ export function slate(opts={}){
   return box('',nav+`<div class="matchup-row">${current.games.length?current.games.map(g=>{
     const multi=opts.multi&&current.f.multi;
     const on=opts.multi?(multi||[]).includes(g.id):current.game?.id===g.id&&!current.f.allGames;
-    const caption=s==='nfl'?dateLabel(gameDay(g),true).replace(/, (\w+) (\d+)/,(_,m,d)=>', '+(1+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(m))+'/'+d):final(g)?opts.score?`${g.sa}　　　　　 ${g.sh}`:'Final':liveGame(g)?`${g.sa}–${g.sh} · Live`:et(g);
+    const caption=liveGame(g)?`${g.sa}–${g.sh} · Live`:s==='nfl'?dateLabel(gameDay(g),true).replace(/, (\w+) (\d+)/,(_,m,d)=>', '+(1+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(m))+'/'+d):final(g)?opts.score?`${g.sa}　　　　　 ${g.sh}`:'Final':liveGame(g)?`${g.sa}–${g.sh} · Live`:et(g);
     const b=opts.primetime&&g.time>='19:00'?badge('PRIMETIME','g'):opts.tall&&s==='nhl'&&current.lineups?.[g.a]&&current.lineups?.[g.h]?badge('✓ LINEUP','g'):'';
     return `<button class="game ${opts.tall?'tall ':''}${on?'on':''}" ${action(opts.multi?'multi':'game',g.id)} aria-label="${g.a} @ ${g.h} ${esc(caption)}" aria-pressed="${!!on}"><span class="game-logo">${logo(g.a)}<span>@</span>${logo(g.h)}</span><span>${esc(caption)}</span>${b}</button>`;
   }).join(''):'<span class="subtle">No games on this slate.</span>'}</div>`,'','slate');
 }
-export const hero=(g)=>g?box('',`<h1>${logo(g.a)} ${esc(teamName(g.a))} <span class="muted">@</span> ${esc(teamName(g.h))} ${logo(g.h)}</h1><p class="subtle">${dateLabel(gameDay(g))} · ${et(g)} ET${g.tv?' · '+esc(g.tv):''}${final(g)?` · Final: ${g.a} ${g.sa}, ${g.h} ${g.sh}`:''}</p>`,'','matchhero'):'';
+export const hero=(g)=>g?box('',`<h1>${logo(g.a)} ${esc(teamName(g.a))} <span class="muted">@</span> ${esc(teamName(g.h))} ${logo(g.h)}</h1><p class="subtle">${dateLabel(gameDay(g))} · ${et(g)} ET${g.tv?' · '+esc(g.tv):''}${final(g)?` · Final: ${g.a} ${g.sa}, ${g.h} ${g.sh}`:liveGame(g)?` · Live: ${g.a} ${g.sa}, ${g.h} ${g.sh}`:''}</p>`,'','matchhero'):'';
 export const matchup=()=>current.game||{a:current.f.away,h:current.f.home};
 export const versus=g=>`${team(g.a)} <span class="muted">@</span> ${team(g.h)}`;
 export const oddsNote=(g)=>g?.odds?.provider?'<span class="tiny">Game lines: '+esc(g.odds.provider)+' via ESPN.</span>':'';
@@ -113,7 +127,7 @@ export function footer(){
   const lead=current.route.id==='myplays'?'Your saved plays, graded. Saved in this browser.':
     /-models$/.test(current.route.id)?'Model forecasts are published from the local ensemble lab. Research only, not betting advice.':
     f?`Data: <a href="${f[1]}" target="_blank" rel="noopener">${f[0]}</a>. ${f[2]}`:'Public sports data, refreshed automatically. Research only, not betting advice.';
-  $('#footer').innerHTML=`<a class="footer-brand" href="${BASE}" aria-label="GOING home"><img class="going-wordmark" src="${BASE}brand/going-wordmark.svg" width="461" height="100" alt=""></a>`+lead+`<div class="sources">${Object.entries(footers).map(([k,x])=>`<a href="${x[1]}" target="_blank" rel="noopener">${k.toUpperCase()} sources</a>`).join('')}<a href="https://www.espn.com/" target="_blank" rel="noopener">ESPN game lines &amp; injuries</a><a href="https://docs.kalshi.com/api-reference/market/get-markets" target="_blank" rel="noopener">Kalshi public player lines</a></div>`;
+  $('#footer').innerHTML=`<a class="footer-brand" href="${BASE}" aria-label="GOING home"><img class="going-wordmark" src="${BASE}brand/going-wordmark.svg" width="461" height="100" alt=""></a>`+lead+`<p class="tiny responsible">For adults 21 and over (18 where permitted). Gambling problem? Call 1-800-GAMBLER for free, confidential help.</p><div class="sources">${Object.entries(footers).map(([k,x])=>`<a href="${x[1]}" target="_blank" rel="noopener">${k.toUpperCase()} sources</a>`).join('')}<a href="https://www.espn.com/" target="_blank" rel="noopener">ESPN game lines &amp; injuries</a><a href="https://docs.kalshi.com/api-reference/market/get-markets" target="_blank" rel="noopener">Kalshi public player lines</a></div>`;
 }
 export function dialog(title,body,wide=false){
   const d=$('#dialog');
