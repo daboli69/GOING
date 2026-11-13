@@ -1,12 +1,44 @@
 // GOING landing: one door per sport, each carrying today's real slate and model numbers.
 import {sections,menus,href} from './config.mjs';
-import {esc,get,dataURL,pct,dateLabel,today} from './ui.mjs';
+import {esc,get,dataURL,pct,dateLabel,dateKey} from './ui.mjs';
+import {liveModels,liveScores,liveSlate,liveGet,gamesOn} from './live-api.mjs';
 
-let summary={};
-export async function homeLoad(){
-  const [live,models,yard]=await Promise.all([get(dataURL('live/manifest.json'),{}),get(dataURL('models/summary.json'),{}),get(dataURL('yard/summary.json'),{})]);
-  summary={live,models,yard};
+let summary={}, boards={}, boardDay;
+export async function homeLive(sports=['nba','nhl','nfl']){
+  const day=dateKey();
+  const [live,entries]=await Promise.all([get(dataURL('live/manifest.json'),{}),Promise.all(sports.map(async s=>{
+    if(s==='nfl')return [s,await liveScores(s)];
+    const [games,lineups]=await Promise.all([liveSlate(s,day),
+      s==='nhl'?liveGet('/nhl/lineups/'+day,'live/nhl-lineups-'+day+'.json',null):null]);
+    return [s,games&&{games,lineups}];
+  }))]);
+  return {live,entries,day};
 }
+export async function homeLoad(){
+  const [live,models,yard]=await Promise.all([homeLive(),liveModels('summary',{}),get(dataURL('yard/summary.json'),{})]);
+  return {live,models,yard};
+}
+export function homeApply({live,models,yard}){
+  if(live){
+    const {entries,day}=live;
+    summary.live={...live.live};
+    if(boardDay!==day){boards={};boardDay=day;}
+    for(const [s,board] of entries)if(board)boards[s]=board;
+    for(const [s,{games,week,lineups}] of Object.entries(boards)){
+      if(s==='nfl'&&games.length)summary.live.nfl={week,games:games.length};
+      else if(games.length)summary.live[s]={date:day,games:games.length,lineups:lineups&&Object.keys(lineups).length};
+    }
+  }
+  if(models){
+    summary.models??={};
+    for(const [s,model] of Object.entries(models)){
+      if((model.generated_at||'')>=(summary.models[s]?.generated_at||''))summary.models[s]=model;
+    }
+  }
+  if(yard)summary.yard=yard;
+}
+export function homeReset(){boards={};summary={};}
+export const homeActive=()=>Object.keys(boards).filter(s=>gamesOn(boards[s].games));
 const ago=iso=>{
   if(!iso)return null;
   const m=Math.round((Date.now()-Date.parse(iso))/60000);
@@ -20,6 +52,7 @@ const quick={nba:['Ensemble Forecasts','Slate Standouts','All Props','Shot Chart
 const link=(s,t)=>{const r=Object.values(menus[s]).flat().find(x=>x[0]===t);return r?`<a class="pill" href="${href(r[1])}">${esc(t)}</a>`:'';};
 
 function facts(s){
+  const today=dateKey();
   const L=summary.live?.[s]||{},M=summary.models?.[s]||{};
   if(s==='nba')return fact(L.date===today?'Tonight':L.date?dateLabel(L.date,true):'Slate',L.games==null?null:plural(L.games,'game'))+fact('Strongest model pick',pickLine(M.top))+fact('Model record',record(M.record));
   if(s==='nfl')return fact(L.week?'Week '+L.week:'Week',L.games==null?null:plural(L.games,'game'))+fact('Strongest model pick',pickLine(M.top))+fact('Model record this season',record(M.record));

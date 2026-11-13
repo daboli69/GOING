@@ -1,7 +1,7 @@
 """Publish the local ensemble model outputs to GOING.
 
   python publishers/publish_models.py            # export both labs, write site/data/models/ for local preview
-  python publishers/publish_models.py --push     # also commit to the `model-feeds` branch and start a site deploy
+  python publishers/publish_models.py --push     # also commit to the `model-feeds` branch
 
 How the push works: the three JSON files are committed to the `model-feeds` branch with git plumbing
 (hash-object / mktree / commit-tree), so the checkout, its index and main are never touched. When the
@@ -14,6 +14,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -141,7 +142,7 @@ def push(files: dict[str, dict], message: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--push", action="store_true", help="publish to origin/model-feeds and start a deploy")
+    ap.add_argument("--push", action="store_true", help="publish to origin/model-feeds")
     args = ap.parse_args()
     old = published()
     nfl = export("export_nfl.py", NFL_LAB)
@@ -165,6 +166,14 @@ def main() -> int:
     stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
     commit = push(files, f"Model feeds {stamp}")
     print(f"Pushed {commit[:10]} to {BRANCH}")
+    # Read the production config so a local preview URL cannot suppress a Pages deploy.
+    try:
+        git("fetch", "--quiet", "origin", "main")
+        config = git("show", "FETCH_HEAD:site/config.mjs")
+    except RuntimeError:
+        config = ""
+    if re.search(r"""^export const LIVE_API\s*=\s*['"]https://[^'"]+['"]""", config, re.MULTILINE):
+        return 0
     r = subprocess.run(["gh", "workflow", "run", "deploy.yml", "--ref", "main", "-f", "mode=models"], cwd=str(HUB),
                        capture_output=True, text=True)
     print("Deploy started." if r.returncode == 0 else f"Deploy not started ({(r.stderr or '').strip()[:200]}); the next scheduled run will pick it up.")

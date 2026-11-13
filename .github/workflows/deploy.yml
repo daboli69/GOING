@@ -2,18 +2,20 @@ name: Refresh and deploy
 
 # Hourly: slates, injuries, public prices and NHL lineups (about a minute).
 # 09:07 and 17:07 UTC: also rebuild the season archives (nflverse, hoopR, NHL), reusing cached downloads.
-# The local model publisher starts a run with mode=models whenever forecasts change.
+# Between hourly runs, refresh public prices and NHL line stats on the last complete site snapshot.
 on:
   schedule:
-    - cron: '7 * * * *'
+    - cron: '7 0-8,10-16,18-23 * * *'
+    - cron: '7 9,17 * * *'
+    - cron: '22,37,52 * * * *'
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
       mode:
-        description: 'live = snapshots only, full = also rebuild season archives, models = new model feeds'
+        description: 'live = snapshots, full = also rebuild archives, models = new model feeds, markets = odds and line stats'
         type: choice
-        options: [live, full, models]
+        options: [live, full, models, markets]
         default: live
 
 permissions:
@@ -57,13 +59,38 @@ jobs:
         id: mode
         run: |
           mode="${{ inputs.mode || 'live' }}"
-          hour=$(date -u +%H)
-          if [ "${{ github.event_name }}" = "schedule" ] && { [ "$hour" = "09" ] || [ "$hour" = "17" ]; }; then mode=full; fi
+          case "${{ github.event.schedule }}" in
+            '22,37,52 * * * *') mode=markets ;;
+            '7 9,17 * * *') mode=full ;;
+          esac
           deep=""
-          if [ -z "${{ steps.archive.outputs.cache-matched-key }}" ]; then mode=full; deep="--deep"; fi
+          if [ "$mode" != markets ] && [ -z "${{ steps.archive.outputs.cache-matched-key }}" ]; then mode=full; deep="--deep"; fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
           echo "deep=$deep" >> "$GITHUB_OUTPUT"
           echo "Mode: $mode $deep"
+
+      - name: Restore site snapshots
+        if: steps.mode.outputs.mode == 'markets'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            site/data/live
+            site/data/yard
+            site/data/models
+            site/data/tracker
+          key: snapshots-v1-${{ github.run_id }}
+          restore-keys: snapshots-v1-
+
+      - name: Refresh prices and line stats
+        if: steps.mode.outputs.mode == 'markets'
+        id: markets
+        run: |
+          if [ ! -s site/data/live/manifest.json ] || [ -z "${{ steps.archive.outputs.cache-matched-key }}" ]; then
+            echo "::notice::Waiting for the first complete site snapshot."
+            exit 0
+          fi
+          node scripts/live.mjs --markets
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Rebuild season archives
         if: steps.mode.outputs.mode == 'full'
@@ -79,15 +106,18 @@ jobs:
           key: archive-v1-${{ github.run_id }}
 
       - name: Capture live snapshots
+        if: steps.mode.outputs.mode != 'markets'
         run: node scripts/live.mjs || echo "::warning::Live snapshot failed; pages fall back to the archives."
 
       # GOING YARD: hr-board runs its own model on its own schedule; this copies what it last published.
       - name: Add GOING YARD board
+        if: steps.mode.outputs.mode != 'markets'
         run: node scripts/yard.mjs || echo "::warning::GOING YARD data could not be refreshed."
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
       - name: Add model feeds
+        if: steps.mode.outputs.mode != 'markets'
         run: |
           mkdir -p site/data/models
           if git fetch --depth 1 origin model-feeds 2>/dev/null; then
@@ -98,15 +128,18 @@ jobs:
 
       # Pick tracker: the permanent record lives on the `tracker` branch, never in the cache.
       - name: Restore pick record
+        if: steps.mode.outputs.mode != 'markets'
         run: |
           mkdir -p site/data/tracker
           if git fetch --depth 1 origin tracker:refs/remotes/origin/tracker 2>/dev/null; then git archive refs/remotes/origin/tracker | tar -x -C site/data/tracker; fi
 
       - name: Capture and grade picks
+        if: steps.mode.outputs.mode != 'markets'
         id: track
         run: node scripts/track.mjs || echo "::warning::Pick tracker failed; the previous record is still published."
 
       - name: Save pick record
+        if: steps.mode.outputs.mode != 'markets'
         run: |
           set -e
           dir=$(mktemp -d)
@@ -123,16 +156,31 @@ jobs:
           git push -q origin HEAD:refs/heads/tracker
 
       - id: pages
+        if: steps.mode.outputs.mode != 'markets' || steps.markets.outputs.ready == 'true'
         uses: actions/configure-pages@v5
 
       - name: Build
+        if: steps.pages.outcome == 'success'
         run: node scripts/build.mjs
         env:
           GOING_BASE: ${{ steps.pages.outputs.base_path }}/
 
       - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outcome == 'success'
         with:
           path: dist
 
       - id: deployment
+        if: steps.pages.outcome == 'success'
         uses: actions/deploy-pages@v4
+
+      - name: Save site snapshots
+        if: steps.mode.outputs.mode != 'markets' && steps.deployment.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            site/data/live
+            site/data/yard
+            site/data/models
+            site/data/tracker
+          key: snapshots-v1-${{ github.run_id }}-${{ github.run_attempt }}
