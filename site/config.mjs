@@ -18,6 +18,7 @@ export const menus={
     Models:[['Ensemble Forecasts','up/','nba-models']],
     Matchups:[['Slate Standouts','up/standouts.html','standouts'],['League Stats Chart','up/league.html','league'],['Matchup Keys','up/matchup-keys.html','keys'],['Zone Matchup Targets','up/zones.html','zones'],['Player Types','up/types.html','types'],['Shot Charts','up/shot-charts.html','shotcharts']],
     Props:[['All Props','up/all-props.html','nba-props'],['Points','up/points.html','nba-props'],['Threes','up/threes.html','nba-props'],['Assists','up/assists.html','nba-props'],['Rebounds','up/rebounds.html','nba-props'],['Assist Spots','up/assist-spots.html','nba-props'],['1st Basket','up/first-basket.html','basket']],
+    Parlays:[['Suggested Parlays','up/suggested-parlays.html','nba-parlays']],
     Promos:[['King of the Court','up/promo-tools.html','court']]
   },
   nhl:{

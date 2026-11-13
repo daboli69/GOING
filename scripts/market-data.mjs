@@ -38,6 +38,7 @@ export async function publicQuotes(s,games){
   const by=new Map(games.flatMap(g=>eventSuffixes(s,g).map(k=>[k,g])));
   const starts=games.map(g=>g.date).sort();
   const after=Math.floor(Date.parse(starts[0]+'T00:00:00Z')/1000)-8*86400;
+  const capturedAt=new Date().toISOString();
   const all=await Promise.allSettled(Object.entries(series[s]).map(async ([market,ticker])=>{
     const rows=[];let cursor='';
     for(let page=0;page<3;page++){
@@ -58,5 +59,6 @@ export async function publicQuotes(s,games){
     }
     return rows;
   }));
-  return chooseQuotes(all.flatMap(r=>r.status==='fulfilled'?r.value:[]));
+  const quotes=chooseQuotes(all.flatMap(r=>r.status==='fulfilled'?r.value:[]));
+  return s==='nba'?quotes.map(q=>({...q,capturedAt})):quotes;
 }

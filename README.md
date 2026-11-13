@@ -13,6 +13,8 @@ Each section uses its own accent color: orange for basketball, green for footbal
 
 ## How the data stays current
 
+**GOING UP Suggested Parlays.** The builder uses the existing NBA archives, ESPN game lines and injury reports, and captured Kalshi player quotes. It can return a shorter ticket or no ticket when the available data and filters leave too few eligible legs. Combined odds multiply the individual quotes. The adjusted chance uses season win counts plus five wins and five losses per leg before multiplying, with no same-game correlation adjustment. Generated tickets, filter settings, and manually logged results are stored in this browser.
+
 Two sources feed the site, and neither commits data to `main`.
 
 **Public data (GitHub Actions, `.github/workflows/deploy.yml`).** The workflow runs every hour. It saves slates, injuries, Kalshi public player prices, NHL projected lineups and line-matchup stats (`scripts/live.mjs`, about a minute), then builds and deploys the site to GitHub Pages. Twice a day (09:07 and 17:07 UTC) it also rebuilds the season archives from nflverse, hoopR and the NHL feed (`scripts/refresh.mjs`). Downloads and archives sit in the Actions cache, so each rebuild fetches only what changed. A push to `main` also deploys.

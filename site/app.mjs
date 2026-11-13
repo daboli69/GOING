@@ -29,7 +29,13 @@ function header(){
   const s=S.route.sport, sec=sections[s];
   const menuHTML=(k,items)=>`<div class="navitem"><button type="button" class="navbutton ${k!=='Sports'&&items.some(([,p])=>p===S.route.path)?'active':''}" aria-expanded="${menu===k}" ${action('menu',k)}>${esc(k)} <small aria-hidden="true">▾</small></button><div class="navmenu" ${menu===k?'':'hidden'}>${items.map(([t,p])=>p?`<a href="${href(p)}" ${S.route.path===p?'aria-current="page"':''}>${esc(t)}</a>`:`<span class="nav-label">${esc(t)}</span>`).join('')}</div></div>`;
   const sportMenu=Object.entries(sections).map(([k,x])=>x.home?['GOING '+x.word+' · '+x.league,x.home]:null).filter(Boolean);
-  const nav=sec&&menus[s]?Object.entries(menus[s]).map(([k,items])=>menuHTML(k,items)).join('')+menuHTML('Sports',sportMenu):
+  const nav=sec&&menus[s]?Object.entries(menus[s]).map(([k,items])=>{
+    if(s==='nba'&&k==='Parlays'){
+      const [[title,path]]=items, active=S.route.path===path;
+      return `<a class="navbutton${active?' active':''}" href="${href(path)}" ${active?'aria-current="page"':''}>${esc(title)}</a>`;
+    }
+    return menuHTML(k,items);
+  }).join('')+menuHTML('Sports',sportMenu):
     Object.entries(sections).filter(([,x])=>x.home).map(([k,x])=>`<a class="navbutton" href="${href(x.home)}">${x.league}</a>`).join('');
   $('#site-header').innerHTML=`<a class="brand" href="${href('')}" aria-label="${sec?`${esc(sec.name)} | `:''}GOING home">${sec?`<span class="brand-chip">${sec.league}</span>`:''}${sec?sportWordmark(sec,''):`<img class="going-wordmark brand-main" src="${href('brand/going-wordmark.svg')}" width="461" height="100" alt="">`}</a><nav class="nav" aria-label="${sec?esc(sec.name)+' tools':'Sports'}">${nav}<a class="navbutton ${S.route.id==='tracker'?'active':''}" href="${href('tracker.html')}">Tracker</a><a class="navbutton ${S.route.id==='myplays'?'active':''}" href="${href('plays.html')}">My Plays</a></nav><div class="head-actions"><button type="button" class="icon" aria-label="Switch light/dark theme" title="Switch light/dark theme" ${action('theme','')}>${document.documentElement.dataset.theme==='light'?'☾':'☼'}</button></div>`;
 }
@@ -331,7 +337,7 @@ document.addEventListener('click',e=>{
   if(act==='photo'){photo();return;}
   if(act==='photoCol'){photoState.columns=v;photo();return;}
   if(S.route.sport==='mlb'){const r=yardAction(act,v);if(r){if(typeof r==='string')toast(r);render();return;}}
-  if(modules[S.route.sport])modules[S.route.sport][2](act,v);
+  if(modules[S.route.sport]?.[2](act,v,t)&&act.startsWith('parlay'))render();
 });
 document.addEventListener('input',e=>{
   const t=e.target,k=t.dataset.field;
@@ -351,6 +357,11 @@ document.addEventListener('change',e=>{
   if(k==='hideThin'){S.f.hideThin=t.checked;render();return;}
   if(S.route.sport==='mlb'){const r=yardInput(t);if(r){if(r!=='keep')render();return;}}
   if(t.dataset.yardPrice){setPrice(t.dataset.yardPrice,t.value);render();return;}
+  if(S.route.id==='nba-parlays'&&t.dataset.parlay){
+    nbaAction('parlayField',JSON.stringify([t.dataset.parlay,t.type==='checkbox'?t.checked:t.value]),t);
+    if(t.type!=='number')render();
+    return;
+  }
   if(S.route.sport==='mlb'&&k&&yardField(k,t.value)){render();return;}
   if(isModel(S.route.id)&&k&&modelAction('field',k+':'+t.value)){render();return;}
   if(k&&!['notes','search'].includes(k))updateField(k,t.value);
