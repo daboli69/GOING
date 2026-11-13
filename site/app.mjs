@@ -9,7 +9,7 @@ import {refreshScores} from './live-scores.mjs';
 // The build adds a modulepreload hint for the page's own section, so this costs no extra round trip.
 const loaders={
   nfl:()=>import('./nfl.mjs').then(m=>({page:m.nflPage,player:m.nflPlayer,action:m.nflAction,result:m.nflResult})),
-  nba:()=>import('./nba.mjs').then(m=>({page:m.nbaPage,player:m.nbaPlayer,action:m.nbaAction,result:m.nbaResult})),
+  nba:()=>import('./nba.mjs').then(m=>({page:m.nbaPage,player:m.nbaPlayer,action:m.nbaAction,result:m.nbaResult,fbPrice:m.fbPrice})),
   nhl:()=>import('./nhl.mjs').then(m=>({page:m.nhlPage,player:m.nhlPlayer,action:m.nhlAction,result:m.nhlResult})),
   mlb:()=>Promise.all([import('./yard.mjs'),import('./yard-engine.mjs'),import('./yard-more.mjs')]).then(([y,e,more])=>({page:y.yardPage,player:y.yardPlayer,
     action:y.yardAction,result:y.yardResult,field:y.yardField,input:y.yardInput,engineViews:y.ENGINE_VIEWS,setYardData:e.setYardData,setPrice:more.setPrice})),
@@ -91,6 +91,11 @@ async function slateFor(s,d){
   if(s==='nba')return get(`${ESPN}/${sportPath.nba}/scoreboard?dates=${d.replaceAll('-','')}`,null).then(j=>j&&scoreboard(j,'nba'));
   return null;
 }
+// 1st Basket: the live injury report (starters are a hard input) and the saved calibration log.
+const basketInputs=()=>Promise.all([get(`${ESPN}/${sportPath.nba}/injuries`,null).then(j=>j?.injuries?.length?compactInjuries(j):null).catch(()=>null),
+  get(dataURL('tracker/first-basket-index.json'),{}).then(i=>Promise.all((i.months||[]).map(m=>get(dataURL('tracker/first-basket-'+m+'.json'),[])))).then(x=>x.flat()).catch(()=>[]),
+  get(dataURL('tracker/first-basket-backtest.json'),null)])
+  .then(([injuries,live,backtest])=>({injuries,fbLog:{live,backtest:backtest?.games||[]}}));
 const nflParlayInputs=year=>Promise.all([get(dataURL('models/nfl.json'),null),get(dataURL('nfl-extra-'+year+'.json'),null),
   get(dataURL('live/weather-nfl.json'),null),get(`${ESPN}/${sportPath.nfl}/injuries`,null).then(j=>j?.injuries?.length?compactInjuries(j):null).catch(()=>null)])
   .then(([models,extra,weather,injuries])=>({models,extra,weather,injuries}));
@@ -175,7 +180,7 @@ async function load(){
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
       injuriesFor(s),oddsFor(s,d),
       s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{},
-      id==='nfl-parlays'?nflParlayInputs(year):null]);
+      id==='nfl-parlays'?nflParlayInputs(year):id==='basket'?basketInputs():null]);
     if(token!==req)return;
     if(s==='nba')S.hoops=year;if(s==='nhl')S.ice=year;
     S.data=data;S.odds=odds;S.injuries=injuries;S.lineups=lineups;
@@ -183,6 +188,7 @@ async function load(){
     // (inactives post about 90 minutes before kickoff, often between hourly refreshes).
     S.models=models?.models||null;S.extra=models?.extra||null;S.weather=models?.weather||null;
     if(models?.injuries)S.injuries=models.injuries;
+    S.fbLog=models?.fbLog||null;
     if(s==='nfl'){
       const sched=data.schedule?.filter(g=>+g.id.slice(0,4)===S.year)||[];
       S.week??=sched.find(g=>g.date>=today)?.week??sched.at(-1)?.week??1;
@@ -410,7 +416,7 @@ document.addEventListener('click',e=>{
   if(act==='backup'){backup();return;}
   if(act==='photoCol'){photoState.columns=v;photo();return;}
   if(S.route.sport==='mlb'&&M.mlb){const r=M.mlb.action(act,v);if(r){if(typeof r==='string')toast(r);render();return;}}
-  if(M[S.route.sport]?.action?.(act,v,t)&&act.startsWith('parlay'))render();
+  if(M[S.route.sport]?.action?.(act,v,t)&&(act.startsWith('parlay')||act.startsWith('fb')))render();
 });
 document.addEventListener('input',e=>{
   const t=e.target,k=t.dataset.field;
@@ -421,6 +427,7 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
   const t=e.target,k=t.dataset.field;
   if(t.dataset.restore!=null){const f=t.files?.[0];t.value='';if(f)restore(f);return;}
+  if(t.dataset.fbPrice!=null&&M.nba){M.nba.fbPrice(t.dataset.fbPrice,t.value);render();return;}
   if(t.dataset.play){savePlay(JSON.parse(t.dataset.play),t.checked);return;}
   if(t.dataset.wheel){if(t.checked)wheelState.checked.add(t.dataset.wheel);else wheelState.checked.delete(t.dataset.wheel);wheel(false);return;}
   if(t.dataset.weight){const o=local('nfl-model',{Offense:35,Defense:35,'Recent form':20,'Home field':10});o[t.dataset.weight]=+t.value;keep('nfl-model',o);render();return;}

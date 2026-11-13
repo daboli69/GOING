@@ -18,6 +18,16 @@ Each section uses its own accent color and the same dashboard typography, boards
 
 **GOING UP Suggested Parlays.** The builder uses the existing NBA archives, ESPN game lines and injury reports, and captured Kalshi player quotes. It can return a shorter ticket or no ticket when the available data and filters leave too few eligible legs. Combined odds multiply the individual quotes. The adjusted chance uses season win counts plus five wins and five losses per leg before multiplying, with no same-game correlation adjustment. Generated tickets, filter settings, and manually logged results are stored in this browser.
 
+**GOING UP First Basket Board.** The 1st Basket page ranks every projected starter on the slate with one formula: P(first basket) = P(his team scores first) × P(he scores | his team scores first) (`site/first-basket.mjs`).
+- **Team side:** each team's tip rate is shrunk toward 50% (6 wins and 6 losses added) and combined head to head. Possessions then alternate from the tip, each team scoring on a possession at its opening-possession rate against what the opponent allows (both shrunk with 20 possessions of league average). The two teams sum to 100%.
+- **Player side:** his share of the team's attempts in its first 8 possessions (field goals and free-throw trips), blended with his first-shot share and shrunk toward usage, times a league-average early make rate. That rate moves only for a real shot-type edge (threes, rim, midrange; his makes and the defense's allowed rate, both shrunk and capped at ±15%), plus free throws. The bench keeps at least 3%.
+- **Check:** each game's ten starters should total about 95–100%, and the Model Check flags games outside 90–100%.
+- **Price:** type sportsbook prices (Kalshi's First Basket prices fill in if Kalshi lists them). A full board is normalized to remove the vig; a partial one is divided by an assumed hold. A play needs both a minimum edge and a minimum model-to-price ratio, and the round robin takes the top edges, one player per game.
+- **Starters:** projected from each team's last game and the live injury report. Scratch anyone ruled out when lineups post and the board re-runs.
+- **Log:** each hourly run saves the board before tip and grades it from the archive's first scorer (`scripts/track-nba-first-basket.mjs`). A backtest replays each past night with only earlier data. Both feed the Calibration Log, which stays rough until 100+ game-nights.
+
+The opening possessions come from the play-by-play (`scripts/normalize.py` keeps each game's first 16 as team, points, shooters, free-throw shooter and scorer, and tags early shots with their possession number).
+
 **GOING LONG Suggested Parlays.** The NBA generator's approach, adapted to football in ten steps (`site/nfl-parlay-engine.mjs`). It covers receiving, rushing and passing yards, receptions, rush and pass attempts, completions, anytime TD and first TD.
 
 1. **Rules.** Leg count, stat types, sides, one leg per game and exclusions, as in GOING UP.

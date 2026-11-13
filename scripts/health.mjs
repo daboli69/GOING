@@ -11,7 +11,7 @@ const hours=iso=>iso?(Date.now()-Date.parse(iso))/3600000:Infinity;
 const age=h=>!Number.isFinite(h)?'never':h<2?Math.round(h*60)+' min':h<48?Math.round(h)+' h':Math.round(h/24)+' days';
 
 // How old each feed may get before it counts as a problem. Hourly feeds get a few missed runs of slack.
-export function healthProblems({live,archive,college,tracker,parlays,nflParlays},now=Date.now()){
+export function healthProblems({live,archive,college,tracker,parlays,nflParlays,firstBasket},now=Date.now()){
   const h=iso=>iso?(now-Date.parse(iso))/3600000:Infinity, problems=[];
   const stale=(name,iso,limit)=>{const x=h(iso);if(!(x<=limit))problems.push({key:name,text:`${name}: ${Number.isFinite(x)?'last updated '+age(x)+' ago':'no update found'} (limit ${limit} h)`});};
   stale('Live slates, injuries and prices',live?.updated,3);
@@ -21,13 +21,14 @@ export function healthProblems({live,archive,college,tracker,parlays,nflParlays}
   stale('Pick tracker',tracker?.updated,3);
   stale('NBA parlay leg tracker',parlays?.updated,3);
   if(nflParlays!==undefined)stale('NFL parlay leg tracker',nflParlays?.updated,3);
+  if(firstBasket!==undefined)stale('First basket log',firstBasket?.updated,3);
   return problems;
 }
 
 if(process.argv[1]===fileURLToPath(import.meta.url)){
-  const [live,archive,college,tracker,parlays,nflParlays]=await Promise.all(['live/manifest.json','archive.json','college/summary.json',
-    'tracker/index.json','tracker/parlay-legs-index.json','tracker/nfl-parlay-legs-index.json'].map(read));
-  const problems=healthProblems({live,archive,college,tracker,parlays,nflParlays});
+  const [live,archive,college,tracker,parlays,nflParlays,firstBasket]=await Promise.all(['live/manifest.json','archive.json','college/summary.json',
+    'tracker/index.json','tracker/parlay-legs-index.json','tracker/nfl-parlay-legs-index.json','tracker/first-basket-index.json'].map(read));
+  const problems=healthProblems({live,archive,college,tracker,parlays,nflParlays,firstBasket});
   await writeFile(join(data,'health.json'),JSON.stringify({checked:new Date().toISOString(),problems:problems.map(p=>p.text),keys:problems.map(p=>p.key)}));
   console.log(problems.length?'Feed problems:\n- '+problems.map(p=>p.text).join('\n- '):'All feeds are fresh.');
   for(const [name,iso] of [['live',live?.updated],['archives',archive?.updated],['college',college?.cbb?.updated],['tracker',tracker?.updated]])
