@@ -8,11 +8,11 @@ import {routes} from '../site/config.mjs';
 import {together,lineStats} from '../scripts/lines-data.mjs';
 
 test('every tool has one unique path inside its sport section',()=>{
-  assert.equal(routes.length,67);
+  assert.equal(routes.length,76);
   assert.ok(routes.some(r=>r.id==='nba-parlays'&&r.path==='up/suggested-parlays.html'));
   assert.equal(new Set(routes.map(r=>r.path)).size,routes.length);
   assert.equal(routes.filter(r=>r.group==='Promos').length,5);
-  const home={nfl:'long/',nba:'up/',nhl:'goal/',mlb:'yard/'};
+  const home={nfl:'long/',nba:'up/',nhl:'goal/',mlb:'yard/',cbb:'cbb/',cwb:'cwb/',fbs:'fbs/'};
   for(const r of routes)if(home[r.sport])assert.ok(r.path.startsWith(home[r.sport]),r.path);
 });
 test('the snapshot contains regular-season NFL play-by-play with resolvable players',{skip:!existsSync(new URL('../site/data/nfl-2026.json',import.meta.url))&&'no local snapshot'},()=>{

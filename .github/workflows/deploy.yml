@@ -81,6 +81,26 @@ jobs:
       - name: Capture live snapshots
         run: node scripts/live.mjs || echo "::warning::Live snapshot failed; pages fall back to the archives."
 
+      - name: Restore college feeds
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cache/college
+            site/data/college
+          key: college-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: college-v1-
+
+      - name: Refresh college feeds
+        run: node scripts/college.mjs || echo "::warning::Some college feeds did not refresh; keeping the last available snapshots."
+
+      - name: Save college feeds
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache/college
+            site/data/college
+          key: college-v1-${{ github.run_id }}-${{ github.run_attempt }}
+
       # GOING YARD: hr-board runs its own model on its own schedule; this copies what it last published.
       - name: Add GOING YARD board
         run: node scripts/yard.mjs || echo "::warning::GOING YARD data could not be refreshed."

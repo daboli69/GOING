@@ -4,8 +4,8 @@ import {esc,get,dataURL,pct,dateLabel,today,sportWordmark} from './ui.mjs';
 
 let summary={};
 export async function homeLoad(){
-  const [live,models,yard]=await Promise.all([get(dataURL('live/manifest.json'),{}),get(dataURL('models/summary.json'),{}),get(dataURL('yard/summary.json'),{})]);
-  summary={live,models,yard};
+  const [live,models,yard,college]=await Promise.all([get(dataURL('live/manifest.json'),{}),get(dataURL('models/summary.json'),{}),get(dataURL('yard/summary.json'),{}),get(dataURL('college/summary.json'),{})]);
+  summary={live,models,yard,college};
 }
 const ago=iso=>{
   if(!iso)return null;
@@ -16,7 +16,8 @@ const fact=(k,v)=>v==null||v===''?'':`<div><dt>${esc(k)}</dt><dd>${v}</dd></div>
 const plural=(n,w)=>n+' '+w+(n===1?'':'s');
 const pickLine=p=>p?`${esc(p.team)} ${pct(p.p)} <span class="muted">vs ${esc(p.opp)}</span>`:null;
 const record=r=>r?.games?`${pct(r.accuracy,1)} <span class="muted">of ${r.games} graded</span>`:null;
-const quick={nba:['Ensemble Forecasts','Slate Standouts','All Props','Shot Charts','Suggested Parlays'],nfl:['Ensemble Forecasts','Game Previews','TD Data','Best Plays'],nhl:['Game Previews','Line Matchups','Best Plays','Shots'],mlb:['HR Board','Top Plays','Game Scan','Model Record']};
+const quick={nba:['Ensemble Forecasts','Slate Standouts','All Props','Shot Charts','Suggested Parlays'],nfl:['Ensemble Forecasts','Game Previews','TD Data','Best Plays'],nhl:['Game Previews','Line Matchups','Best Plays','Shots'],mlb:['HR Board','Top Plays','Game Scan','Model Record'],
+  cbb:['Slate Standouts','Team Stats','Player Leaders'],cwb:['Slate Standouts','Team Stats','Player Leaders'],fbs:['Game Previews','Game Lines','Team Stats']};
 const link=(s,t)=>{const r=Object.values(menus[s]).flat().find(x=>x[0]===t);return r?`<a class="pill" href="${href(r[1])}">${esc(t)}</a>`:'';};
 
 function facts(s){
@@ -30,7 +31,8 @@ function facts(s){
       fact('Hottest bat',Y.top?`${esc(Y.top.name)} <span class="muted">${esc(Y.top.team)} · Heat ${esc(Y.top.heat)}</span>`:null)+
       fact('Heat top 10, season',Y.record?`${pct(Y.record.hr/Y.record.n,1)} <span class="muted">homered (${Y.record.hr} of ${Y.record.n})</span>`:null);
   }
-  return '';
+  const C=summary.college?.[s];
+  return C?.available?fact(C.date===today?'Today':dateLabel(C.date,true),plural(C.games,'game'))+fact('Schedule checked',esc(ago(C.updated))):'';
 }
 export function homePage(){
   const doors=Object.entries(sections).map(([s,x])=>{
