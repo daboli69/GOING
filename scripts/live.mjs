@@ -48,7 +48,10 @@ await Promise.all(Object.keys(sportPath).map(async s=>{
 const upcoming=g=>['FUT','PRE'].includes(g.status);
 for(const s of ['nba','nhl'])for(const d of [today,add(today,1)]){
   const games=(slates[s][d]||[]).filter(upcoming).map(g=>({...g,date:d}));
-  await save(`odds-${s}-${d}.json`,await publicQuotes(s,games).catch(()=>[]));
+  let alternates=[];
+  const odds=await publicQuotes(s,games,{onAlternates:rows=>{alternates=rows;}}).catch(()=>[]);
+  await save(`odds-${s}-${d}.json`,odds);
+  if(s==='nba')await save(`nba-alternate-lines-${d}.json`,alternates);
 }
 const schedule=await read('nfl-schedule.json')||[];
 const nextWeek=schedule.filter(g=>g.date>=today&&g.sa==null).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];

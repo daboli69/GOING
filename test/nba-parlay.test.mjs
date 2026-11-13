@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {allowedRanks,buildTicket,defaults,evaluate,legKey,record,ticketMath} from '../site/nba-parlay-engine.mjs';
+import {captureLegs,finalPlayers,gradeLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
+import {chooseQuotes} from '../scripts/market-data.mjs';
 
 const now=Date.parse('2026-11-12T16:00Z');
 const lows={rank:2,end:2,total:30}, highs={rank:28,end:28,total:30};
@@ -60,4 +62,52 @@ test('tickets keep eligible locks, respect game limits and do not pad',()=>{
   assert.ok(Math.abs(m.adjusted-.4225)<1e-10);
   assert.equal(m.sameGame,false);
   assert.equal(ticketMath([a,b]).sameGame,true);
+});
+
+test('research keeps all alternate thresholds while the builder still uses one quote',()=>{
+  const common={date:'2026-11-12',a:'DET',h:'CHI',player:'Example',market:'Points',volume:0,yes:.5,no:.5};
+  const quotes=[{...common,line:6.5},{...common,line:7.5},{...common,line:7.5}];
+  assert.equal(chooseQuotes(quotes).length,1);
+  assert.deepEqual(chooseQuotes(quotes,true).map(q=>q.line),[6.5,7.5]);
+  const main=row(), alternate=row({quote:{...main.quote,line:7.5}});
+  const captured=captureLegs([main,alternate],[main],now);
+  assert.deepEqual(captured.filter(l=>l.side==='Over').map(l=>[l.alternate,l.decision]),[[false,'Selected'],[true,'Eligible']]);
+  const rejected=captured.find(l=>l.side==='Under'&&l.alternate);
+  assert.equal(rejected.decision,'Rejected');
+  assert.ok(rejected.checks['Type edge']);
+  assert.ok(rejected.checks['Defense vs type']);
+  assert.ok(rejected.checks['Line vs average']);
+  assert.ok(rejected.checks['Hit rate']);
+  assert.deepEqual(captureLegs([main],[main],Date.parse(main.game.iso)),[]);
+});
+
+test('tracker keeps first and latest pregame observations and grades only confirmed final box scores',()=>{
+  const [leg]=captureLegs([row()],[row()],now);
+  const store=new Map();
+  observeLeg(store,leg);
+  const next={...leg,odds:-105,observedAt:'2026-11-12T17:00:00.000Z',decision:'Eligible'};
+  observeLeg(store,next);observeLeg(store,leg);
+  const saved=store.get(leg.k);
+  assert.equal(saved.firstSeen,leg.observedAt);
+  assert.equal(saved.firstDecision,'Selected');
+  assert.equal(saved.firstOdds,-110);
+  assert.equal(saved.everSelected,true);
+  assert.equal(saved.odds,-105);
+  const box={header:{id:'1',competitions:[{status:{type:{name:'STATUS_FINAL',completed:true}}}]},
+    boxscore:{players:[{statistics:[{labels:['PTS','3PT','REB','AST'],athletes:[
+      {athlete:{id:'p1'},stats:['9','3-5','2','1']},
+      {athlete:{id:'p2'},didNotPlay:true,stats:[]}
+    ]}]}]}};
+  assert.equal(finalPlayers(box,'2'),null);
+  assert.equal(finalPlayers({...box,header:{...box.header,competitions:[{status:{type:{name:'STATUS_CANCELLED',completed:true}}}]}},'1'),null);
+  const players=finalPlayers(box,'1');
+  assert.deepEqual(players.get('p1').values,{Points:9,Threes:3,Rebounds:2,Assists:1});
+  const graded=gradeLeg(saved,players,now);
+  assert.equal(graded.result,'won');
+  assert.equal(gradeLeg({...saved,line:9},players,now).result,'push');
+  assert.equal(gradeLeg({...saved,player:'p2'},players,now).result,'void');
+  assert.equal(gradeLeg({...saved,player:'p3'},players,now).result,undefined);
+  store.set(saved.k,graded);
+  observeLeg(store,{...next,observedAt:'2026-11-12T18:00:00.000Z'});
+  assert.equal(store.get(saved.k),graded);
 });

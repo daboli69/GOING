@@ -2,6 +2,7 @@ import {nbaPropTabs,href} from './config.mjs';
 import {total,mean,round,pct,div,rate,heat,signed,seasonLimit,distanceZone,nbaType,leaderShares} from './math.mjs';
 import {current as S,esc,box,plain,grid,card,metric,logo,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,person,market,basePlay,propOdds,gameDay,gamesFor,final,dialog,badge,action} from './ui.mjs';
 import {parlayPage,parlayAction} from './nba-parlays.mjs';
+import {propQuotes} from './ui.mjs';
 import {allowedRanks,markets} from './nba-parlay-engine.mjs';
 
 const nbaKeys={Points:6,Threes:7,Assists:8,Rebounds:9};
@@ -239,9 +240,15 @@ function defenseLogs(stat,profile,key,byType){
   return result;
 }
 
-function parlayData(){
+export function parlayData(quotes=S.odds){
   const memo=reset(), previous=memo.parlayData;
-  if(previous&&previous.games===S.games&&previous.odds===S.odds&&previous.injuries===S.injuries)return previous;
+  const useCache=quotes===S.odds;
+  if(useCache&&previous&&previous.games===S.games&&previous.odds===S.odds&&previous.injuries===S.injuries)return previous;
+  const byPlayer=new Map();
+  for(const quote of quotes){
+    const key=quote.id==null?'name:'+nbaName(quote.player):'id:'+quote.id, list=byPlayer.get(key)||[];
+    list.push(quote);byPlayer.set(key,list);
+  }
   const roster=scheduled();
   const byTeam=new Map();
   for(const p of roster){
@@ -263,8 +270,8 @@ function parlayData(){
       return [{name:x.name,played}];
     });
     return markets.flatMap(stat=>{
-      const quote=propOdds(player,stat);
-      if(!quote)return [];
+      const matches=propQuotes(player,stat,[...byPlayer.get('id:'+player.id)||[],...byPlayer.get('name:'+nbaName(player.name))||[]]);
+      if(!matches.length)return [];
       const key=nbaKeys[stat], logs=player.logs.filter(r=>r[5]>0&&Number.isFinite(r[key]));
       const season=logs.map(r=>r[key]), home=logs.filter(r=>r[4]==='home').map(r=>r[key]),
         away=logs.filter(r=>r[4]==='away').map(r=>r[key]);
@@ -273,7 +280,7 @@ function parlayData(){
       const defense=defenseLogs(stat,needsType?pType:player.pos,key,needsType);
       const vs=defenseLogs(stat,player.pos,key,false);
       // Match the prop board's read inputs, including the position average per player appearance.
-      return [{date:S.day,player,game,opp,stat,quote,spread:spread==null?null:Math.abs(spread),
+      return matches.map(quote=>({date:S.day,player,game,opp,stat,quote,spread:spread==null?null:Math.abs(spread),
         total:gameNumber(game.odds?.total),avg,form:{season,last5,last10,home,away,venue:game.h===player.team?home:away},
         reads:[mean(last5),mean(last10),avg,mean(home),mean(away),mean(vs.samples.get(opp)||[])].filter(x=>x!=null),
         type:pType,typeDeltas:needsType&&pType!=='—'?defense.deltas.get(opp)||[]:[],typeRank:needsType?defense.rank.get(opp):null,posRank:vs.rank.get(opp),
@@ -283,10 +290,12 @@ function parlayData(){
         absences:absences.map(({name,played})=>{
           const without=logs.filter(r=>r[2]===player.team&&!played.has(r[0]));
           return {name,n:without.length,delta:without.length>=3?mean(without,r=>r[key])-avg:null};
-        })}];
+        })}));
     });
   });
-  return memo.parlayData={rows,roster,games:S.games,odds:S.odds,injuries:S.injuries};
+  const data={rows,roster,games:S.games,odds:S.odds,injuries:S.injuries};
+  if(useCache)memo.parlayData=data;
+  return data;
 }
 function courtSvg(data,label){
   const dots=data.filter(r=>r[3]!=null&&r[4]!=null).slice(-1600).map(r=>{

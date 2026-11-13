@@ -1,5 +1,6 @@
 import {menus,routes,sections,BASE,href,viewDefaults,viewSetup} from './config.mjs';
 import {trackerLoad,trackerPage,trackerAction} from './tracker.mjs';
+import {parlayTrackerLoad,parlayTrackerPage,parlayTrackerAction} from './nba-parlay-tracker.mjs';
 import {$,current as S,today,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus,sportWordmark} from './ui.mjs';
 import {ESPN,sportPath,scoreboard,compactInjuries} from './feeds.mjs';
 import {nflPage,nflPlayer,nflAction,nflResult} from './nfl.mjs';
@@ -32,7 +33,8 @@ function header(){
   const nav=sec&&menus[s]?Object.entries(menus[s]).map(([k,items])=>{
     if(s==='nba'&&k==='Parlays'){
       const [[title,path]]=items, active=S.route.path===path;
-      return `<a class="navbutton${active?' active':''}" href="${href(path)}" ${active?'aria-current="page"':''}>${esc(title)}</a>`;
+      const [, [tracker,trackerPath]]=items, tracking=S.route.path===trackerPath;
+      return `<a class="navbutton${active?' active':''}" href="${href(path)}" ${active?'aria-current="page"':''}>${esc(title)}</a><a class="navbutton${tracking?' active':''}" href="${href(trackerPath)}" ${tracking?'aria-current="page"':''}>${esc(tracker)}</a>`;
     }
     return menuHTML(k,items);
   }).join('')+menuHTML('Sports',sportMenu):
@@ -46,7 +48,7 @@ function render(options={}){
   if(S.error)main.innerHTML=box('',empty(S.error)+tools(btn('Try again','retry','')));
   else if(!S.loaded)main.innerHTML=box('',empty(S.route.id==='home'?'Loading today’s slates…':'Loading the slate…'));
   else{
-    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?trackerPage():isModel(S.route.id)?modelPage():modules[S.route.sport][0]();}
+    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?trackerPage():S.route.id==='nba-parlay-tracker'?parlayTrackerPage():isModel(S.route.id)?modelPage():modules[S.route.sport][0]();}
     catch(e){console.error(e);main.innerHTML=box('',empty('This view could not be rendered.')+tools(btn('Try again','retry','')));}
   }
   const next=main.querySelector('.matchup-row');
@@ -102,6 +104,11 @@ async function load(){
   if(id==='tracker'){
     try{await trackerLoad();if(token!==req)return;S.loaded=true;render();}
     catch(e){if(token!==req)return;S.error='The pick record could not load. Try again in a moment.';console.error(e);render();}
+    return;
+  }
+  if(id==='nba-parlay-tracker'){
+    try{await parlayTrackerLoad();if(token!==req)return;S.loaded=true;render();}
+    catch(e){if(token!==req)return;S.error='The parlay leg record could not load. Try again in a moment.';console.error(e);render();}
     return;
   }
   if(id==='myplays'){
@@ -294,6 +301,7 @@ document.addEventListener('click',e=>{
   if(act==='retry'){S.error=null;load();return;}
   if(isModel(S.route.id)&&modelAction(act,v)){render();return;}
   if(S.route.id==='tracker'&&trackerAction(act,v)){render();return;}
+  if(S.route.id==='nba-parlay-tracker'&&parlayTrackerAction(act,v)){render();return;}
   if(act==='game'){chooseGame(S.games.find(g=>g.id===v));return;}
   if(act==='gameStep'){chooseGame(S.games[S.games.indexOf(S.game)+Number(v)],true);return;}
   if(act==='set'){

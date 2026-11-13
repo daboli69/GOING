@@ -1,12 +1,14 @@
 import {american,pct,round} from './math.mjs';
 import {current as S,badge,box,btn,empty,esc,et,grid,keep,local,metric,slate,table,toast,tools} from './ui.mjs';
+import {href} from './config.mjs';
 import {buildTicket,defaults,evaluate,legKey,markets,ticketMath,weights} from './nba-parlay-engine.mjs';
 
 const settingsKey='nba-parlay-settings', ticketsKey='nba-parlay-tickets';
 const weightNames={form:'Hit rates',matchup:'Matchup',line:'Line vs average',context:'Game context',mix:'Stat variety'};
 const bounds={legs:[2,10],hit:[0,100],sample:[1,30],spread:[0,14.5],total:[0,300],minOdds:[1.01,101],maxOdds:[1.01,101]};
 const outcomes=['Pending','Hit','Miss','Push','Void'];
-const saved=()=>{const value=local(ticketsKey,[]);return Array.isArray(value)?value:[];};
+export const savedParlayTickets=()=>{const value=local(ticketsKey,[]);return Array.isArray(value)?value:[];};
+const saved=savedParlayTickets;
 const numbers=(value,[min,max],fallback)=>{
   if(value===''||!Number.isFinite(Number(value)))return fallback;
   return Math.min(max,Math.max(min,Number(value)));
@@ -147,7 +149,7 @@ export function parlayPage(data){
     if(Date.now()-Date.parse(leg.capturedAt)>90*60000&&!flags.includes('Stale quote'))flags.push('Stale quote');
     return {...leg,flags};
   });
-  return `<h1>Suggested Parlays</h1>`+slate({navOnly:true,date:true})+
+  return `<h1>Suggested Parlays</h1><p><a class="pill" href="${href('up/parlay-tracker.html')}">Parlay Leg Tracker</a></p>`+slate({navOnly:true,date:true})+
     box('Filters',controls(data,cfg))+
     box('Suggested ticket',(state.message?`<p class="subtle" role="status">${esc(state.message)}</p>`:'')+
       shortage(data,cfg,report,ticket.length||preview.length)+

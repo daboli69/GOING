@@ -99,13 +99,15 @@ export const playKey=p=>[p.sport,p.date,p.game,p.id,p.market,p.side,p.line].join
 export const playCheck=p=>`<input type="checkbox" aria-label="Save ${esc(p.title)}" title="Save to My Plays" data-play="${esc(JSON.stringify(p))}" ${local('plays',[]).some(x=>playKey(x)===playKey(p))?'checked':''}>`;
 export const market=(label,p)=>`<span class="market"><button class="line" ${action('line',JSON.stringify(p))}>${esc(label)}${p.provider&&p.odds!=null?` <small class="muted" title="${esc(p.provider)}">${esc(p.provider==='Kalshi'?'K':p.provider)}</small>`:''}</button>${playCheck(p)}</span>`;
 export const basePlay=(p,m,g=gamesFor(p.team),od={})=>({id:p.id,title:p.name+' · '+m,market:m,sport:current.route.sport,date:current.route.sport==='nfl'?gameDay(g):current.day,game:g?.id,team:p.team,provider:propOdds(p,m)?.provider,...od});
-export function propOdds(p,m){
+function propMatches(p,m){
   const alias={'Points':'points','Threes':'threes','Assists':'assists','Rebounds':'rebounds','Shots on Goal':'shots','Anytime Goals':'goals','Saves':'saves','Receiving':'receiving','Rushing':'rushing','Passing':'passing','Anytime TD':'td','First TD':'firsttd'};
   const norm=s=>String(s||'').normalize('NFKD').replace(/[^\p{L}\p{N}]/gu,'').toLowerCase();
   const g=gamesFor(p.team);
-  return current.odds.find(o=>(String(o.id)===String(p.id)||norm(o.player)===norm(p.name))&&[m.toLowerCase(),alias[m]].includes(o.market?.toLowerCase())
-    &&(!o.date||o.date===(current.route.sport==='nfl'?gameDay(g):current.day))&&(!o.a||o.a===g?.a)&&(!o.h||o.h===g?.h));
+  return o=>(String(o.id)===String(p.id)||norm(o.player)===norm(p.name))&&[m.toLowerCase(),alias[m]].includes(o.market?.toLowerCase())
+    &&(!o.date||o.date===(current.route.sport==='nfl'?gameDay(g):current.day))&&(!o.a||o.a===g?.a)&&(!o.h||o.h===g?.h);
 }
+export const propQuotes=(p,m,quotes)=>quotes.filter(propMatches(p,m));
+export const propOdds=(p,m)=>current.odds.find(propMatches(p,m));
 export function footer(){
   const s=current.route.sport, f=footers[s];
   const lead=current.route.id==='myplays'?'Your saved plays, graded. Saved in this browser.':

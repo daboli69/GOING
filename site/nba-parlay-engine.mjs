@@ -10,6 +10,7 @@ const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 const active=g=>['FUT','PRE'].includes(g.status);
 const typed=stat=>stat==='Points'||stat==='Threes';
 export function record(values,line,side){
+  if(!Number.isFinite(line))return {hits:0,n:0,pushes:0,rate:null};
   const hits=values.filter(value=>side==='Over'?value>line:value<line).length;
   const pushes=values.filter(value=>value===line).length;
   const n=values.length-pushes;
@@ -41,57 +42,66 @@ export function assess(row,side,cfg,context){
   const leg={date:row.date,game:String(game.id),tip:game.iso,player:player.id,name:player.name,
     team:player.team,opp:row.opp,stat,side,line:quote.line,price,provider:quote.provider,
     capturedAt:quote.capturedAt||null,reasons:[],flags:[],score:0};
-  const cut=reason=>({...leg,cut:reason});
+  const checks={};
+  const check=(rule,reason)=>{checks[rule]=reason;};
   const overlap=context.taken.has(legKey(leg));
+  const start=Date.parse(game.iso);
   if(overlap)leg.flags.push('On an existing ticket');
-  if(!active(game)||!Number.isFinite(Date.parse(game.iso))||Date.parse(game.iso)<=context.now)return cut('Game already started or tip time missing');
-  if(cfg.games.includes(leg.game))return cut('Excluded matchup');
-  if(cfg.players.includes(leg.player))return cut('Excluded player');
-  if(cfg.skipTickets&&overlap)return cut('Existing tickets');
-  if(!Number.isFinite(leg.line)||!prob||!leg.provider)return cut('No price for selected side');
+  check('Tip time',!active(game)||!Number.isFinite(start)||start<=context.now?'Game already started or tip time missing':null);
+  check('Exclusions',cfg.games.includes(leg.game)?'Excluded matchup':cfg.players.includes(leg.player)?'Excluded player':
+    cfg.skipTickets&&overlap?'Existing tickets':null);
+  check('Quote',!Number.isFinite(leg.line)||!prob||!leg.provider?'No price for selected side':null);
   const decimal=1/prob;
-  if(decimal<cfg.minOdds||decimal>cfg.maxOdds)return cut('Odds range');
+  check('Odds range',decimal<cfg.minOdds||decimal>cfg.maxOdds?'Odds range':null);
 
-  if(row.spread==null)return cut('Spread unavailable');
-  if(row.spread>=14.5)return cut('Spread of 14.5 or more');
-  if(row.spread>cfg.spread)return cut('Maximum spread');
-  if(row.total==null)return cut('Game total unavailable');
-  if(row.total<cfg.total)return cut('Minimum total');
-  if(row.out)return cut('Player listed out');
+  check('Spread',row.spread==null?'Spread unavailable':row.spread>=14.5?'Spread of 14.5 or more':
+    row.spread>cfg.spread?'Maximum spread':null);
+  check('Total',row.total==null?'Game total unavailable':row.total<cfg.total?'Minimum total':null);
+  check('Availability',row.out?'Player listed out':null);
   if(row.uncertain)leg.flags.push(row.uncertain);
   if(!row.injuryReport)leg.flags.push('Player injury report unavailable');
   const captured=Date.parse(leg.capturedAt);
   if(!Number.isFinite(captured)||captured>context.now)leg.flags.push('Quote time unknown');
   else if(context.now-captured>90*60000)leg.flags.push('Stale quote');
 
-  if(avg==null)return cut('Season average unavailable');
+  check('Season average',avg==null?'Season average unavailable':null);
   let matchup=0;
+  let typeEdge=null;
   if(typed(stat)){
     const deltas=row.typeDeltas;
-    if(deltas.length<cfg.sample)return cut('Type sample');
     const delta=mean(deltas), beat=deltas.filter(x=>direction*x>0).length;
-    if(direction*delta<Math.max(.3,.05*avg)||beat*2<=deltas.length)return cut('Type edge too small or conflicts');
-    if(!favorable(row.typeRank,over))return cut('Defense rank vs type');
-    leg.reasons.push('Type '+row.type+' edge '+signed(delta)+' ('+beat+'/'+deltas.length+' '+(over?'above':'below')+')',
-      row.opp+' ranks '+row.typeRank.rank+'/'+row.typeRank.total+' vs type '+row.type);
-    matchup=1+clamp(direction*delta/Math.max(avg,1),0,1);
+    typeEdge={delta,beat,n:deltas.length};
+    check('Type sample',deltas.length<cfg.sample?'Type sample':null);
+    if(deltas.length&&avg!=null){
+      check('Type edge',direction*delta<Math.max(.3,.05*avg)||beat*2<=deltas.length?'Type edge too small or conflicts':null);
+      if(!checks['Type edge']){
+        leg.reasons.push('Type '+row.type+' edge '+signed(delta)+' ('+beat+'/'+deltas.length+' '+(over?'above':'below')+')');
+        matchup=1+clamp(direction*delta/Math.max(avg,1),0,1);
+      }
+    }
+    check('Defense vs type',favorable(row.typeRank,over)?null:'Defense rank vs type');
+    if(!checks['Defense vs type'])leg.reasons.push(row.opp+' ranks '+row.typeRank.rank+'/'+row.typeRank.total+' vs type '+row.type);
   }
 
-  const gap=direction*(avg-leg.line);
-  if(gap<0)return cut('Line vs season average');
-  leg.reasons.push('Line '+leg.line+' vs avg '+format(avg));
+  const gap=avg!=null&&Number.isFinite(leg.line)?direction*(avg-leg.line):null;
+  if(gap!=null){
+    check('Line vs average',gap<0?'Line vs season average':null);
+    if(gap>=0)leg.reasons.push('Line '+leg.line+' vs avg '+format(avg));
+  }
   const season=record(form.season,leg.line,side), last10=record(form.last10,leg.line,side), venue=record(form.venue,leg.line,side);
-  if(season.n<5||form.last10.length<10)return cut('Too few recent game logs');
-  if(last10.rate==null||season.rate<cfg.hit/100||last10.rate<cfg.hit/100)return cut('Season or L10 hit rate');
-  if(venue.n<3||venue.rate<.5)return cut('Home or away split');
+  check('History',season.n<5||form.last10.length<10?'Too few recent game logs':null);
+  if(!checks.History)check('Hit rate',last10.rate==null||season.rate<cfg.hit/100||last10.rate<cfg.hit/100?'Season or L10 hit rate':null);
+  check('Venue split',venue.n<3||venue.rate<.5?'Home or away split':null);
   const forSide=reads.filter(x=>direction*(x-leg.line)>0).length, against=reads.filter(x=>direction*(x-leg.line)<0).length;
-  if(against>forSide)return cut('Reads favor the other side');
-  leg.reasons.push((game.h===leg.team?'Home':'Away')+' '+percent(venue.rate)+' ('+venue.hits+'/'+venue.n+')');
+  if(reads.length)check('Reads',against>forSide?'Reads favor the other side':null);
+  if(!checks['Venue split'])leg.reasons.push((game.h===leg.team?'Home':'Away')+' '+percent(venue.rate)+' ('+venue.hits+'/'+venue.n+')');
 
   if(!typed(stat)){
-    if(!favorable(row.posRank,over))return cut('Defense rank vs position');
-    leg.reasons.push(row.opp+' ranks '+row.posRank.rank+'/'+row.posRank.total+' vs '+player.pos);
-    matchup=1;
+    check('Defense vs position',favorable(row.posRank,over)?null:'Defense rank vs position');
+    if(!checks['Defense vs position']){
+      leg.reasons.push(row.opp+' ranks '+row.posRank.rank+'/'+row.posRank.total+' vs '+player.pos);
+      matchup=1;
+    }
   }
 
   let impact=context.lowTotals.has(leg.game)?-.35:0;
@@ -112,8 +122,15 @@ export function assess(row,side,cfg,context){
   leg.form={season,last10,venue,last5:record(form.last5,leg.line,side),home:record(form.home,leg.line,side),away:record(form.away,leg.line,side)};
   leg.avg=avg;
   leg.recentAvg=mean(form.last10);
-  leg.score=cfg.weights.form*mean([season.rate,last10.rate,venue.rate])+cfg.weights.matchup*matchup+
-    cfg.weights.line*clamp(gap/Math.max(Math.abs(leg.line),1),0,1)+cfg.weights.context*impact;
+  leg.checks=checks;
+  leg.context={spread:row.spread,total:row.total,pace:row.pace,threeRate:row.threeRate,
+    position:player.pos,type:row.type,typeEdge,typeRank:row.typeRank,posRank:row.posRank,
+    readsFor:forSide,readsAgainst:against,absences:row.absences};
+  leg.cut=Object.values(checks).find(Boolean)||null;
+  if(!leg.cut){
+    leg.score=cfg.weights.form*mean([season.rate,last10.rate,venue.rate])+cfg.weights.matchup*matchup+
+      cfg.weights.line*clamp(gap/Math.max(Math.abs(leg.line),1),0,1)+cfg.weights.context*impact;
+  }
   return leg;
 }
 
@@ -123,16 +140,17 @@ export function evaluate(rows,cfg,{now=Date.now(),taken=new Set()}={}){
   const floor=totals.size>=3?Math.min(...totals.values()):null;
   const lowTotals=new Set([...totals].filter(([,value])=>value===floor).map(([id])=>id));
   const sides=cfg.side==='Both'?['Over','Under']:[cfg.side];
-  const cuts=new Map(), eligible=[];
+  const cuts=new Map(), eligible=[], screened=[];
   for(const row of rows){
     if(!cfg.stats.includes(row.stat))continue;
     for(const side of sides){
       const leg=assess(row,side,cfg,{now,taken,lowTotals});
+      screened.push(leg);
       if(leg.cut)cuts.set(leg.cut,(cuts.get(leg.cut)||0)+1);
       else eligible.push(leg);
     }
   }
-  return {eligible,cuts};
+  return {eligible,cuts,screened};
 }
 
 export function buildTicket(eligible,cfg,{locked=[],avoid=new Set(),excluded=new Set()}={}){
