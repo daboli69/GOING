@@ -57,3 +57,20 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .game .badge{font-size:9px}.period-label{font-size:18px}.tools .sq.pill{display:inline-grid;place-items:center;padding:0}.panel .section-label{font-weight:700;letter-spacing:.07em}.pill .team-mark{width:19px;height:19px}
 .fb-price{width:5.6em}
 .fb-reasons{margin:4px 0 0;padding-left:0;list-style:none;display:grid;gap:4px}.fb-reasons li{line-height:1.35}.fb-reasons li.good{color:var(--green)}.fb-reasons li.bad{color:var(--red)}
+
+
+/* The line and the bars share the same baseline and scale. */
+.assist-line-chart{position:relative;display:flex;gap:.35rem;min-height:8rem;margin:2rem .25rem 2.2rem}
+.assist-bar{position:relative;display:flex;flex:1;min-width:0;justify-content:center;text-align:center}
+.assist-bar b{position:absolute;top:-1.2rem;font-size:.75rem}
+.assist-bar small{position:absolute;top:100%;font-size:.65rem;white-space:nowrap}
+.assist-bar:nth-of-type(even) small{margin-top:.85rem}
+.assist-bar-track{display:flex;align-items:flex-end;width:100%;max-width:2rem}
+.assist-bar-track i{width:100%;background:#7f9cbe;border-radius:.2rem .2rem 0 0}
+.assist-bar-track i.good{background:#36bb82}
+.assist-bar-track i.bad{background:#df7887}
+.assist-bar-marker{position:absolute;z-index:1;left:0;right:0;border-bottom:1px dashed currentColor;pointer-events:none}
+
+.prop-range{display:flex;gap:.45rem;border:1px solid var(--line);border-radius:.35rem;padding:.35rem .5rem;font-size:.8rem}
+.prop-range label{white-space:nowrap}
+.prop-range input{width:4.25rem}

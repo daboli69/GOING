@@ -80,6 +80,21 @@ export function assess(row,side,cfg,context){
     }
   }
 
+  const assistResearch=row.assistResearch;
+  if(stat==='Assists'&&assistResearch){
+    const {read,targetDelta,mixEdge,covered,events}=assistResearch;
+    if(read==='Mixed')leg.flags.push('Assist Spots signals are mixed');
+    if(read==='Over'||read==='Under'){
+      // Keep this descriptive evidence below the existing matchup weight.
+      // Teammate-out splits already contribute through the existing absence adjustment.
+      const target=targetDelta!=null&&Math.abs(targetDelta)>=.25?clamp(targetDelta,-1,1):0;
+      const mix=mixEdge!=null&&Math.abs(mixEdge)>=.2?mixEdge:0;
+      matchup+=clamp(direction*(target+mix)*.35,-.5,.5);
+      if(target)leg.reasons.push('Assist targets '+signed(targetDelta)+' assisted makes ('+covered+'/'+events+' matched)');
+      if(mix)leg.reasons.push('Defense vs his assist mix: '+(mix>0?'Over':'Under'));
+    }
+  }
+
   let impact=context.lowTotals.has(leg.game)?-.35:0;
   if(impact)leg.reasons.push('Low total on the slate');
   if(row.pace!=null){
@@ -101,7 +116,8 @@ export function assess(row,side,cfg,context){
   leg.checks=checks;
   leg.context={spread:row.spread,total:row.total,pace:row.pace,threeRate:row.threeRate,
     position:player.pos,type:row.type,typeEdge,typeRank:row.typeRank,posRank:row.posRank,
-    readsFor:forSide,readsAgainst:against,absences:row.absences};
+    readsFor:forSide,readsAgainst:against,absences:row.absences,
+    ...(assistResearch?{assistRead:assistResearch.read,assistTargetDelta:assistResearch.targetDelta,assistMixEdge:assistResearch.mixEdge}:{})};
   leg.cut=Object.values(checks).find(Boolean)||null;
   if(!leg.cut){
     leg.score=cfg.weights.form*mean([season.rate,last10.rate,venue.rate])+cfg.weights.matchup*matchup+
