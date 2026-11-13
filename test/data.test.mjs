@@ -8,7 +8,7 @@ import {routes} from '../site/config.mjs';
 import {together,lineStats} from '../scripts/lines-data.mjs';
 
 test('every tool has one unique path inside its sport section',()=>{
-  assert.equal(routes.length,78);
+  assert.equal(routes.length,79);
   assert.ok(routes.some(r=>r.id==='nba-parlays'&&r.path==='up/suggested-parlays.html'));
   assert.ok(routes.some(r=>r.id==='nfl-parlays'&&r.path==='long/suggested-parlays.html'));
   assert.equal(new Set(routes.map(r=>r.path)).size,routes.length);

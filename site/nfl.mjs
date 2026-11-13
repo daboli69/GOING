@@ -1,8 +1,10 @@
 import { nflTeams } from './config.mjs';
 import {total,mean,round,pct,div,rate,heat,american,implied,signed,seasonLimit,poissonTail} from './math.mjs';
-import {current as S,esc,box,grid,card,metric,logo,color,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,notes,person,market,basePlay,propOdds,gameDay,final,local,dialog,badge,playCheck,propQuotes} from './ui.mjs';
+import {current as S,esc,box,grid,card,metric,logo,color,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,notes,person,market,basePlay,propOdds,gameDay,final,local,dialog,badge,playCheck,propQuotes,keep} from './ui.mjs';
 import {allowedRanks,format as fmt} from './parlay-core.mjs';
-import {markets as parlayMarkets,tdMarkets} from './nfl-parlay-engine.mjs';
+import {markets as parlayMarkets,tdMarkets,badWeather} from './nfl-parlay-engine.mjs';
+import {bucket,isRush,offenseTd,bucketRates,impliedPoints,impliedTds,rushShare,anytime,firstTdChance,shrink,log5,tdRegression,tdSettings} from './nfl-td.mjs';
+import {tdBoardPage,tdBoardAction} from './nfl-td-board.mjs';
 import {nflParlayPage,nflParlayAction} from './nfl-parlays.mjs';
 
 const names=Object.keys(nflTeams).sort((a,b)=>nflTeams[a][0].localeCompare(nflTeams[b][0]));
@@ -501,6 +503,131 @@ export function nflParlayData(quotes=S.odds){
   parlayMemo.dataKey=key;parlayMemo.data=data;
   return data;
 }
+// ---- TD Board: expected touchdowns from opportunity (nfl-td.mjs holds the model). ----
+let tdMemo={};
+const tdPeriod=()=>S.year+'-'+S.week;
+export const tdPrices=()=>local('td-prices:'+tdPeriod(),{});
+export const tdScratched=()=>local('td-out:'+tdPeriod(),[]);
+export function tdPrice(key,value){const all=tdPrices();if(String(value).trim())all[key]=String(value).trim();else delete all[key];keep('td-prices:'+tdPeriod(),all);}
+export function tdBoardData(){
+  const key=[S.data,S.extra,S.week,S.year,S.odds,S.injuries,S.games,S.models,S.weather,JSON.stringify(tdScratched()),S.f?.tdDst,JSON.stringify(Object.entries(S.f||{}).filter(([k])=>k.startsWith('tdOpen:')))];
+  if(tdMemo.key&&tdMemo.key.every((x,i)=>x===key[i]))return tdMemo.data;
+  const season=allGames().filter(g=>+g.id.slice(0,4)===S.year&&g.week<S.week&&S.data.events?.[g.id]).sort((a,b)=>a.date.localeCompare(b.date));
+  const rates=bucketRates(season.flatMap(g=>S.data.events[g.id]));
+  const P={},T={},pos=id=>getPlayer(id).pos;
+  const team=t=>T[t]??={games:[],rushTd:0,passTd:0,drives:0,tdDrives:0,open:[0,0],recv:[0,0],rz:[0,0],aDrives:0,aTdDrives:0,aRz:[0,0],
+    x:{},allowed:{},openTouches:{},firstTd:[0,0]};
+  const player=(id,t)=>P[id]??={id,team:t,games:{},td:0,tdGames:{}};
+  let dstFirst=0,firstGames=0,openN=0,openTd=0;
+  for(const g of season){
+    const ev=S.data.events[g.id], A=team(g.a), H=team(g.h);A.games.push(g.id);H.games.push(g.id);
+    const off=ev.filter(p=>p[1]==='pass'||p[1]==='run');
+    if(!off.length)continue;
+    const recv=off[0][0];for(const t of [g.a,g.h]){T[t].recv[1]++;if(t===recv)T[t].recv[0]++;}
+    // Drives: result, red-zone trips, opening drives.
+    const drives=new Map();
+    for(const p of off){const k=p[0]+'|'+p[6];const d=drives.get(k)||{team:p[0],n:p[6],result:p[7],rz:false,touch:new Set()};d.result=p[7];if(p[3]!=null&&p[3]<=20)d.rz=true;drives.set(k,d);}
+    const firstDrive={};for(const d of drives.values())if(firstDrive[d.team]==null||d.n<firstDrive[d.team])firstDrive[d.team]=d.n;
+    for(const d of drives.values()){
+      const def=d.team===g.a?g.h:g.a, td=d.result==='Touchdown';
+      T[d.team].drives++;T[def].aDrives++;if(td){T[d.team].tdDrives++;T[def].aTdDrives++;}
+      if(d.rz){T[d.team].rz[1]++;T[def].aRz[1]++;if(td){T[d.team].rz[0]++;T[def].aRz[0]++;}}
+      if(firstDrive[d.team]===d.n){T[d.team].open[1]++;openN++;if(td){T[d.team].open[0]++;openTd++;}}
+    }
+    const first=ev.find(p=>p[8]);
+    if(first){firstGames++;if(!offenseTd(first))dstFirst++;}
+    for(const p of off){
+      const t=p[0], def=t===g.a?g.h:g.a, k=bucket(p);
+      if(k){
+        const id=isRush(k)?p[12]:p[11], x=rates[k]||0, pl=player(id,t), gm=pl.games[g.id]??={xr:0,xc:0,v:0,b:{}};
+        pl.team=t;gm[isRush(k)?'xr':'xc']+=x;gm.v++;gm.b[k]=(gm.b[k]||0)+1;
+        const tx=(T[t].x[g.id]??={xr:0,xc:0,rz:0});tx[isRush(k)?'xr':'xc']+=x;if(p[3]<=20)tx.rz++;
+        const role=pos(id);if(role){const a=((T[def].allowed[role]??={})[g.id]??={x:0,off:t});a.x+=x;}
+        if(firstDrive[t]===p[6]){(T[t].openTouches[g.id]??={})[id]=((T[t].openTouches[g.id]??={})[id]||0)+1;}
+      }
+      const who=offenseTd(p);
+      if(who){player(who,t).td++;player(who,t).tdGames[g.id]=(player(who,t).tdGames[g.id]||0)+1;T[t][p[1]==='run'?'rushTd':'passTd']++;}
+    }
+  }
+  const sum=(o,k)=>Object.values(o).reduce((a,x)=>a+x[k],0);
+  const lgRushShare=(()=>{const r=Object.values(T).reduce((a,t)=>a+t.rushTd,0),q=Object.values(T).reduce((a,t)=>a+t.passTd,0);return r+q?r/(r+q):.42;})();
+  const lgDrive=(()=>{const d=Object.values(T).reduce((a,t)=>a+t.drives,0);return d?Object.values(T).reduce((a,t)=>a+t.tdDrives,0)/d:.23;})();
+  const lgOpen=openN?openTd/openN:.21, lgRz=(()=>{const n=Object.values(T).reduce((a,t)=>a+t.rz[1],0);return n?Object.values(T).reduce((a,t)=>a+t.rz[0],0)/n:.55;})();
+  const dst=firstGames?(dstFirst+2)/(firstGames+40):.04;
+  // Defense by role, adjusted for schedule: expected TDs it allowed to a role against what those offenses usually
+  // generate for that role, shrunk (2 expected TDs of prior) and capped.
+  const offRoleAvg={};
+  for(const [id,pl] of Object.entries(P)){const role=pos(id);if(!role)continue;for(const [gid,gm] of Object.entries(pl.games)){((offRoleAvg[pl.team]??={})[role]??={x:0,games:new Set()}).x+=gm.xr+gm.xc;offRoleAvg[pl.team][role].games.add(gid);}}
+  const roleMult={};
+  for(const [d,info] of Object.entries(T))for(const [role,byGame] of Object.entries(info.allowed)){
+    let allowed=0,expected=0;
+    for(const a of Object.values(byGame)){allowed+=a.x;const o=offRoleAvg[a.off]?.[role];expected+=o?o.x/Math.max(1,T[a.off].games.length):0;}
+    (roleMult[d]??={})[role]={m:Math.max(.75,Math.min(1.3,((allowed+2)/(expected+2))**.6)),allowed,expected,games:Object.keys(byGame).length};
+  }
+  const forecasts=new Map((S.models?.games||[]).map(x=>[x.game_id,x.forecast?.champion]));
+  const scratched=tdScratched(), games=[];
+  for(const g of S.games){
+    const iso=kickoff(g.date,g.time), weather=S.weather?.[g.id]||null, bad=badWeather(weather), side={};
+    for(const t of [g.a,g.h]){
+      const home=g.h===t, opp=home?g.a:g.h, info=T[t]||team(t), oi=T[opp]||team(opp);
+      const teamSpread=g.spread==null?null:home?-g.spread:g.spread, model=forecasts.get(g.id);
+      const modelMargin=model?.margin_home==null?null:home?model.margin_home:-model.margin_home;
+      const script=teamSpread==null&&modelMargin==null?0:mean([teamSpread==null?null:-teamSpread,modelMargin].filter(x=>x!=null));
+      let implied=impliedPoints(g.total,teamSpread);
+      const fromLines=implied!=null;
+      if(implied==null)implied=mean(info.games.map(id=>{const x=allGames().find(y=>y.id===id);return x?(x.a===t?x.sa:x.sh):null;}).filter(x=>x!=null))??21;
+      // Red-zone TD rate allowed against league, square-rooted and capped: the total already prices most of the matchup.
+      const rzAllowed=shrink(oi.aRz[0],oi.aRz[1],8,lgRz), rzFactor=Math.max(.9,Math.min(1.1,(rzAllowed/lgRz)**.5));
+      const teamTd=impliedTds(implied)*rzFactor, rs=rushShare(info.rushTd,info.passTd,lgRushShare,script,bad);
+      const report=S.injuries[teamName(t)]||[], statusOf=name=>report.find(x=>nflName(x.name)===nflName(name))?.status;
+      const recent=new Set(info.games.slice(-3)), last4=info.games.slice(-4);
+      const cands=Object.values(P).filter(pl=>pl.team===t&&Object.keys(pl.games).some(id=>recent.has(id))&&!scratched.includes(pl.id)&&!outNow(statusOf(getPlayer(pl.id).name)));
+      const perGame=(pl,ids,k)=>{const l=ids.filter(id=>pl.games[id]);return l.length?l.reduce((a,id)=>a+pl.games[id][k],0)/l.length:0;};
+      const blend=(pl,k)=>{const all=Object.keys(pl.games);return .4*perGame(pl,all,k)+.6*(last4.some(id=>pl.games[id])?perGame(pl,last4,k):perGame(pl,all,k));};
+      const xr=new Map(cands.map(pl=>[pl.id,blend(pl,'xr')])), xc=new Map(cands.map(pl=>[pl.id,blend(pl,'xc')])), vol=new Map(cands.map(pl=>[pl.id,blend(pl,'v')]));
+      const sR=[...xr.values()].reduce((a,b)=>a+b,0)||1, sC=[...xc.values()].reduce((a,b)=>a+b,0)||1, sV=[...vol.values()].reduce((a,b)=>a+b,0)||1;
+      const W=tdSettings.opportunityWeight;
+      const gl=cands.filter(pl=>pos(pl.id)==='RB').map(pl=>[pl,Object.values(pl.games).reduce((a,gm)=>a+(gm.b['rush 1-2']||0)+(gm.b['rush 3-5']||0),0)]).sort((a,b)=>b[1]-a[1])[0];
+      const openAll={};for(const [gid,o] of Object.entries(info.openTouches))for(const [id,n] of Object.entries(o))openAll[id]=(openAll[id]||0)+n;
+      const openTotal=cands.reduce((a,pl)=>a+(openAll[pl.id]||0),0);
+      // Each player's share of the team's TDs; flatten (a power under 1, renormalized) pulls the extremes in, as the
+      // backtest showed raw shares were too spread out.
+      const rawShare=new Map(cands.map(pl=>[pl.id,(W*(rs*xr.get(pl.id)/sR+(1-rs)*xc.get(pl.id)/sC)+(1-W)*vol.get(pl.id)/sV)**tdSettings.flatten]));
+      const sShare=[...rawShare.values()].reduce((a,b)=>a+b,0)||1;
+      const rows=cands.map(pl=>{
+        const pp=getPlayer(pl.id,t), role=pp.pos, m=roleMult[opp]?.[role]?.m??1;
+        const lambda=teamTd*rawShare.get(pl.id)/sShare*m;
+        const count=k=>Object.values(pl.games).reduce((a,gm)=>a+(gm.b[k]||0),0);
+        const played=Object.keys(pl.games), xSeason=played.reduce((a,id)=>a+pl.games[id].xr+pl.games[id].xc,0);
+        const rzMine=played.reduce((a,id)=>a+Object.entries(pl.games[id].b).filter(([k])=>!k.endsWith('21+')).reduce((s,[,n])=>s+n,0),0);
+        const rzTeam=played.reduce((a,id)=>a+(info.x[id]?.rz||0),0);
+        const snapList=(S.extra?.snaps?info.games.slice(-3).map(id=>S.extra.snaps[id]?.[t]?.find(r=>nflName(r[0])===nflName(pp.name))?.[2]).filter(x=>x!=null):[]);
+        return {p:pp,id:pl.id,team:t,opp,role,game:{...g,iso},lambda,anytime:anytime(lambda),m,
+          rushShare:xr.get(pl.id)/sR,recShare:xc.get(pl.id)/sC,volShare:vol.get(pl.id)/sV,rzShare:rzTeam?rzMine/rzTeam:null,snaps:snapList.length?mean(snapList):null,
+          counts:{in5:count('rush 1-2')+count('rush 3-5'),in10:count('rush 1-2')+count('rush 3-5')+count('rush 6-10'),t10:count('target 1-10')+count('target end zone'),
+            t20:count('target 1-10')+count('target 11-20')+count('target end zone'),ez:count('target end zone')},
+          games:played.length,td:pl.td,xtd:xSeason,regression:tdRegression(pl.td,xSeason),goalLine:gl&&gl[0]===pl&&gl[1]>=2,
+          openShare:openTotal?(openAll[pl.id]||0)/openTotal:0,status:/questionable|doubtful/i.test(statusOf(pp.name)||'')?statusOf(pp.name):null,
+          quotes:{any:propQuotes(pp,'Anytime TD',S.odds)[0]||null,first:propQuotes(pp,'First TD',S.odds)[0]||null}};
+      });
+      side[t]={opp,home,teamTd,rs,implied,fromLines,script,rzFactor,rows,receive:shrink(info.recv[0],info.recv[1],6,.5),
+        drive:{off:shrink(info.tdDrives,info.drives,10,lgDrive),allow:shrink(oi.aTdDrives,oi.aDrives,10,lgDrive),open:info.open}};
+    }
+    // First TD: who receives, then drive-by-drive TD chances.
+    const A=side[g.a],H=side[g.h], drive=x=>Math.max(.08,Math.min(.5,x.drive.off*x.drive.allow/lgDrive));
+    const pA=drive(A),pH=drive(H), a1=shrink(A.drive.open[0],A.drive.open[1],8,pA*lgOpen/lgDrive), h1=shrink(H.drive.open[0],H.drive.open[1],8,pH*lgOpen/lgDrive);
+    const override=S.f?.['tdOpen:'+g.id], receiveA=override===g.a?1:override===g.h?0:log5(A.receive,H.receive);
+    const firstA=firstTdChance(receiveA,a1,h1,pA,pH), offense=S.f?.tdDst==='No'?1:1-dst;
+    for(const [t,share] of [[g.a,firstA],[g.h,1-firstA]]){
+      const rows=side[t].rows, L=rows.reduce((a,r)=>a+r.lambda,0)||1, O=rows.reduce((a,r)=>a+r.openShare,0)||1;
+      for(const r of rows){r.teamFirst=share*offense;r.given=.8*r.lambda/L+.2*r.openShare/O;r.first=r.teamFirst*r.given;}
+    }
+    games.push({g:{...g,iso},weather,bad,side,receiveA,receiveSource:override?'set here':'model',pA,pH,a1,h1,firstA,dst,rows:[...A.rows,...H.rows]});
+  }
+  const data={games,rows:games.flatMap(x=>x.rows),rates,league:{rushShare:lgRushShare,drive:lgDrive,open:lgOpen,rz:lgRz,dst}};
+  tdMemo={key,data};
+  return data;
+}
 export function nflPlayer(id){
   const p=matchup().map(t=>footballPlayers(t).find(x=>x.id===id)).find(Boolean)||names.map(t=>footballPlayers(t).find(x=>x.id===id)).find(Boolean);
   if(!p)return;
@@ -513,10 +640,11 @@ export function nflAction(act,v,target){
     const [a,h]=matchup();dialog(v,grid(2,[a,h].map(t=>card(team(t),table(['Week','Opponent','Results','Plays','Yards'],opening(t,false,S.f.window,S.f.view).map(x=>[x.g.week,team(x.o),esc(x.drives.join(', ')),x.plays,x.yards]))))),true);return true;
   }
   if(S.route.id==='nfl-parlays'&&act.startsWith('parlay'))return nflParlayAction(act,v,nflParlayData(),target);
+  if(S.route.id==='nfl-tdboard'&&act.startsWith('td'))return tdBoardAction(act,v,tdBoardData());
   if(act==='pickplayers'){const [a,h]=matchup();dialog('Pick players',grid(2,[tdPlayers(a),tdPlayers(h)]),true);return true;}
   return false;
 }
-export function nflPage(){return ({'nfl-parlays':()=>nflParlayPage(nflParlayData()),td:tdPage,drives:drivesPage,'nfl-preview':nflPreview,'nfl-props':nflProps,'nfl-best':bestNfl,endzone})[S.route.id]();}
+export function nflPage(){return ({'nfl-tdboard':()=>tdBoardPage(tdBoardData()),'nfl-parlays':()=>nflParlayPage(nflParlayData()),td:tdPage,drives:drivesPage,'nfl-preview':nflPreview,'nfl-props':nflProps,'nfl-best':bestNfl,endzone})[S.route.id]();}
 export function nflResult(p){
   const g=allGames().find(x=>x.id===p.game);
   if(!g||!final(g))return null;

@@ -8,7 +8,7 @@ import {refreshScores} from './live-scores.mjs';
 // Each section's code loads the first time one of its pages opens, so a visit downloads only what it shows.
 // The build adds a modulepreload hint for the page's own section, so this costs no extra round trip.
 const loaders={
-  nfl:()=>import('./nfl.mjs').then(m=>({page:m.nflPage,player:m.nflPlayer,action:m.nflAction,result:m.nflResult})),
+  nfl:()=>import('./nfl.mjs').then(m=>({page:m.nflPage,player:m.nflPlayer,action:m.nflAction,result:m.nflResult,tdPrice:m.tdPrice})),
   nba:()=>import('./nba.mjs').then(m=>({page:m.nbaPage,player:m.nbaPlayer,action:m.nbaAction,result:m.nbaResult,fbPrice:m.fbPrice})),
   nhl:()=>import('./nhl.mjs').then(m=>({page:m.nhlPage,player:m.nhlPlayer,action:m.nhlAction,result:m.nhlResult})),
   mlb:()=>Promise.all([import('./yard.mjs'),import('./yard-engine.mjs'),import('./yard-more.mjs')]).then(([y,e,more])=>({page:y.yardPage,player:y.yardPlayer,
@@ -96,9 +96,12 @@ const basketInputs=()=>Promise.all([get(`${ESPN}/${sportPath.nba}/injuries`,null
   get(dataURL('tracker/first-basket-index.json'),{}).then(i=>Promise.all((i.months||[]).map(m=>get(dataURL('tracker/first-basket-'+m+'.json'),[])))).then(x=>x.flat()).catch(()=>[]),
   get(dataURL('tracker/first-basket-backtest.json'),null)])
   .then(([injuries,live,backtest])=>({injuries,fbLog:{live,backtest:backtest?.games||[]}}));
-const nflParlayInputs=year=>Promise.all([get(dataURL('models/nfl.json'),null),get(dataURL('nfl-extra-'+year+'.json'),null),
-  get(dataURL('live/weather-nfl.json'),null),get(`${ESPN}/${sportPath.nfl}/injuries`,null).then(j=>j?.injuries?.length?compactInjuries(j):null).catch(()=>null)])
-  .then(([models,extra,weather,injuries])=>({models,extra,weather,injuries}));
+const nflParlayInputs=(year,tdLog=false)=>Promise.all([get(dataURL('models/nfl.json'),null),get(dataURL('nfl-extra-'+year+'.json'),null),
+  get(dataURL('live/weather-nfl.json'),null),get(`${ESPN}/${sportPath.nfl}/injuries`,null).then(j=>j?.injuries?.length?compactInjuries(j):null).catch(()=>null),
+  // TD Board calibration: the saved pregame boards and the backtest.
+  tdLog?Promise.all([get(dataURL('tracker/td-board-index.json'),{}).then(i=>Promise.all((i.months||[]).map(m=>get(dataURL('tracker/td-board-'+m+'.json'),[])))).then(x=>x.flat()).catch(()=>[]),
+    get(dataURL('tracker/td-board-backtest.json'),null).then(x=>x?.games||[])]).then(([live,backtest])=>({live,backtest})):null])
+  .then(([models,extra,weather,injuries,tdLog])=>({models,extra,weather,injuries,tdLog}));
 const injuriesFor=s=>get(dataURL('live/injuries-'+s+'.json'),null).then(x=>x??get(`${ESPN}/${sportPath[s]}/injuries`,{}).then(compactInjuries).catch(()=>({})));
 const oddsFor=(s,d)=>get(dataURL('live/odds-'+s+(s==='nfl'?'':'-'+d)+'.json'),[]);
 const savedGames={};
@@ -180,7 +183,7 @@ async function load(){
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
       injuriesFor(s),oddsFor(s,d),
       s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{},
-      id==='nfl-parlays'?nflParlayInputs(year):id==='basket'?basketInputs():null]);
+      id==='nfl-parlays'||id==='nfl-tdboard'?nflParlayInputs(year,id==='nfl-tdboard'):id==='basket'?basketInputs():null]);
     if(token!==req)return;
     if(s==='nba')S.hoops=year;if(s==='nhl')S.ice=year;
     S.data=data;S.odds=odds;S.injuries=injuries;S.lineups=lineups;
@@ -188,7 +191,7 @@ async function load(){
     // (inactives post about 90 minutes before kickoff, often between hourly refreshes).
     S.models=models?.models||null;S.extra=models?.extra||null;S.weather=models?.weather||null;
     if(models?.injuries)S.injuries=models.injuries;
-    S.fbLog=models?.fbLog||null;
+    S.fbLog=models?.fbLog||null;S.tdLog=models?.tdLog||null;
     if(s==='nfl'){
       const sched=data.schedule?.filter(g=>+g.id.slice(0,4)===S.year)||[];
       S.week??=sched.find(g=>g.date>=today)?.week??sched.at(-1)?.week??1;
@@ -416,7 +419,7 @@ document.addEventListener('click',e=>{
   if(act==='backup'){backup();return;}
   if(act==='photoCol'){photoState.columns=v;photo();return;}
   if(S.route.sport==='mlb'&&M.mlb){const r=M.mlb.action(act,v);if(r){if(typeof r==='string')toast(r);render();return;}}
-  if(M[S.route.sport]?.action?.(act,v,t)&&(act.startsWith('parlay')||act.startsWith('fb')))render();
+  if(M[S.route.sport]?.action?.(act,v,t)&&(act.startsWith('parlay')||act.startsWith('fb')||act.startsWith('td')))render();
 });
 document.addEventListener('input',e=>{
   const t=e.target,k=t.dataset.field;
@@ -427,6 +430,7 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
   const t=e.target,k=t.dataset.field;
   if(t.dataset.restore!=null){const f=t.files?.[0];t.value='';if(f)restore(f);return;}
+  if(t.dataset.tdPrice!=null&&M.nfl){M.nfl.tdPrice(t.dataset.tdPrice,t.value);render();return;}
   if(t.dataset.fbPrice!=null&&M.nba){M.nba.fbPrice(t.dataset.fbPrice,t.value);render();return;}
   if(t.dataset.play){savePlay(JSON.parse(t.dataset.play),t.checked);return;}
   if(t.dataset.wheel){if(t.checked)wheelState.checked.add(t.dataset.wheel);else wheelState.checked.delete(t.dataset.wheel);wheel(false);return;}
