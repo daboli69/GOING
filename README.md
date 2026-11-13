@@ -43,6 +43,15 @@ Each section uses its own accent color and the same dashboard typography, boards
 
 The opening possessions come from the play-by-play (`scripts/normalize.py` keeps each game's first 16 as team, points, shooters, free-throw shooter and scorer, and tags early shots with their possession number).
 
+**GOING LONG TD Board.** Under Props (`long/td-board.html`), for anytime and first touchdown. Expected TDs come from opportunity, not past TD counts (`site/nfl-td.mjs`).
+- **Opportunity:** every carry and target counts at the league's TD rate for where it happened. This season a carry at the 1–2 scores 48% of the time, at the 3–5 29%, at the 6–10 11%. An end-zone target scores 42%, a target inside the 10 23%, a touch outside the 20 about 1%.
+- **Team TDs:** (implied points − two field goals) ÷ 7, from the total and spread, split between rushing and receiving by the team's TD split (shrunk to league), the game script and weather. A player's share is half his red-zone opportunity share and half his share of the team's carries and targets, flattened slightly. The weights come from the backtest, where pure red-zone shares were overconfident at the top. Missing teammates drop out and the rest renormalize.
+- **Matchup:** each defense's TD opportunity allowed to RBs, WRs, TEs and QBs, adjusted for the offenses it faced, and its red-zone TD rate allowed.
+- **Probabilities:** anytime is P = 1 − e^(−expected TDs). First TD is P(team scores the first TD) × P(he scores it | team does). The team side comes from who receives the opening kickoff (each team's history, shrunk to 50%, or set per game), opening-drive and per-drive TD rates against the defense, and a share left for defense and special-teams TDs, which Kalshi counts. The player side weighs his expected TDs and his share of the team's opening-drive touches.
+- **Prices:** typed sportsbook prices have the hold removed. Kalshi asks are exchange prices used as they stand (two-sided quotes normalized), and a first-TD field is normalized per game. Gaps over 12 points are flagged to confirm the player's role.
+- **Toggles:** market, position, odds range, minimum edge, minimum red-zone and snap share, spread and total limits, weather (any, no wind or rain, dome only), excluding questionable players, due for a TD, whether D/ST TDs count, legs, one per game, and a QB-with-receiver stack.
+- **Output:** picks come with written reasons, a TD Regression Watch (actual against expected TDs), a model check, and a calibration log. Each hourly run saves the board before kickoff and grades it from the play-by-play, and a backtest replays earlier weeks (`scripts/track-nfl-td.mjs`).
+
 **GOING LONG Suggested Parlays.** The NBA generator's approach, adapted to football in ten steps (`site/nfl-parlay-engine.mjs`). It covers receiving, rushing and passing yards, receptions, rush and pass attempts, completions, anytime TD and first TD.
 
 1. **Rules.** Leg count, stat types, sides, one leg per game and exclusions, as in GOING UP.

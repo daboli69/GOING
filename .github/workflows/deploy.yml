@@ -144,6 +144,9 @@ jobs:
       - name: Log first basket probabilities
         run: node scripts/track-nba-first-basket.mjs || echo "::warning::First basket log failed; the previous record is still published."
 
+      - name: Log TD Board probabilities
+        run: node scripts/track-nfl-td.mjs || echo "::warning::TD Board log failed; the previous record is still published."
+
       - name: Capture and grade NFL parlay legs
         run: node scripts/track-nfl-parlays.mjs || echo "::warning::NFL parlay tracker failed; the previous record is still published."
 
