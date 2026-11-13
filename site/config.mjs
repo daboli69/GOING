@@ -26,9 +26,11 @@ export const menus={
     Promos:[['King of the Crease','goal/promo-tools.html','crease'],['Icebreaker','goal/promo-tools.html#icebreaker','ice'],['King of the Hat Trick','goal/promo-tools.html#hattrick','hat']]
   },
   mlb:{
-    Models:[['HR Board','yard/','yard-board'],['Top Plays','yard/top-plays.html','yard-top'],['Model Record','yard/record.html','yard-record']],
-    Matchups:[['Game Scan','yard/games.html','yard-games'],['Pitchers & Bullpens','yard/pitchers.html','yard-arms'],['Target Teams','yard/targets.html','yard-targets'],['Weather & Parks','yard/weather.html','yard-weather']],
-    Props:[['Hits & H+R+RBI','yard/hits.html','yard-hits'],['Total Bases','yard/total-bases.html','yard-tb'],['Pitcher Strikeouts','yard/strikeouts.html','yard-ks'],['Game Totals','yard/game-totals.html','yard-totals'],['Parlays & Jackpots','yard/parlays.html','yard-parlays']]
+    Models:[['HR Board','yard/','yard-board'],['Top Plays','yard/top-plays.html','yard-top'],['Top Picks','yard/top-picks.html','yard-picks'],['Daily Card','yard/daily-card.html','yard-daily'],['Signal Convergence','yard/convergence.html','yard-converge']],
+    Matchups:[['Game Scan','yard/games.html','yard-games'],['Pitchers & Bullpens','yard/pitchers.html','yard-arms'],['Team vs Pitch Mix','yard/pitch-mix.html','yard-pitchmix'],['Split Overlaps','yard/splits.html','yard-splits'],['Target Teams','yard/targets.html','yard-targets'],['Weather & Parks','yard/weather.html','yard-weather']],
+    Props:[['Hits & H+R+RBI','yard/hits.html','yard-hits'],['King of the Bases','yard/total-bases.html','yard-tb'],['Pitcher Strikeouts','yard/strikeouts.html','yard-ks'],['Game Totals','yard/game-totals.html','yard-totals'],['Edge Finder','yard/edge-finder.html','yard-edge'],['Price Research','yard/price-research.html','yard-price'],['Alt Line Finder','yard/alt-lines.html','yard-alt']],
+    Parlays:[['Parlays & Jackpots','yard/parlays.html','yard-parlays'],['Parlay Builder','yard/parlay-builder.html','yard-sgp'],['Parlay Scanner','yard/parlay-scanner.html','yard-scanner'],['Ladder Challenge','yard/ladder.html','yard-ladder']],
+    Results:[['Model Record','yard/record.html','yard-record'],['HR Calendar','yard/calendar.html','yard-calendar'],['HR Patterns','yard/patterns.html','yard-patterns'],['Guide & FAQ','yard/guide.html','yard-guide']]
   }
 };
 // MLB: [name, MLB team id (logos), colour]. Codes match the hr-board feed.

@@ -2,6 +2,8 @@
 // All numbers come from hr-board's published board; this module only presents them.
 import {current as S,esc,box,grid,card,metric,logo,team,teamBanner,teamName,table,cell,tools,btn,toggles,select,search,info,empty,slate,dialog,badge,person,et,dateLabel,round,pct} from './ui.mjs';
 import {signed} from './math.mjs';
+import * as More from './yard-more.mjs';
+import {setMinEdgeValue} from './yard-store.mjs';
 
 const board=()=>S.data||{};
 const headshot=id=>`https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_120,q_auto:best/v1/people/${id}/headshot/67/current`;
@@ -141,8 +143,10 @@ function tbPage(){
   const b=board(),tb=b.total_bases_board;if(!tb?.board?.length)return pageHead('Total Bases')+noSlate();
   const byId=new Map((b.players||[]).map(p=>[p.id,p]));
   const games=tb.board.filter(g=>S.f.allGames||!S.game||String(g.game_pk)===S.game.id).map(g=>box(`${logo(g.away)} ${esc(g.away)} @ ${esc(g.home)} ${logo(g.home)} <span class="subtle">${et({iso:g.time})} ET</span>`,
-    table(['Hitter','Spot','Expected TB','SLG season','SLG recent','Matchup','Drivers'],(g.leaders||[]).map(x=>({act:'player',v:x.id,cls:'clickable',cells:[hitter({...byId.get(x.id),...x,lineup_spot:x.spot}),x.spot??'—',cell(round(x.exp_tb,2),x.exp_tb>=1.6?'good heat':x.exp_tb>=1.2?'mid heat':''),fmt('slg',x.slg_season),fmt('slg',x.slg_recent),cell(signed((x.matchup_mult-1)*100,0)+'%',x.matchup_mult>=1.05?'good':x.matchup_mult<=.95?'bad':''),cell((x.drivers||[]).map(esc).join('<br>'),'plain')]})),{cls:'compact'})));
-  return pageHead('Total Bases','Expected total bases per hitter for King of the Bases style promos (most total bases in one game): projected at-bats by lineup spot times blended SLG, adjusted for the pitcher and this batter’s fit against him. An expected value, not a win chance.')+
+    table(['Hitter','Spot','Jackpot EV','Crowd zone','Expected TB','SLG season','SLG recent','Matchup','Book 2+ TB','Drivers'],(g.leaders||[]).slice().sort((a,b)=>(b.jackpot_ev??b.exp_tb)-(a.jackpot_ev??a.exp_tb)).map(x=>({act:'player',v:x.id,cls:'clickable',cells:[hitter({...byId.get(x.id),...x,lineup_spot:x.spot}),x.spot??'—',
+      cell(round(x.jackpot_ev??x.exp_tb,2),'good heat'),cell(x.crowd_zone?badge(x.crowd_zone,x.crowd_zone==='Sweet Spot'?'g':''):'—','plain'),cell(round(x.exp_tb,2),x.exp_tb>=1.6?'good heat':x.exp_tb>=1.2?'mid heat':''),fmt('slg',x.slg_season),fmt('slg',x.slg_recent),
+      cell(signed((x.matchup_mult-1)*100,0)+'%',x.matchup_mult>=1.05?'good':x.matchup_mult<=.95?'bad':''),x.tb_market_price!=null?(x.tb_market_price>0?'+':'')+x.tb_market_price:'—',cell((x.drivers||[]).slice(0,3).map(esc).join('<br>'),'plain')]})),{cls:'compact'})));
+  return pageHead('King of the Bases','For the DraftKings King of the Bases promo (most total bases in one game, usually the last game of the night). Expected total bases is projected at-bats by lineup spot times blended SLG, adjusted for the pitcher and this batter’s fit against him. Jackpot EV weights that by the crowd: the chalk favourite and the lottery ticket are both over-picked, so the Sweet Spot in between is boosted. Neither number is a win chance.')+
     slate({note:'Tap a game to filter'})+games.join('')+`<details class="details"><summary>How hr-board builds this</summary><ul class="subtle notes-list">${(tb.notes||[]).map(n=>`<li>${esc(n)}</li>`).join('')}</ul></details>`;
 }
 function ksPage(){
@@ -246,9 +250,28 @@ function armDetail(id){
 
 export function yardPage(){
   return ({'yard-board':boardPage,'yard-top':topPage,'yard-games':gamesPage,'yard-arms':armsPage,'yard-targets':targetsPage,'yard-weather':weatherPage,
-    'yard-hits':hitsPage,'yard-tb':tbPage,'yard-ks':ksPage,'yard-totals':totalsPage,'yard-parlays':parlaysPage,'yard-record':recordPage})[S.route.id]();
+    'yard-hits':hitsPage,'yard-tb':tbPage,'yard-ks':ksPage,'yard-totals':totalsPage,'yard-parlays':parlaysPage,'yard-record':recordPage,
+    'yard-picks':More.topPicks,'yard-daily':More.dailyCard,'yard-converge':More.converge,'yard-pitchmix':More.pitchMix,'yard-splits':More.splits,
+    'yard-edge':More.edgeFinder,'yard-price':More.priceResearch,'yard-alt':More.altLines,'yard-sgp':More.parlayBuilder,'yard-scanner':More.parlayScanner,
+    'yard-ladder':More.ladder,'yard-calendar':More.calendar,'yard-patterns':More.patterns,'yard-guide':More.guide})[S.route.id]();
 }
-export function yardAction(act,v){return false;}
+// Views whose numbers come from hr-board's own math need the full board, history and backtest.
+export const ENGINE_VIEWS=new Set(['yard-picks','yard-daily','yard-converge','yard-pitchmix','yard-splits','yard-edge','yard-price','yard-alt','yard-sgp','yard-scanner','yard-ladder','yard-calendar','yard-patterns']);
+// Returns true when handled (the caller re-renders); a string is a message for the toast.
+export function yardAction(act,v){
+  if(act==='pmPitch'){const i=v.lastIndexOf(':'),key=v.slice(0,i),pt=v.slice(i+1),sel=S.f.pmSel[key]||[];S.f.pmSel[key]=sel.includes(pt)?sel.filter(x=>x!==pt):[...sel,pt];return true;}
+  if(act==='sgpType'){const t=S.f.sgpTypes||[];S.f.sgpTypes=t.includes(v)?t.filter(x=>x!==v):[...t,v];return true;}
+  if(act==='ladder'){return More.ladderAction(v)||true;}
+  if(act==='calMonth'){S.f.calMonth=v;S.f.calDay=null;return true;}
+  return false;
+}
+export function yardField(k,v){
+  if(k==='minEdge'){setMinEdgeValue(v);return true;}
+  if(k==='pmPitcher'){S.f.pmPitcher=v;return true;}
+  return false;
+}
 // My Plays grading is not wired for MLB: hr-board grades its own record, and the pick tracker grades from box scores.
 export function yardResult(){return null;}
 export const yardTeamName=t=>teamName(t,'mlb');
+// Shared with yard-more.mjs (the views that run hr-board's own math).
+export {board,headshot,norm,ago,fmt,sigCell,heatCell,formBadge,tierBadge,hitter,pitcherCell,inGame,pageHead,noSlate};

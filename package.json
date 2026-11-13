@@ -8,7 +8,14 @@
     "live": "node scripts/live.mjs",
     "build": "node scripts/build.mjs",
     "preview": "node scripts/build.mjs && node scripts/serve.mjs --dist",
-    "test": "node --test"
+    "test": "node --test",
+    "yard-engine": "node scripts/build-yard-engine.mjs"
   },
-  "engines": {"node": ">=22"}
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "acorn": "^8.14.0",
+    "acorn-walk": "^8.3.4"
+  }
 }

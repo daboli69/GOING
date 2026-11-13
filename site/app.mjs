@@ -8,7 +8,9 @@ import {nhlPage,nhlPlayer,nhlAction,nhlResult} from './nhl.mjs';
 import {modelLoad,modelPage,modelAction,modelStep} from './models.mjs';
 import {homeLoad,homePage} from './home.mjs';
 
-import {yardPage,yardPlayer,yardAction,yardResult} from './yard.mjs';
+import {yardPage,yardPlayer,yardAction,yardResult,yardField,ENGINE_VIEWS} from './yard.mjs';
+import {setYardData} from './yard-engine.mjs';
+import {setPrice} from './yard-more.mjs';
 
 const modules={nfl:[nflPage,nflPlayer,nflAction,nflResult],nba:[nbaPage,nbaPlayer,nbaAction,nbaResult],nhl:[nhlPage,nhlPlayer,nhlAction,nhlResult],mlb:[yardPage,yardPlayer,yardAction,yardResult]};
 const defaults=viewDefaults;
@@ -114,8 +116,11 @@ async function load(){
   if(s==='mlb'){
     // GOING YARD reads hr-board's published slate; there is one slate at a time.
     try{
-      const [board,odds,results]=await Promise.all([get(dataURL('yard/board.json')),get(dataURL('yard/odds.json'),{}),id==='yard-record'?get(dataURL('yard/results.json'),{}):null]);
+      const engine=ENGINE_VIEWS.has(id);
+      const [board,odds,results,history,backtest]=await Promise.all([get(dataURL(engine?'yard/board-full.json':'yard/board.json')),get(dataURL('yard/odds.json'),{}),
+        id==='yard-record'?get(dataURL('yard/results.json'),{}):null,engine?get(dataURL('yard/history.json'),{days:[]}):null,engine?get(dataURL('yard/backtest.json'),{}):null]);
       if(token!==req)return;
+      if(engine){setYardData({board,odds,history,backtest});S.yardHistory=history;}
       const seen=new Set();
       Object.assign(S,{data:board,odds:[],injuries:{},yardOdds:odds,yardResults:results,day:board.slate_date||today,game:null,
         games:(board.games||[]).filter(g=>!seen.has(g.game_pk)&&seen.add(g.game_pk)).map(g=>({id:String(g.game_pk),a:g.away,h:g.home,iso:g.time,park:g.park,status:Date.parse(g.time)>Date.now()?'FUT':'STARTED'}))});
@@ -325,6 +330,7 @@ document.addEventListener('click',e=>{
   }
   if(act==='photo'){photo();return;}
   if(act==='photoCol'){photoState.columns=v;photo();return;}
+  if(S.route.sport==='mlb'){const r=yardAction(act,v);if(r){if(typeof r==='string')toast(r);render();return;}}
   if(modules[S.route.sport])modules[S.route.sport][2](act,v);
 });
 document.addEventListener('input',e=>{
@@ -343,6 +349,8 @@ document.addEventListener('change',e=>{
   if(k==='photoResults'){photoState.results=t.checked;photo();return;}
   if(k==='lean'){S.f.lean=t.checked;render();return;}
   if(k==='hideThin'){S.f.hideThin=t.checked;render();return;}
+  if(t.dataset.yardPrice){setPrice(t.dataset.yardPrice,t.value);render();return;}
+  if(S.route.sport==='mlb'&&k&&yardField(k,t.value)){render();return;}
   if(isModel(S.route.id)&&k&&modelAction('field',k+':'+t.value)){render();return;}
   if(k&&!['notes','search'].includes(k))updateField(k,t.value);
 });

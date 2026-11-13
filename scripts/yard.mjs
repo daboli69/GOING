@@ -2,7 +2,7 @@
 // hr-board keeps its own ETL and schedule; nothing here changes its model. Writes site/data/yard/.
 //
 //   YARD_SOURCE=https://daboli69.github.io/hr-board/   where hr-board's docs/ folder is served (default)
-//   YARD_BOARD=path/to/board.json                        use a local board instead (testing)
+//   YARD_BOARD / YARD_ODDS / YARD_HISTORY=path            use local files instead (testing)
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -68,11 +68,15 @@ const slim=has(board)?{
   fallback
 }:{generated_at:board?.generated_at||null,slate_date:board?.slate_date||null,games:[],players:[],fallback};
 await writeFile(join(out,'board.json'),JSON.stringify(slim));
+// The full board, for the views that run hr-board's own math (site/yard-engine.mjs needs every field).
+await writeFile(join(out,'board-full.json'),JSON.stringify(has(board)?{...board,fallback}:{games:[],players:[],slate_date:board?.slate_date||null,fallback}));
 
 // 3. Prices hr-board captured, and the season record.
-const odds=await json(source+'odds.json');
+const odds=process.env.YARD_ODDS?JSON.parse(await readFile(process.env.YARD_ODDS,'utf8')):await json(source+'odds.json');
 await writeFile(join(out,'odds.json'),JSON.stringify(odds||{}));
-const [history,backtest]=await Promise.all([json(source+'history.json'),json(source+'backtest.json')]);
+const [history,backtest]=await Promise.all([process.env.YARD_HISTORY?readFile(process.env.YARD_HISTORY,'utf8').then(JSON.parse):json(source+'history.json'),json(source+'backtest.json')]);
+await writeFile(join(out,'history.json'),JSON.stringify(history||{days:[]}));
+await writeFile(join(out,'backtest.json'),JSON.stringify(backtest||{}));
 const sum=(target,src)=>{for(const [k,v] of Object.entries(src||{})){const t=(target[k]??={n:0,hr:0});t.n+=v.n||0;t.hr+=v.hr||0;}return target;};
 const season={days:0,total_hr:0,sp_hr:0,bp_hr:0,by_tier:{},by_form:{},by_park:{},by_trend:{},by_spot:{},ranks:{},hit1:{},daily:[]};
 for(const d of history?.days||[]){
