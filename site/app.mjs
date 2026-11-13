@@ -8,7 +8,7 @@ import {nhlPage,nhlPlayer,nhlAction,nhlResult} from './nhl.mjs';
 import {modelLoad,modelPage,modelAction,modelStep} from './models.mjs';
 import {homeLoad,homePage} from './home.mjs';
 
-import {yardPage,yardPlayer,yardAction,yardResult,yardField,ENGINE_VIEWS} from './yard.mjs';
+import {yardPage,yardPlayer,yardAction,yardResult,yardField,yardInput,ENGINE_VIEWS} from './yard.mjs';
 import {setYardData} from './yard-engine.mjs';
 import {setPrice} from './yard-more.mjs';
 
@@ -349,11 +349,14 @@ document.addEventListener('change',e=>{
   if(k==='photoResults'){photoState.results=t.checked;photo();return;}
   if(k==='lean'){S.f.lean=t.checked;render();return;}
   if(k==='hideThin'){S.f.hideThin=t.checked;render();return;}
+  if(S.route.sport==='mlb'){const r=yardInput(t);if(r){if(r!=='keep')render();return;}}
   if(t.dataset.yardPrice){setPrice(t.dataset.yardPrice,t.value);render();return;}
   if(S.route.sport==='mlb'&&k&&yardField(k,t.value)){render();return;}
   if(isModel(S.route.id)&&k&&modelAction('field',k+':'+t.value)){render();return;}
   if(k&&!['notes','search'].includes(k))updateField(k,t.value);
 });
+// Pages that change after an async fetch (box-score grading, backup restore) ask for a redraw.
+document.addEventListener('going:render',()=>render());
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menu){menu=null;header();}});
 window.addEventListener('popstate',()=>{dateHash=location.hash;start();});
 window.addEventListener('hashchange',()=>{if(dateHash!==location.hash){dateHash=location.hash;start();}});

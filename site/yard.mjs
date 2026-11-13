@@ -3,6 +3,7 @@
 import {current as S,esc,box,grid,card,metric,logo,team,teamBanner,teamName,table,cell,tools,btn,toggles,select,search,info,empty,slate,dialog,badge,person,et,dateLabel,round,pct} from './ui.mjs';
 import {signed} from './math.mjs';
 import * as More from './yard-more.mjs';
+import * as Bets from './yard-bets.mjs';
 import {setMinEdgeValue} from './yard-store.mjs';
 
 const board=()=>S.data||{};
@@ -253,18 +254,20 @@ export function yardPage(){
     'yard-hits':hitsPage,'yard-tb':tbPage,'yard-ks':ksPage,'yard-totals':totalsPage,'yard-parlays':parlaysPage,'yard-record':recordPage,
     'yard-picks':More.topPicks,'yard-daily':More.dailyCard,'yard-converge':More.converge,'yard-pitchmix':More.pitchMix,'yard-splits':More.splits,
     'yard-edge':More.edgeFinder,'yard-price':More.priceResearch,'yard-alt':More.altLines,'yard-sgp':More.parlayBuilder,'yard-scanner':More.parlayScanner,
-    'yard-ladder':More.ladder,'yard-calendar':More.calendar,'yard-patterns':More.patterns,'yard-guide':More.guide})[S.route.id]();
+    'yard-ladder':More.ladder,'yard-calendar':More.calendar,'yard-patterns':More.patterns,'yard-guide':More.guide,'yard-bets':Bets.myBets,'yard-clv':Bets.clvPage})[S.route.id]();
 }
 // Views whose numbers come from hr-board's own math need the full board, history and backtest.
-export const ENGINE_VIEWS=new Set(['yard-picks','yard-daily','yard-converge','yard-pitchmix','yard-splits','yard-edge','yard-price','yard-alt','yard-sgp','yard-scanner','yard-ladder','yard-calendar','yard-patterns']);
+export const ENGINE_VIEWS=new Set(['yard-picks','yard-daily','yard-converge','yard-pitchmix','yard-splits','yard-edge','yard-price','yard-alt','yard-sgp','yard-scanner','yard-ladder','yard-calendar','yard-patterns','yard-bets','yard-clv']);
 // Returns true when handled (the caller re-renders); a string is a message for the toast.
 export function yardAction(act,v){
+  const bet=Bets.betAction(act,v);if(bet)return bet;
   if(act==='pmPitch'){const i=v.lastIndexOf(':'),key=v.slice(0,i),pt=v.slice(i+1),sel=S.f.pmSel[key]||[];S.f.pmSel[key]=sel.includes(pt)?sel.filter(x=>x!==pt):[...sel,pt];return true;}
   if(act==='sgpType'){const t=S.f.sgpTypes||[];S.f.sgpTypes=t.includes(v)?t.filter(x=>x!==v):[...t,v];return true;}
   if(act==='ladder'){return More.ladderAction(v)||true;}
   if(act==='calMonth'){S.f.calMonth=v;S.f.calDay=null;return true;}
   return false;
 }
+export const yardInput=t=>Bets.betField(t);
 export function yardField(k,v){
   if(k==='minEdge'){setMinEdgeValue(v);return true;}
   if(k==='pmPitcher'){S.f.pmPitcher=v;return true;}

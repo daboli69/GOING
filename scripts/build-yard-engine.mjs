@@ -26,7 +26,9 @@ const ROOTS=[
   // HR Patterns
   'hrpDays','hrpAggregate','wilson','hrpWeights','hrpPlayerSignals','hrpLogTallies',
   // Split Overlaps
-  'splitVisible','splitColumns','splitValue','splitFormat','splitLabels','splitState'
+  'splitVisible','splitColumns','splitValue','splitFormat','splitLabels','splitState',
+  // My Bets and CLV (the bet journal lives in this browser under hr-board's keys)
+  'BET_TYPES','loadBets','saveBets','clvOf','betStats','BKLABEL','flagScratches'
 ];
 const WIRED=['BOARD','ODDS','HISTORY','BACKTEST'];
 const root=fileURLToPath(new URL('../',import.meta.url));
