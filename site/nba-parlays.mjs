@@ -36,6 +36,11 @@ const number=(label,key,value,min,max,step=1)=>field(label,key,'number',`min="${
 const select=(label,key,value,options)=>`<label class="field">${esc(label)} <select data-parlay="${key}">${options.map(([v,t])=>
   `<option value="${esc(v)}" ${v===value?'selected':''}>${esc(t)}</option>`).join('')}</select></label>`;
 const oddsText=price=>Number(price)>0?'+'+Number(price):String(price);
+// The odds filter is stored as decimal odds (the engine and saved settings use them) but shown and typed as American odds.
+// Between -100 and +100 there are no American prices, so typed values in that gap mean even money (+100).
+export const toAmerican=d=>d>=2?Math.round((d-1)*100):Math.round(-100/(d-1));
+export const fromAmerican=a=>Math.abs(a)<100?2:a>0?1+a/100:1+100/-a;
+const americanText=d=>oddsText(toAmerican(d));
 const timeLabel=value=>value&&Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-US',{
   timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'
 }).format(new Date(value)):'Unknown';
@@ -60,7 +65,8 @@ function controls(data,cfg){
     tools(markets.map(stat=>btn(esc(stat),'parlayStat',stat,cfg.stats.includes(stat)?'on':'')).join(''))+
     tools(number('Min. hit rate %','hit',cfg.hit,0,100)+number('Min. type sample','sample',cfg.sample,1,30)+
       number('Max. spread','spread',cfg.spread,0,14.5,.5)+number('Min. total','total',cfg.total,0,300,.5))+
-    tools(number('Min. decimal odds','minOdds',cfg.minOdds,1.01,101,.01)+number('Max. decimal odds','maxOdds',cfg.maxOdds,1.01,101,.01))+
+    tools(number('Min. odds','minOdds',toAmerican(cfg.minOdds),-10000,10000,5)+number('Max. odds','maxOdds',toAmerican(cfg.maxOdds),-10000,10000,5)+
+      '<span class="subtle">American odds, e.g. -200 to +150</span>')+
     exclusions(data,cfg)+
     `<details data-parlay-weights ${S.f.parlayWeights?'open':''}><summary>Scoring weights</summary>${tools(Object.entries(weightNames).map(([key,label])=>
       number(label,'weight-'+key,cfg.weights[key],0,10,.5)).join(''))}</details>`+
@@ -96,7 +102,7 @@ function resultSummary(legs){
 
 function filterLabel(filters){
   return [filters.side,filters.stats.join(', '),filters.hit+'% min. hit rate',filters.sample+'-game type sample',
-    filters.spread+' max spread',filters.total+' min. total',filters.minOdds+'–'+filters.maxOdds+' decimal odds',
+    filters.spread+' max spread',filters.total+' min. total','odds '+americanText(filters.minOdds)+' to '+americanText(filters.maxOdds),
     filters.perGame?'one per game':'same-game allowed',filters.skipTickets?'overlap excluded':'overlap allowed',
     filters.games.length+' game / '+filters.players.length+' player exclusions',
     ...Object.entries(weightNames).map(([key,name])=>name+' weight '+filters.weights[key])].join(' · ');
@@ -179,7 +185,11 @@ export function parlayAction(act,value,data,target){
       return true;
     }
     if(key.startsWith('weight-')){const k=key.slice(7);if(Object.hasOwn(weights,k))cfg.weights[k]=numbers(val,[0,10],weights[k]);S.f.parlayWeights=true;}
-    else if(Object.hasOwn(bounds,key)){
+    else if(key==='minOdds'||key==='maxOdds'){
+      const typed=Number(val);
+      cfg[key]=val===''||!Number.isFinite(typed)?defaults[key]:numbers(fromAmerican(typed),bounds[key],defaults[key]);
+      if(target)target.value=toAmerican(cfg[key]);
+    }else if(Object.hasOwn(bounds,key)){
       cfg[key]=numbers(val,bounds[key],defaults[key]);
       if(key==='legs'||key==='sample')cfg[key]=Math.round(cfg[key]);
       if(target)target.value=cfg[key];
