@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {shrinkTip,tipChance,firstScoreChance,openingTables,possessionChance,teamFirst,earlyShares,blendShare,scorerShares,
-  fairChances,impliedChance,americanFrom,roundRobin,makeEdge,shotTables} from '../site/first-basket.mjs';
+  fairChances,impliedChance,americanFrom,roundRobin,makeEdge,shotTables,regression,convictionTier} from '../site/first-basket.mjs';
 
 const near=(a,b,e=1e-9)=>assert.ok(Math.abs(a-b)<e,a+' vs '+b);
 
@@ -74,8 +74,26 @@ test('price checks match the worked examples: 20% at +290 is a skip, 15% at +900
   assert.equal(americanFrom(.2),'+400');assert.equal(americanFrom(.6),'-150');
 });
 
-test('the round robin takes the top edges, one player per game',()=>{
+test('the round robin takes the top edges, allows several per game, and skips same-game combinations',()=>{
   const rr=roundRobin([{edge:.09,game:'1',r:'a'},{edge:.08,game:'1',r:'b'},{edge:.05,game:'2',r:'c'},{edge:.04,game:'3',r:'d'}],3,2);
-  assert.deepEqual(rr.picks.map(x=>x.r),['a','c','d']);
-  assert.equal(rr.combos.length,3);
+  assert.deepEqual(rr.picks.map(x=>x.r),['a','b','c']);
+  assert.deepEqual(rr.combos.map(c=>c.map(x=>x.r).join('')),['ac','bc']);
+  assert.equal(rr.skipped,1,'a and b share a game: only one can score first');
+});
+
+test('regression compares team-first scores with what early volume predicts',()=>{
+  const due=regression({games:12,early:.32,teamFirst:1});
+  assert.equal(due.kind,'positive');near(due.expected,3.84);
+  const hot=regression({games:12,early:.12,teamFirst:5});
+  assert.equal(hot.kind,'negative');
+  assert.equal(regression({games:12,early:.25,teamFirst:3}).kind,null);
+  assert.equal(regression({games:0,early:null}),null);
+});
+
+test('conviction tiers need a priced edge once a price exists',()=>{
+  assert.equal(convictionTier(5,true,true),'Strong');
+  assert.equal(convictionTier(3,true,true),'Lean');
+  assert.equal(convictionTier(6,true,false),null,'no edge at the price, no suggestion');
+  assert.equal(convictionTier(4,false,false),'Lean');
+  assert.equal(convictionTier(3,false,false),null);
 });

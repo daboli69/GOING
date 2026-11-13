@@ -22,7 +22,22 @@ Each section uses its own accent color and the same dashboard typography, boards
 - **Team side:** each team's tip rate is shrunk toward 50% (6 wins and 6 losses added) and combined head to head. Possessions then alternate from the tip, each team scoring on a possession at its opening-possession rate against what the opponent allows (both shrunk with 20 possessions of league average). The two teams sum to 100%.
 - **Player side:** his share of the team's attempts in its first 8 possessions (field goals and free-throw trips), blended with his first-shot share and shrunk toward usage, times a league-average early make rate. That rate moves only for a real shot-type edge (threes, rim, midrange; his makes and the defense's allowed rate, both shrunk and capped at ±15%), plus free throws. The bench keeps at least 3%.
 - **Check:** each game's ten starters should total about 95–100%, and the Model Check flags games outside 90–100%.
-- **Price:** type sportsbook prices (Kalshi's First Basket prices fill in if Kalshi lists them). A full board is normalized to remove the vig; a partial one is divided by an assumed hold. A play needs both a minimum edge and a minimum model-to-price ratio, and the round robin takes the top edges, one player per game.
+- **Price:** type sportsbook prices (Kalshi's First Basket prices fill in if Kalshi lists them). A full board is normalized to remove the vig; a partial one is divided by an assumed hold. A play needs both a minimum edge and a minimum model-to-price ratio.
+- **Conviction and reasons:** every starter gets written reasons, each counted for (▲) or against (▼):
+  - team first-score
+  - early-attempt share and team rank
+  - first shots
+  - shot-type edge
+  - free throws
+  - regression
+  - sample size
+  - injury status
+  - slate rank
+  - the price check
+
+  The sum is his conviction. Suggested Plays lists everyone whose signals line up (Strong at +5, Lean at +3 with a priced edge or +4 before a price), several per game when the data supports it, each as a separate single. A Why button opens the full reasoning for any row.
+- **Regression Watch:** each starter's team-first scores are compared with what his share of early attempts predicts. Well below, with lots of first shots, means positive regression is due; well above means negative regression (a fade candidate). A flag needs a gap of at least 1.5 scores and one standard deviation.
+- **Round robin:** the top priced suggestions by edge, several per game allowed. Combinations holding two players from the same game are skipped and counted, since only one can score first.
 - **Starters:** projected from each team's last game and the live injury report. Scratch anyone ruled out when lineups post and the board re-runs.
 - **Log:** each hourly run saves the board before tip and grades it from the archive's first scorer (`scripts/track-nba-first-basket.mjs`). A backtest replays each past night with only earlier data. Both feed the Calibration Log, which stays rough until 100+ game-nights.
 
