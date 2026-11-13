@@ -33,22 +33,42 @@ export function kickoffHour(date,time){
   at.setUTCMinutes(0,0,0);
   return at.toISOString().slice(0,13)+':00';
 }
+// One request for every outdoor site (Open-Meteo takes comma-separated coordinates), retried, so a busy shared runner
+// IP is not rate-limited by a burst of parallel calls. Throws when outdoor games got no forecast, so the refresh notes it.
+const getJson=async url=>{
+  for(let i=0;i<3;i++){
+    const r=await fetch(url,{signal:AbortSignal.timeout(15000)}).catch(()=>null);
+    if(r?.ok)return r.json();
+    await new Promise(done=>setTimeout(done,2000*(i+1)));
+  }
+  return null;
+};
 export async function nflWeather(games){
   const checked=new Date().toISOString(), out={};
-  await Promise.all(games.map(async g=>{
+  const outdoor=[];
+  for(const g of games){
     const site=siteFor(g), hour=kickoffHour(g.date,g.time);
-    if(!site||!hour)return;
-    if(site.roof==='dome'){out[g.id]={roof:'dome',checked};return;}
-    const u=new URL('https://api.open-meteo.com/v1/forecast');
-    for(const [k,v] of Object.entries({latitude:site.lat,longitude:site.lon,hourly:'temperature_2m,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m',
-      temperature_unit:'fahrenheit',wind_speed_unit:'mph',precipitation_unit:'inch',timezone:'UTC',start_date:hour.slice(0,10),end_date:hour.slice(0,10)}))u.searchParams.set(k,v);
-    const j=await fetch(u,{signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).catch(()=>null);
-    const i=j?.hourly?.time?.indexOf(hour);
+    if(!site||!hour)continue;
+    if(site.roof==='dome')out[g.id]={roof:'dome',checked};
+    else outdoor.push({g,site,hour});
+  }
+  if(!outdoor.length)return out;
+  const days=outdoor.map(x=>x.hour.slice(0,10)).sort();
+  const u=new URL('https://api.open-meteo.com/v1/forecast');
+  for(const [k,v] of Object.entries({latitude:outdoor.map(x=>x.site.lat).join(','),longitude:outdoor.map(x=>x.site.lon).join(','),
+    hourly:'temperature_2m,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m',temperature_unit:'fahrenheit',
+    wind_speed_unit:'mph',precipitation_unit:'inch',timezone:'UTC',start_date:days[0],end_date:days.at(-1)}))u.searchParams.set(k,v);
+  const j=await getJson(u);
+  const list=Array.isArray(j)?j:j?[j]:[];
+  outdoor.forEach(({g,site,hour},n)=>{
+    const h=list[n]?.hourly, i=h?.time?.indexOf(hour);
     if(i==null||i<0)return;
     // Rain over the three hours from kickoff, so a shower mid-game counts.
-    const rain=(j.hourly.precipitation||[]).slice(i,i+3).reduce((a,b)=>a+(b||0),0);
-    out[g.id]={roof:site.roof,temp:Math.round(j.hourly.temperature_2m[i]),wind:Math.round(j.hourly.wind_speed_10m[i]),
-      gust:Math.round(j.hourly.wind_gusts_10m[i]),rain:Math.round(rain*100)/100,rainChance:j.hourly.precipitation_probability?.[i]??null,checked};
-  }));
+    const rain=(h.precipitation||[]).slice(i,i+3).reduce((a,b)=>a+(b||0),0);
+    out[g.id]={roof:site.roof,temp:Math.round(h.temperature_2m[i]),wind:Math.round(h.wind_speed_10m[i]),
+      gust:Math.round(h.wind_gusts_10m[i]),rain:Math.round(rain*100)/100,rainChance:h.precipitation_probability?.[i]??null,checked};
+  });
+  const missing=outdoor.filter(x=>!out[x.g.id]).length;
+  if(missing===outdoor.length)throw new Error(`No forecast for ${missing} outdoor NFL games`);
   return out;
 }
