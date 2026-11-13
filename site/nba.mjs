@@ -1,10 +1,11 @@
 import {nbaPropTabs,href} from './config.mjs';
-import {total,mean,round,pct,div,rate,heat,signed,seasonLimit,distanceZone,nbaType,leaderShares} from './math.mjs';
+import {total,mean,round,pct,div,rate,heat,signed,seasonLimit,distanceZone,leaderShares} from './math.mjs';
 import {current as S,esc,box,plain,grid,card,metric,logo,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,person,market,basePlay,propOdds,gameDay,gamesFor,final,dialog,badge,action,local,keep,et} from './ui.mjs';
 import {parlayPage,parlayAction} from './nba-parlays.mjs';
 import {openingTables,teamFirst,shotTables,makeEdge,earlyShares,blendShare,scorerShares,fairChances,impliedChance,americanFrom,roundRobin,regression,convictionTier} from './first-basket.mjs';
 import {propQuotes} from './ui.mjs';
 import {allowedRanks,markets} from './nba-parlay-engine.mjs';
+import {typeLetters as letters,minimumTypeShots,shotMixLabels,eligibleShot,shotMix,playerProfile,assistLabels,assistArchive,assistMatchup} from './nba-research.mjs';
 
 const nbaKeys={Points:6,Threes:7,Assists:8,Rebounds:9};
 const positions=['All','PG','SG','SF','PF','C','G','F'];
@@ -24,13 +25,16 @@ function shots(){
   const m=reset();if(m.shots)return m.shots;
   const map={all:[],players:{},off:{},def:{},games:{}};
   for(const [gid,rs] of Object.entries(source().shots||{})){
-    if(source().dates?.[gid]>=S.day)continue;
+    const date=source().dates?.[gid]||source().first?.[gid]?.date;
+    if(!date||date>=S.day)continue;
     map.games[gid]=rs;
     for(const r of rs){map.all.push(r);(map.players[r[0]]??=[]).push(r);(map.off[r[1]]??=[]).push(r);(map.def[r[2]]??=[]).push(r);}
   }
   return m.shots=map;
 }
-const type=id=>{const m=reset();return m.types[id]??=(nbaType(shots().players[id]||[]));};
+const profile=id=>reset().types[id]??=playerProfile((shots().players[id]||[]).filter(eligibleShot));
+const type=id=>profile(id).letter||'—';
+const typeLabel=id=>[type(id),profile(id).lean].filter(Boolean).join(' / ');
 function players(){
   const m=reset();if(m.players)return m.players;
   return m.players=Object.entries(source().players||{}).map(([id,[name,pos,img,team]])=>{
@@ -83,14 +87,84 @@ function league(){
     'Rankings compare the selected window of regular-season games. Unavailable historical prices are left blank.');
 }
 const tabbar=(labels,key)=>`<div class="viewtabs">${labels.map(v=>`<button type="button" class="viewtab ${S.f[key]===v?'on':''}" ${action('set',key+':'+v)}>${esc(v)}</button>`).join('')}</div>`;
+const matchupMeasures={
+  ppg:['Points',6],ortg:['Points',6],threes:['Threes',7],tpr:['3PA',11],oreb:['Offensive Rebounds',13],
+  ftr:['FTA',12],paint:['Paint Points',null],paintFg:['Paint Points',null],mid:['Mid-Range Points',null],
+  midFg:['Mid-Range Points',null],trans:['Fast Break Points',null],transPts:['Fast Break Points',null],assist:['Assists',8],
+};
+function matchupMetric(label,key,klass=''){
+  return Object.hasOwn(matchupMeasures,key)?btn(label,'matchupDetail',key,klass):label;
+}
+function matchupDetail(g,key){
+  const [label,index]=matchupMeasures[key];
+  const window=S.f.window||'Season';
+  const shotValues=new Map();
+  if(index==null){
+    const inZone=key==='paint'||key==='paintFg'?s=>s[6]===2&&s[5]<13:
+      key==='mid'||key==='midFg'?s=>s[6]===2&&s[5]>=13:s=>s[11]===1;
+    for(const [game,events] of Object.entries(shots().games)){
+      if((key==='trans'||key==='transPts')&&!events.some(s=>s[11]===0||s[11]===1))continue;
+      const counts=new Map();
+      for(const s of events)if(s[7]&&inZone(s))counts.set(s[0],(counts.get(s[0])||0)+s[6]);
+      shotValues.set(game,counts);
+    }
+  }
+  const value=(p,r)=>index==null?(shotValues.has(r[0])?shotValues.get(r[0]).get(p.id)||0:null):r[index];
+  const onTeam=(p,t)=>p.logs.filter(r=>r[2]===t);
+  const gameWindow=new Map(teams().map(t=>[t,teamStat(t,window).l]));
+  const gameIds=new Map([...gameWindow].map(([t,logs])=>[t,new Set(logs.map(r=>r[0]))]));
+  const allowed=new Map(positions.slice(1,6).map(pos=>[pos,new Map()]));
+  for(const p of players()){
+    const byDefense=allowed.get(p.pos);
+    if(!byDefense)continue;
+    for(const r of p.logs){
+      const defense=r[3], result=value(p,r);
+      if(!gameIds.get(defense)?.has(r[0])||result==null)continue;
+      const values=byDefense.get(defense)||new Map();
+      values.set(r[0],(values.get(r[0])||0)+result);
+      byDefense.set(defense,values);
+    }
+  }
+  const panels=[[g.a,g.h],[g.h,g.a]].map(([t,o])=>{
+    const sample=gameIds.get(t)||new Set();
+    const rows=players().filter(p=>onTeam(p,t).length).map(p=>{
+      const logs=onTeam(p,t).filter(r=>sample.has(r[0]));
+      const values=logs.map(r=>value(p,r)).filter(x=>x!=null);
+      return {p,logs,values,avg:mean(values),min:mean(logs,r=>r[5])};
+    }).filter(x=>x.logs.length).sort((a,b)=>b.min-a.min);
+    const rotation=rows.filter(x=>x.min>=12&&x.logs.length>=3);
+    const offenseTotal=total(rows,x=>total(x.values));
+    const byPosition=[...allowed].map(([pos,byDefense])=>{
+      const denominator=t=>gameWindow.get(t).filter(r=>index!=null||shotValues.has(r[0])).length;
+      const averages=teams().map(t=>[t,div(total([...(byDefense.get(t)?.values()||[])]),denominator(t))]);
+      const rank=allowedRanks(averages).get(o);
+      const own=div(total(rotation.filter(x=>x.p.pos===pos),x=>total(x.values)),denominator(t));
+      return [pos,round(averages.find(([team])=>team===o)?.[1]),rankLabel(rank),round(own)];
+    });
+    const stat=key==='threes'||key==='tpr'?'Threes':'Points';
+    const rotationShots=rotation.flatMap(x=>(shots().players[x.p.id]||[]).filter(s=>s[1]===t&&eligibleShot(s)));
+    const byType=letters.map(letter=>{
+      const count=rotationShots.filter(s=>type(s[0])===letter).length;
+      const match=defenseLogs(stat,letter,nbaKeys[stat],true),values=match.deltas.get(o)||[];
+      return {letter,count,values,rank:match.rank.get(o)};
+    }).filter(x=>x.count).map(x=>[x.letter,signed(mean(x.values)),x.values.length,rankLabel(x.rank),pct(div(x.count,rotationShots.length))]);
+    return card(teamBanner(t,'Offense vs '+o),table(['Player','Type','MIN',label,'Team Share'],rows.map(x=>({
+      cls:rotation.includes(x)?'':'subtle',
+      cells:[person(x.p),typeLabel(x.p.id),round(x.min),round(x.avg),pct(div(total(x.values),offenseTotal))],
+    })))+box('Allowed by Position',table(['Position',o+' Allows','Rank',t+' Rotation'],byPosition))+
+    box('Allowed by Type',table(['Type','+/− '+stat,'Games','Rank','Shot Share'],byType)));
+  });
+  dialog(label+' · '+window,grid(2,panels),true);
+}
+
 function getSummary(g,w){
   const a=teamStat(g.a,w),h=teamStat(g.h,w), league=teams().map(t=>teamStat(t,w));
   const fields=[['Pts / Possession','ortg'],['Pace','pace'],['Transition Share','trans'],['Three Pointers','threes'],['Free Throw Rate','ftr'],['Offensive Rebounds','oreb'],['Turnover %','tov'],['Paint FG%','paintFg'],['Mid-Range FG%','midFg']];
   const ranksFor=(k,key)=>ranks(league,x=>x[k][key],k==='d'&&key!=='oreb'||k==='o'&&key==='tov');
   return table([logo(g.a)+' '+g.a+' OFF',logo(g.h)+' '+g.h+' DEF','Category',logo(g.h)+' '+g.h+' OFF',logo(g.a)+' '+g.a+' DEF'],fields.map(([n,k])=>{
-    const heatCell=(x,b)=>{const rk=ranksFor(b,k).get(x.t);return cell(ordinal(rk)+' <small>'+display(k,x[b][k])+'</small>',heat(rk,15,6,true));};
+    const heatCell=(x,b)=>{const rk=ranksFor(b,k).get(x.t);return cell(matchupMetric(ordinal(rk)+' <small>'+display(k,x[b][k])+'</small>',k),heat(rk,15,6,true));};
     const b=k==='pace'?'game':'o',d=k==='pace'?'game':'d';
-    return [heatCell(a,b),heatCell(h,d),cell(n),heatCell(h,b),heatCell(a,d)];
+    return [heatCell(a,b),heatCell(h,d),cell(matchupMetric(n,k)),heatCell(h,b),heatCell(a,d)];
   }),{groups:[group('Scoring',5)],wrap:'box'});
 }
 function keys(){
@@ -101,12 +175,107 @@ function keys(){
   if(v==='Summary')body=`<div style="max-width:780px;margin:auto">${getSummary(g,w)}</div>`;
   if(v==='Categories')body=grid(2,[g.a,g.h].map(t=>{
     const x=teamStat(t,w);
-    return card(teamName(t),table(['Metric','Offense','Defense'],offenseFields.map(([n,k])=>[n,display(k,x.o[k]),display(k,x.d[k])])));
+    return card(teamName(t),table(['Metric','Offense','Defense'],offenseFields.map(([n,k])=>[matchupMetric(n,k),matchupMetric(display(k,x.o[k]),k),matchupMetric(display(k,x.d[k]),k)])));
   }));
-  if(v==='Overview')body=grid(2,[g.a,g.h].map(t=>teamBanner(t)+grid(3,[['PPG','ppg'],['ORtg','ortg'],['3PM','threes'],['Pace','pace'],['Net rating','net'],['Avg margin','margin']].map(([n,k])=>metric(n,display(k,teamStat(t,w).o[k]??teamStat(t,w).game[k]))))))+getSummary(g,w);
+  if(v==='Overview')body=grid(2,[g.a,g.h].map(t=>teamBanner(t)+grid(3,[['PPG','ppg'],['ORtg','ortg'],['3PM','threes'],['Pace','pace'],['Net rating','net'],['Avg margin','margin']].map(([n,k])=>metric(n,matchupMetric(display(k,teamStat(t,w).o[k]??teamStat(t,w).game[k]),k))))))+getSummary(g,w);
   if(v==='Rotations & History')body=grid(2,[g.a,g.h].map(t=>teamBanner(t)+table(['Player','MIN','PTS','AST','REB'],players().filter(p=>p.team===t).sort((a,b)=>b.min-a.min).slice(0,12).map(p=>[person(p),round(p.min),...[6,8,9].map(k=>round(mean(p.logs,r=>r[k])))]))+table(['Date','Opp','Score','Margin'],teamStat(t,w).l.slice(-6).reverse().map(r=>[esc(r[1]),team(r[2]),r[4]+'–'+r[5],signed(r[4]-r[5],0)]))));
   return top+box('Matchup Keys',tools(toggles(periods,'window')+btn('Show All Summaries','allSummaries',''))+heading+tabbar(['Overview','Categories','Rotations & History','Summary'],'view')+body+`<p class="tiny">${oddsNote(g)}</p>`,'Season and recent-game statistics are matched offense against defense.');
 }
+const outStatus = status => /^(out|injured reserve|suspension|suspended)$/i.test(status||'');
+
+function assistData(player,opponent){
+  const memo=reset();
+  if(memo.assistInjuries!==S.injuries){
+    memo.assistInjuries=S.injuries;
+    memo.assistRows=new Map();
+  }
+  const id=JSON.stringify([player.id,opponent]);
+  if(memo.assistRows.has(id))return memo.assistRows.get(id);
+  if(!memo.assistArchive){
+    const games={};
+    for(const [id,events] of Object.entries(shots().games)){
+      if(!events.length)continue;
+      games[id]={id,offenses:new Map(events.map(shot=>[shot[1],shot[2]]))};
+    }
+    memo.assistArchive=assistArchive(source(),players(),games,id=>profile(id).letter);
+  }
+  const roster=players().filter(p=>p.team===player.team&&p.id!==player.id);
+  const report=S.injuries[teamName(player.team)]||[];
+  const statuses=new Map(report.map(row=>[nbaName(row.name),row.status]));
+  const unavailable=new Set(roster.filter(p=>outStatus(statuses.get(nbaName(p.name)))).map(p=>p.id));
+  const recent=teamStat(player.team).l.slice(-3).map(log=>log[0]);
+  const newAbsences=new Set(roster.filter(p=>unavailable.has(p.id)&&
+    recent.filter(id=>p.logs.some(log=>log[0]===id&&log[2]===p.team)).length>=2).map(p=>p.id));
+  const result=assistMatchup(memo.assistArchive,player,roster,opponent,unavailable,newAbsences,id=>profile(id).letter);
+  const own=teamStat(player.team),defense=opponent?teamStat(opponent):null;
+  const league=memo.leagueMakes??=mean(teams().flatMap(t=>teamStat(t).l),log=>log[6]);
+  const ownMakes=mean(own.l,log=>log[6]),allowed=mean(defense?.other||[],log=>log[6]);
+  result.chances=ownMakes!=null&&allowed!=null&&league>0?(ownMakes+allowed)/(2*league)-1:null;
+  result.volume=own.o.tpr;
+  result.leagueMix=memo.assistArchive.league;
+  memo.assistRows.set(id,result);
+  return result;
+}
+const pullLabel=value=>value>0?'Over':value<0?'Under':'Even';
+const readCell=(label,title='')=>cell(esc(label),label==='Over'?'good heat':label==='Under'?'bad heat':label==='Mixed'?'mid heat':'',title);
+const rankLabel=rank=>rank?'#'+rank.rank+' of '+rank.total:'—';
+function assistRecipientRow(recipient,n){
+  const {player,mix,out,defense,letter}=recipient;
+  return [person(player,false),letter?badge(typeLabel(player.id)):'—',
+    ...mix.map(count=>cell(count,heat(count,2,2))),
+    pct(div(recipient.n,n)),out?'Out':defense?cell(rankLabel(defense.rank),defense.n<5?'subtle':'',
+      signed(defense.delta)+' assisted makes vs baseline · '+defense.above+' of '+defense.n+' above'):'—'];
+}
+function assistsVsLine(player,line){
+  if(line==null)return empty('No quoted assists line for this game.');
+  const logs=player.logs.slice(-15);
+  const max=Math.max(line,...logs.map(log=>log[8]),1);
+  const bars=logs.map(log=>{
+    const value=log[8],cls=value>line?'good':value<line?'bad':'mid';
+    return `<div class="assist-bar" title="${esc(log[1]+' · '+log[3]+' · '+value+' assists')}">
+      <b>${value}</b><span class="assist-bar-track"><i class="${cls}" style="height:${100*value/max}%"></i></span>
+      <small>${esc(log[1].slice(5))}</small></div>`;
+  });
+  return `<p class="subtle">Tonight’s line ${esc(line)} · Last ${logs.length} games</p>
+    <div class="assist-line-chart" role="img" aria-label="${esc('Assists by game: '+logs.map(log=>log[8]).join(', ')+'; line '+line)}">
+      <div class="assist-bar-marker" style="bottom:${100*line/max}%"></div>${bars.join('')}</div>`;
+}
+function assistPanel(player,opponent,line){
+  const data=assistData(player,opponent);
+  const {recipients,kinds,events,former,leagueMix,signals,read,lineup}=data;
+  const headers=['Recipient','Type',...assistLabels,'Share','Vs Type'];
+  const top=recipients.filter(r=>r.n).slice(0,4),rest=recipients.filter(r=>!top.includes(r));
+  const recipientRows=top.map(r=>assistRecipientRow(r,events));
+  if(rest.length){
+    recipientRows.push(['Everyone Else','—',...assistLabels.map((_,i)=>total(rest,r=>r.mix[i])),
+      pct(div(total(rest,r=>r.n),events)),'—']);
+  }
+  if(former)recipientRows.push(['Former teammates','—',...kinds.map((k,i)=>k.n-total(recipients,r=>r.mix[i])),pct(div(former,events)),'—']);
+  recipientRows.push(['Total','—',...kinds.map(k=>pct(div(k.n,events))),events,'—'],
+    [esc(opponent||'Opponent')+' Allows','—',...kinds.map(k=>rankLabel(k.rank)),'—','—']);
+  const shortLog=player.logs.slice(-6).reverse();
+  const [targets,types,lineupRead]=signals;
+  return box(esc(player.name)+' · Assist Spots',grid(2,[
+    card('Who He Assists',table(headers,recipientRows)+
+      (rest.length?`<details><summary>Everyone Else +${rest.length}</summary>${table(headers,rest.map(r=>assistRecipientRow(r,events)))}</details>`:'')),
+    card('The Read',table(['Factor','Player / Matchup','Pull'],[
+      ['Chances',data.chances==null?'—':signed(data.chances*100)+'%','Context'],
+      ['Targets',data.targetDelta==null?'Small sample':signed(data.targetDelta)+' assisted makes · '+pct(div(data.covered,events))+' covered',readCell(pullLabel(targets))],
+      ['Assist Types',data.mixEdge==null?'Small sample':esc(opponent||'Opponent')+' vs his assist mix',readCell(pullLabel(types))],
+      ['Lineup',data.lineupDelta==null?'No qualified split':signed(data.lineupDelta)+' assists in games without',readCell(pullLabel(lineupRead))],
+      ['Volume',pct(data.volume)+' team 3PA share','Context'],
+      ['The Read',events+' assisted makes',readCell(read)],
+    ])),
+    card('Assist Types',table(['Type','Assists','Player Share','League Share','Defense per Game','Rank'],kinds.map((k,i)=>
+      [assistLabels[i],k.n,pct(div(k.n,events)),pct(div(leagueMix[i],total(leagueMix))),round(k.avg),rankLabel(k.rank)]))),
+    card('Vs The Line',assistsVsLine(player,line)),
+    card('Game Log',table(['Date','Opponent','MIN','AST','Vs Tonight’s Line'],shortLog.map(log=>
+      [esc(log[1]),team(log[3]),round(log[5]),log[8],line==null?'—':signed(log[8]-line)]))),
+    card('Lineup',table(['Teammate','With · AST/G','Games','Without · AST/G','Games','Status'],lineup.map(r=>
+      [person(r.player,false),round(r.withAvg),r.withN,round(r.withoutAvg),r.withoutN,r.recentOut?'New absence':'—']))),
+  ]),'HoopR assisted field goals. Lineup splits compare whole games with and without each teammate.');
+}
+
 const navProps=()=>`<div class="subnav">${nbaPropTabs.map(r=>`<a href="${href(r.path)}" class="${S.route.path===r.path?'on':''}" ${S.route.path===r.path?'aria-current="page"':''}>${esc(r.title)}</a>`).join('')}</div>`;
 const hitCell=(l,key,line)=>{
   if(line==null)return cell('—','none');
@@ -117,33 +286,62 @@ function propTable(){
   const markets=all?Object.keys(nbaKeys).filter(k=>S.f.markets?.includes(k)??true):[ast?'Assists':a];
   const priced=S.f.pricing==='With A Line', expanded=S.f.filters;
   const data=filtered().filter(p=>p.min>=12);
-  const list=data.flatMap(p=>markets.map(m=>({p,m,price:propOdds(p,m),avg:mean(p.logs,r=>r[nbaKeys[m]])}))).filter(r=>!priced||r.price?.line!=null);
+  const filters=S.f.propBounds||{};
+  const metrics={Line:r=>r.price?.line,Average:r=>r.avg,Minutes:r=>r.p.min,
+    'Game Total':r=>gameNumber(gamesFor(r.p.team)?.odds?.total),
+    'Opponent Allows':r=>{
+      const game=gamesFor(r.p.team),opp=game?(game.a===r.p.team?game.h:game.a):null;
+      return mean(defenseLogs(r.m,r.p.pos,nbaKeys[r.m],false).samples.get(opp)||[]);
+    }};
+  const bound=(v,limit,compare)=>limit==null||limit===''||(v!=null&&compare(Number(v),Number(limit)));
+  const list=data.flatMap(p=>markets.map(m=>({p,m,price:propOdds(p,m),avg:mean(p.logs,r=>r[nbaKeys[m]])})))
+    .filter(r=>(!priced||r.price?.line!=null)&&Object.entries(filters).every(([name,range])=>{
+      if(!Object.hasOwn(metrics,name)||!range||(!range.min&&!range.max))return true;
+      const v=metrics[name](r);
+      return bound(v,range.min,(x,y)=>x>=y)&&bound(v,range.max,(x,y)=>x<=y);
+    }));
+  const bounds=Object.keys(metrics).map(name=>`<fieldset class="prop-range"><legend>${esc(name)}</legend>${
+    ['min','max'].map(key=>`<label>${key==='min'?'Min':'Max'} <input type="number" step="any" data-nba-prop-bound="${esc(name+'|'+key)}" value="${esc(filters[name]?.[key]??'')}"></label>`).join('')
+  }</fieldset>`).join('');
+  const screens=local('nba-prop-screens',[]);
+  const savedScreens=tools(`<label class="field">Screen name <input type="text" id="nba-prop-screen" maxlength="40"></label>`+
+    btn('Save This Screen','nbaPropSave','','outline')+
+    screens.map(screen=>btn(esc(screen.name),'nbaPropLoad',screen.name)).join(''));
   list.sort((a,b)=>b.avg-a.avg);
-  const assistsBy=id=>(source().assists?.[id]||[]).filter(x=>(source().dates?.[x[0]]||'')<S.day);
+  const savedPlays=local('plays',[]);
   const rows=list.map(({p,m,price,avg})=>{
     const k=nbaKeys[m],l=p.logs,g=gamesFor(p.team),opp=g?(g.a===p.team?g.h:g.a):null,line=price?.line;
     const play=basePlay(p,m,g,{line,side:'Over',odds:price?.over,average:avg});
     const over=price?.over!=null?market(price.over,play):market('—',play), under=price?.under!=null?market(price.under,{...play,side:'Under',odds:price.under}):'—';
-    const b=[person(p),...(all?[badge(m)]:[]),line??'—',over,under,cell(round(avg),heat(avg,line??(m==='Points'?12:2),m==='Points'?4:1))];
-    const vs=players().flatMap(x=>x.logs.filter(r=>r[3]===opp&&x.pos===p.pos));
-    const trend=mean(l.slice(-5),x=>x[k]);
+    const saved=savedPlays.filter(x=>x.sport==='nba'&&x.date===S.day&&x.id===p.id&&x.market===m&&String(x.game)===String(g?.id)&&line!=null&&x.line!=null&&Number.isFinite(Number(x.line))&&Number(x.line)!==Number(line));
+    const alt=side=>saved.some(x=>(x.side||'Over')===side)?' '+badge('✓ Alt','g'):'';
+    const b=[person(p),...(all?[badge(m)]:[]),line??'—',over+alt('Over'),under+alt('Under'),cell(round(avg),heat(avg,line??(m==='Points'?12:2),m==='Points'?4:1))];
     if(ast){
-      const dest=assistsBy(p.id), counts=new Map();
-      for(const x of dest)counts.set(x[1],(counts.get(x[1])||0)+1);
-      const top=[...counts].sort((a,b)=>b[1]-a[1]).slice(0,2).map(([id,n])=>(source().players?.[id]?.[0]||'Teammate')+' '+n).join(' · ');
-      return [...b,pct(div(avg,p.min)),hitCell(l.slice(-5),k,line),hitCell(l,k,line),esc(top||'—'),type(p.id),opp?team(opp):'—',cell(signed(trend-avg),heat(trend-avg,0,.65)),dest.length,round(p.min)];
+      const data=assistData(p,opp),[targets,types,lineup]=data.signals;
+      const research=btn('Research','assistResearch',p.id,'outline');
+      const read=readCell(data.read);
+      read.html+= ' '+research;
+      return [...b,round(div(avg,p.min)*36),hitCell(l.slice(-5),k,line),hitCell(l,k,line),
+        readCell(data.targetDelta==null?'Small sample':pullLabel(targets),data.targetDelta==null?'':signed(data.targetDelta)+' assisted makes vs baseline'),
+        readCell(data.mixEdge==null?'Small sample':pullLabel(types)),
+        readCell(data.lineupDelta==null?'—':pullLabel(lineup)),read,
+        data.chances==null?'—':signed(data.chances*100)+'%',pct(data.volume)];
     }
-    const reads=[trend,mean(l.slice(-10),r=>r[k]),avg,mean(l.filter(x=>x[4]==='home'),r=>r[k]),mean(l.filter(x=>x[4]==='away'),r=>r[k]),mean(vs,r=>r[k])];
-    return [...b,...(!all?[round(m==='Threes'?mean(l,r=>r[11]):p.min),round(m==='Points'?mean(l,r=>r[10]):m==='Threes'?mean(l,r=>r[11]):p.min)]:[]),l.at(-1)?.[k],
+    const vs=defenseLogs(m,p.pos,k,false).samples.get(opp)||[];
+    const trend=mean(l.slice(-5),x=>x[k]);
+    const reads=[trend,mean(l.slice(-10),r=>r[k]),avg,mean(l.filter(x=>x[4]==='home'),r=>r[k]),mean(l.filter(x=>x[4]==='away'),r=>r[k]),mean(vs)];
+    const last=l.at(-1)?.[k],gap=last==null||avg==null?null:last-avg;
+    const lastGame=cell(last==null?'—':last+' <small>'+signed(gap)+'</small>',gap==null?'':heat(gap,0,Math.max(1,avg*.2)),'Last game vs season average');
+    return [...b,...(!all?[round(m==='Threes'?mean(l,r=>r[11]):p.min),round(m==='Points'?mean(l,r=>r[10]):m==='Threes'?mean(l,r=>r[11]):p.min)]:[]),lastGame,
       hitCell(l.slice(-5),k,line),hitCell(l.slice(-10),k,line),hitCell(l,k,line),hitCell(l.filter(x=>x[4]==='home'),k,line),hitCell(l.filter(x=>x[4]==='away'),k,line),
-      round(mean(vs,r=>r[k])),type(p.id),opp?team(opp):'—',line==null?'—':reads.filter(x=>x!=null&&x>line).length,line==null?'—':reads.filter(x=>x!=null&&x<line).length,opp?round(teamStat(opp).game.pace):'—',esc(g?.odds?.details||'—'),g?.odds?.total??'—',cell(esc((S.injuries[teamName(p.team)]||[]).slice(0,2).map(x=>x.name).join(' · ')||'—'))];
+      round(mean(vs)),type(p.id),opp?team(opp):'—',line==null?'—':reads.filter(x=>x!=null&&x>line).length,line==null?'—':reads.filter(x=>x!=null&&x<line).length,opp?round(teamStat(opp).game.pace):'—',esc(g?.odds?.details||'—'),g?.odds?.total??'—',cell(esc((S.injuries[teamName(p.team)]||[]).slice(0,2).map(x=>x.name).join(' · ')||'—'))];
   });
-  const columns=ast?['Player','Line','Over','Under','AVG','Rate','L5','Season','Targets','Types','Lineup','Read','Chances','Volume']:['Player',...(all?['Stat']:[]),'Line','Over','Under','AVG',...(!all?[a==='Threes'?'3PA':'MIN','Volume']:[]),'Last Game','L5','L10','Season','Home','Away','Opp Allows','Type','Matchup','O','U','Pace','Spread','Total','Teammates on the report'];
+  const columns=ast?['Player','Line','Over','Under','AVG','AST/36','L5','Season','Targets','Types','Lineup','Read','Chances','Volume']:['Player',...(all?['Stat']:[]),'Line','Over','Under','AVG',...(!all?[a==='Threes'?'3PA':'MIN','Volume']:[]),'Last Game','L5','L10','Season','Home','Away','Opp Allows','Type','Matchup','O','U','Pace','Spread','Total','Teammates on the report'];
   return navProps()+box(title,`<p class="lede">Research ${all?'points, threes, assists, and rebounds':a.toLowerCase()} with real game logs, recent hit rates, and opponent context.</p>`+
-    (ast?tools(btn('YTD Model Performance','performance','NBA')):''),'Click a player to open the game log. K marks a public Kalshi quote. Guard and forward sub-positions are inferred from box scores when the feed only lists G or F.')+
+    '','Click a player to open the game log. K marks a public Kalshi quote. Guard and forward sub-positions are inferred from box scores when the feed only lists G or F.')+
     slate({date:true})+tools(select('Position','position',positions)+toggles(['With A Line','Every Player'],'pricing')+(!S.f.allGames?btn('All games','flip','allGames'):''))+
     box('',tools(btn('Filters ▾','flip','filters','outline')+(all?Object.keys(nbaKeys).map(k=>btn(k,'marketFilter',k,S.f.markets?.includes(k)??true?'on':'')).join(''):''),'tight')+
-      (expanded?tools(search()+select('Game','gameFilter',['All games',...S.games.map(g=>[g.id,g.a+' @ '+g.h])])):''),'','slate')+
+      (expanded?tools(search()+select('Game','gameFilter',['All games',...S.games.map(g=>[g.id,g.a+' @ '+g.h])]))+tools(bounds)+savedScreens:''),'','slate')+
     `<p class="tiny">${list.length} ${priced?'priced markets':'player and market rows'}${!S.odds.length?' · No player price feed connected. Season averages are available under Every Player.':''}</p>`+
     table(columns,rows,{cls:'wide',wrap:'box',sort:'nba-props',empty:priced?'No prices match these filters. Choose Every Player to see the public game logs.':'No players match these filters.',
       groups:ast?[group('',6),group('Hit Rate – Over Tonight’s Line',2),group('Reads',4),group('Tonight’s Game',2)]:[group('',all?7:8),group('Hit Rate – Over Tonight’s Line',5),group('Reads',5),group('Tonight’s Game',4)]});
@@ -191,25 +389,78 @@ function zoneTargets(){
     '<p class="subtle">Green indicates a favorable zone mix. Red indicates the opponent has defended those shots well.</p>'+
     box('Best Spots · Overs',render([...rows].sort((a,b)=>b.v+b.sh-a.v-a.sh),true))+box('Tough Spots · Unders',render([...rows].sort((a,b)=>a.v+a.sh-b.v-b.sh),false))+tools(btn(S.f.more?'Show less':'Show All','flip','more'));
 }
-const letters='ABCDEFGHIJK'.split('');
-const shotTypes=['Catch & Shoot','Pull-up','Fade','Floater','Hook','Drive','Cut','Lob','Putback'];
-function typePage(){
-  const v=S.f.view||'The 11 Types',sh=shots(),list=players().filter(p=>(sh.players[p.id]?.length||0)>=15);
-  let body;
-  if(v==='Defense vs Type'){
-    body=table(['Team',...letters],teams().map(t=>[team(t),...letters.map(k=>{const x=(sh.def[t]||[]).filter(r=>type(r[0])===k),p=rate(x,r=>r[7]);return cell(pct(p),heat(p,.47,.045,true));})]),{sort:'types-def',wrap:'box'});
-  }else if(v==='Every Player'||v==='Tonight'){
-    body=tools(search()+select('Type','typeFilter',['All',...letters]))+table(['Player','Type','Shots','Avg Dist','3PT',...shotTypes],
-      list.filter(p=>(v!=='Tonight'||gamesFor(p.team))&&(!S.f.typeFilter||S.f.typeFilter==='All'||type(p.id)===S.f.typeFilter)&&(!S.f.search||p.name.toLowerCase().includes(S.f.search.toLowerCase())))
-      .sort((a,b)=>sh.players[b.id].length-sh.players[a.id].length).map(p=>{const s=sh.players[p.id];return [person(p),badge(type(p.id),'g'),s.length,round(mean(s,r=>r[5])),pct(rate(s,r=>r[6]===3)),...shotTypes.map(k=>pct(rate(s,r=>r[8]===k)))];}),{sort:'types-players',wrap:'box'});
-  }else{
-    body=table(['Type','Players','Avg Dist','3PT',...shotTypes,'Most shots in the type'],letters.map(k=>{
-      const p=list.filter(p=>type(p.id)===k).sort((a,b)=>sh.players[b.id].length-sh.players[a.id].length),s=p.flatMap(x=>sh.players[x.id]);
-      return [btn(k,'typeOpen',k,'outline'),p.length,round(mean(s,r=>r[5])),pct(rate(s,r=>r[6]===3)),...shotTypes.map(k=>pct(rate(s,r=>r[8]===k))),esc(p.slice(0,6).map(x=>x.name).join(', '))];
-    }),{sort:'types-index',wrap:'box'});
+function typeDefenseTable(){
+  const metricName=S.f.typeDefense||'Points';
+  const byTeam=teams().map(t=>({t,games:played(source().tg?.[t]||[]).length,shots:(shots().def[t]||[]).filter(eligibleShot)}));
+  function stats(list,games){
+    const made=list.filter(s=>s[7]);
+    return {
+      n:list.length,
+      value:metricName==='FG%' ? div(made.length,list.length) :
+        div(metricName==='Shots' ? list.length : metricName==='Threes Made' ? made.filter(s=>s[6]===3).length : total(made,s=>s[6]),games),
+    };
   }
-  return `<h1>Player Types ${info('Players are grouped by their measured shot mix. These public-data groups use locally defined rules.')}</h1>`+tools(toggles(['Tonight','The 11 Types','Every Player','Defense vs Type'],'view'))+
-    '<p class="subtle">Click a letter to see every player in that shot profile.</p>'+body;
+  const allGames=total(byTeam,x=>x.games);
+  const columns=letters.map(letter=>{
+    const samples=byTeam.map(({t,games,shots})=>({t,games,shots:shots.filter(s=>type(s[0])===letter)}));
+    const values=samples.map(({t,games,shots})=>[t,stats(shots,games)]);
+    const rank=allowedRanks(values.map(([t,x])=>[t,x.n>=30?x.value:null]));
+    return {league:stats(samples.flatMap(x=>x.shots),allGames).value,values:new Map(values),rank};
+  });
+  const format=value=>metricName==='FG%'?pct(value,1):round(value);
+  return tools(toggles(['Points','Threes Made','Shots','FG%'],'typeDefense'))+
+    box('League Average',table(letters,[columns.map(x=>format(x.league))]))+
+    table(['Team',...letters],byTeam.map(({t})=>[team(t),...columns.map(({values,rank})=>{
+      const x=values.get(t),r=rank.get(t);
+      return cell(format(x.value),r?heat(r.rank,(r.total+1)/2,r.total/6,true):'subtle',
+        x.n+' shots'+(r?' · '+r.rank+' of '+r.total:' · Small sample'));
+    })]),{sort:'types-def',wrap:'box'})+
+    '<p class="tiny">Rank 1 allows the least. A minimum of 30 shots is required to rank. Points are from made field goals.</p>';
+}
+
+function typeTonight(list){
+  const entries=list.filter(p=>S.games.some(g=>[g.a,g.h].includes(p.team))&&(!S.game||S.f.allGames||[S.game.a,S.game.h].includes(p.team)));
+  return slate({date:true})+table(['Player','Team','Type','Vs','Line','Avg','+/− Avg','Beat Avg','Line','Avg','+/− Avg','Beat Avg'],
+    entries.sort((a,b)=>mean(b.logs,x=>x[6])-mean(a.logs,x=>x[6])).map(p=>{
+      const game=gamesFor(p.team),opp=game.a===p.team?game.h:game.a;
+      return [person(p),team(p.team),badge(typeLabel(p.id)),team(opp),...['Points','Threes'].flatMap(stat=>{
+        const k=nbaKeys[stat], values=defenseLogs(stat,type(p.id),k,true).deltas.get(opp)||[];
+        const delta=mean(values),above=values.filter(x=>x>0).length;
+        return [propOdds(p,stat)?.line??'—',round(mean(p.logs,r=>r[k])),
+          cell(signed(delta),values.length>=5?heat(delta,0,stat==='Points'?1:.3):'subtle',values.length+' games'),
+          values.length?above+' of '+values.length:'—'];
+      })];
+    }),{groups:[group('',4),group('His Points',2),group('Defense vs His Type',2),group('His Threes',2),group('Defense vs His Type',2)],
+      sort:'types-tonight',wrap:'box'});
+}
+
+function typePage(){
+  const view=S.f.view==='The 11 Types'?'The 12 Types':S.f.view||'The 12 Types';
+  const sh=shots(),list=players().filter(p=>type(p.id)!=='—');
+  const mixCells=mix=>mix.map((value,i)=>cell(value==null?'—':i?round(value,0)+'%':round(value),
+    heat(value,i?20:13,i?15:5)));
+  const byShots=(a,b)=>sh.players[b.id].length-sh.players[a.id].length;
+  let body;
+  if(view==='Defense vs Type'){
+    body=typeDefenseTable();
+  }else if(view==='Tonight'){
+    body=typeTonight(list);
+  }else if(view==='Every Player'){
+    const filter=S.f.typeFilter;
+    body=tools(search()+select('Type','typeFilter',['All',...letters]))+
+      table(['Player','Type','Shots',...shotMixLabels],list
+        .filter(p=>(!filter||filter==='All'||type(p.id)===filter)&&(!S.f.search||p.name.toLowerCase().includes(S.f.search.toLowerCase())))
+        .sort(byShots).map(p=>[person(p),badge(typeLabel(p.id)),sh.players[p.id].filter(eligibleShot).length,...mixCells(profile(p.id).mix)]),
+      {sort:'types-players',wrap:'box',groups:[group('',3),group('Where',2),group('Jumpers',3),group('Inside',5),group('',1)]});
+  }else{
+    body=table(['Type','Players',...shotMixLabels,'Most Shots in the Type'],letters.map(letter=>{
+      const groupPlayers=list.filter(p=>type(p.id)===letter).sort(byShots);
+      const groupShots=groupPlayers.flatMap(p=>sh.players[p.id].filter(eligibleShot));
+      return [btn(letter,'typeOpen',letter,'outline'),groupPlayers.length,...mixCells(shotMix(groupShots)),esc(groupPlayers.slice(0,6).map(p=>p.name).join(', '))];
+    }),{sort:'types-index',wrap:'box',groups:[group('',2),group('Where',2),group('Jumpers',3),group('Inside',5),group('',2)]});
+  }
+  return `<h1>Player Types ${info('Profiles use at least '+minimumTypeShots+' attempts before the selected date. A second letter marks a close fit. The profiles are fixed and assignments use prior games only.')}</h1>`+
+    tools(toggles(['Tonight','The 12 Types','Every Player','Defense vs Type'],'view'))+body;
 }
 
 const nbaName=name=>String(name||'').normalize('NFKD').replace(/[^\p{L}\p{N}]/gu,'').toLowerCase();
@@ -224,18 +475,19 @@ function defenseLogs(stat,profile,key,byType){
   for(const player of players()){
     if((byType?type(player.id):player.pos)!==profile)continue;
     const usable=player.logs.filter(log=>Number.isFinite(log[key])&&log[5]>0);
-    const avg=mean(usable,r=>r[key]);
+    if(byType&&usable.length<2)continue;
+    const sum=total(usable,r=>r[key]);
     for(const log of usable){
       const games=byOpponent.get(log[3])||new Map();
       const values=games.get(log[0])||[];
-      values.push(byType?log[key]-avg:log[key]);
+      values.push(byType?log[key]-(sum-log[key])/(usable.length-1):log[key]);
       games.set(log[0],values);byOpponent.set(log[3],games);
       const sample=samples.get(log[3])||[];
       sample.push(log[key]);samples.set(log[3],sample);
     }
   }
   const deltas=new Map([...byOpponent].map(([opponent,games])=>[opponent,[...games.values()].map(values=>byType?mean(values):total(values))]));
-  const rank=allowedRanks([...deltas].map(([opponent,values])=>[opponent,mean(values)]));
+  const rank=allowedRanks([...deltas].map(([opponent,values])=>[opponent,!byType||values.length>=3?mean(values):null]));
   const result={deltas,rank,samples};
   memo.parlayDefense.set(tag,result);
   return result;
@@ -280,10 +532,12 @@ export function parlayData(quotes=S.odds){
       const pType=type(player.id), needsType=stat==='Points'||stat==='Threes';
       const defense=defenseLogs(stat,needsType?pType:player.pos,key,needsType);
       const vs=defenseLogs(stat,player.pos,key,false);
+      const assistContext=stat==='Assists'?assistData(player,opp):null;
       // Match the prop board's read inputs, including the position average per player appearance.
       return matches.map(quote=>({date:S.day,player,game,opp,stat,quote,spread:spread==null?null:Math.abs(spread),
         total:gameNumber(game.odds?.total),avg,form:{season,last5,last10,home,away,venue:game.h===player.team?home:away},
         reads:[mean(last5),mean(last10),avg,mean(home),mean(away),mean(vs.samples.get(opp)||[])].filter(x=>x!=null),
+        assistResearch:assistContext,
         type:pType,typeDeltas:needsType&&pType!=='—'?defense.deltas.get(opp)||[]:[],typeRank:needsType?defense.rank.get(opp):null,posRank:vs.rank.get(opp),
         pace:mean([teamStat(player.team).game.pace,teamStat(opp).game.pace].filter(x=>x!=null)),
         threeRate:teamStat(player.team).o.tpr,out:isOut(status),uncertain:/day.to.day|questionable|doubtful|^dtd$/i.test(status||'')?status:null,
@@ -531,14 +785,76 @@ function nightly(n=40){
   for(const p of players())for(const r of p.logs)if(!map.has(r[1])||map.get(r[1])[1]<r[6])map.set(r[1],[p,r[6]]);
   return table(['Day','Nightly Leader','Points'],[...map].sort((a,b)=>b[0].localeCompare(a[0])).slice(0,n).map(([date,[p,pt]])=>[esc(date),person(p),pt]),{sort:'nba-history',cls:'compact'});
 }
-export function nbaPlayer(id){
-  const p=players().find(p=>p.id===id);if(!p)return;
-  const m=nbaKeys[S.route.title]?S.route.title:S.route.title==='Assist Spots'?'Assists':'Points',o=propOdds(p,m);
-  dialog(p.name,teamBanner(p.team,p.pos)+tools(market(o?.line==null?'Save '+m:o.line+' '+(o.over||''),basePlay(p,m,undefined,{line:o?.line,odds:o?.over,side:'Over'})))+
-    table(['Date','Opp','MIN','PTS','3PM','AST','REB','FGA','3PA','FTA'],[...p.logs].reverse().map(x=>[esc(x[1]),team(x[3]),...x.slice(5,13)])),true);
+function playerShotMatchup(player,opponent){
+  const archive=shots(),own=(archive.players[player.id]||[]).filter(eligibleShot);
+  const defense=(archive.def[opponent]||[]).filter(eligibleShot),league=archive.all.filter(eligibleShot);
+  const rows=zones.map(zone=>{
+    const a=shotZoneReport(own,zone),b=shotZoneReport(defense,zone),c=shotZoneReport(league,zone);
+    const ownGap=a.p==null||c.p==null?null:a.p-c.p;
+    const defenseGap=b.p==null||c.p==null?null:b.p-c.p;
+    const enough=a.n>=15&&b.n>=30;
+    const call=!enough?'Small sample':ownGap>=.025&&defenseGap>=.025?'Target':ownGap<=-.025&&defenseGap<=-.025?'Tough':'—';
+    return [zone,a.fg+'/'+a.n,pct(a.p,1),pct(a.s,1),b.fg+'/'+b.n,pct(b.p,1),pct(b.s,1),pct(c.p,1),
+      cell(call,call==='Target'?'good heat':call==='Tough'?'bad heat':'')];
+  });
+  return grid(2,[card(esc(player.name),courtSvg(own,'Player shot chart')),
+    card(opponent?esc(teamName(opponent))+' Defense':'Defense',opponent?courtSvg(defense,'Opponent shot chart'):empty('No opponent on the selected date.'))],'courtgrid')+
+    box('Zone by Zone',table(['Zone','Makes / Att','FG%','Share','Makes / Att','FG%','Share','League FG%','Read'],rows,
+      {groups:[group('',1),group(esc(player.name),3),group('Defense Allows',3),group('',2)]}),
+    'Target or Tough requires both percentages to differ from the league by at least 2.5 points, with 15 player attempts and 30 defense attempts.');
+}
+
+function playerOddsPanel(player){
+  const rows=markets.flatMap(stat=>propQuotes(player,stat,S.odds).flatMap(quote=>['Over','Under'].flatMap(side=>{
+    const price=quote[side.toLowerCase()];
+    if(price==null)return [];
+    const play=basePlay(player,stat,undefined,{line:quote.line,side,odds:price,provider:quote.provider});
+    return [[stat,quote.line,side,esc(quote.provider||'—'),market(price,play)]];
+  })));
+  return table(['Market','Line','Side','Source','Price'],rows,{empty:'No player quotes for the selected date.'});
+}
+
+export function nbaPlayer(id,tab='Game Log'){
+  const player=players().find(p=>p.id===id);
+  if(!player)return;
+  const game=gamesFor(player.team),opponent=game?(game.a===player.team?game.h:game.a):null;
+  const nav=tools(['Game Log','Odds','Shot Chart'].map(name=>btn(name,'nbaPlayerTab',JSON.stringify([id,name]),tab===name?'on':'')).join(''));
+  const log=()=>table(['Date','Opp','MIN','PTS','3PM','AST','REB','FGA','3PA','FTA'],[...player.logs].reverse().map(x=>[esc(x[1]),team(x[3]),...x.slice(5,13)]));
+  const body=tab==='Shot Chart'?playerShotMatchup(player,opponent):tab==='Odds'?playerOddsPanel(player):log();
+  dialog(player.name,teamBanner(player.team,player.pos+' · Type '+typeLabel(id))+nav+body,true);
 }
 export function nbaAction(act,v,target){
   if(S.route.id==='nba-parlays'&&act.startsWith('parlay'))return parlayAction(act,v,parlayData(),target);
+  if(act==='nbaPropBound'){
+    const [name,key]=v.split('|');
+    const bounds=S.f.propBounds??={};
+    (bounds[name]??={})[key]=target.value;
+    return true;
+  }
+  if(act==='nbaPropSave'){
+    const name=document.querySelector('#nba-prop-screen')?.value.trim();
+    if(!name)return false;
+    const screens=local('nba-prop-screens',[]).filter(s=>s.name!==name);
+    const {propBounds={},position='All',pricing='Every Player',markets}=S.f;
+    keep('nba-prop-screens',[...screens,{name,propBounds,position,pricing,markets}].slice(-20));
+    return true;
+  }
+  if(act==='nbaPropLoad'){
+    const screen=local('nba-prop-screens',[]).find(s=>s.name===v);
+    if(!screen)return false;
+    const {propBounds,position,pricing,markets}=screen;
+    Object.assign(S.f,{propBounds,position,pricing,markets,touchedPricing:true});
+    return true;
+  }
+  if(act==='nbaPlayerTab'){nbaPlayer(...JSON.parse(v));return false;}
+  if(act==='matchupDetail'&&S.game&&Object.hasOwn(matchupMeasures,v)){matchupDetail(S.game,v);return false;}
+  if(act==='assistResearch'){
+    const player=players().find(p=>p.id===v);
+    if(!player)return false;
+    const game=gamesFor(player.team),opponent=game?(game.a===player.team?game.h:game.a):null;
+    dialog(player.name+' · Assist Research',assistPanel(player,opponent,propOdds(player,'Assists')?.line),true);
+    return false;
+  }
   if(act==='fbWhy'){fbWhy(v);return false;}
   if(act==='fbOut'){const list=fbScratched();keep('fb-out:'+S.day,list.includes(v)?list.filter(x=>x!==v):[...list,v]);return true;}
   if(act==='allSummaries'){dialog('All Matchup Summaries',S.games.map(g=>plain(versus(g),getSummary(g,S.f.window||'Season'))).join(''),true);return true;}

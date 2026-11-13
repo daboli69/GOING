@@ -111,3 +111,17 @@ test('tracker keeps first and latest pregame observations and grades only confir
   observeLeg(store,{...next,observedAt:'2026-11-12T18:00:00.000Z'});
   assert.equal(store.get(saved.k),graded);
 });
+
+
+test('Assist Spots changes ordering without changing hit rates or upgrading mixed signals',()=>{
+  const baseline=row({stat:'Assists'});
+  const [before]=evaluateRows([baseline]).eligible;
+  const [positive]=evaluateRows([{...baseline,assistResearch:{read:'Over',targetDelta:.8,mixEdge:.4,covered:25,events:30}}]).eligible;
+  const [negative]=evaluateRows([{...baseline,assistResearch:{read:'Under',targetDelta:-.8,mixEdge:-.4,covered:25,events:30}}]).eligible;
+  const [mixed]=evaluateRows([{...baseline,assistResearch:{read:'Mixed',targetDelta:.8,mixEdge:-.4}}]).eligible;
+  assert.ok(positive.score>before.score && before.score>negative.score);
+  assert.equal(mixed.score,before.score);
+  assert.ok(mixed.flags.includes('Assist Spots signals are mixed'));
+  assert.deepEqual(positive.form,before.form);
+  assert.deepEqual(ticketMath([positive]),ticketMath([before]));
+});

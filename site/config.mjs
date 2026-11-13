@@ -56,7 +56,7 @@ export const viewDefaults={
   'nfl-tdboard':{tdMarket:'Anytime TD',tdPos:'All',tdMinEdge:'4',tdMinOdds:'',tdMaxOdds:'',tdMinRz:'0',tdMinSnap:'0',tdMaxSpread:'20',tdMinTotal:'0',
     tdWeather:'Any',tdNoQ:'No',tdDue:'No',tdDst:'Yes',tdHold:'20',tdShow:'Top 40',tdLegs:'3',tdPerGame:'Yes',tdStack:'No'},
   basket:{fbMinEdge:'2',fbRatio:'1.2',fbHold:'30',fbRR:'3',fbBy:'2',fbShow:'Top 30'},
-  zones:{zoneMarket:'Threes',zoneView:'Best & Worst Spots',minimum:'0'},types:{view:'The 11 Types',typeFilter:'All'},
+  zones:{zoneMarket:'Threes',zoneView:'Best & Worst Spots',minimum:'0'},types:{view:'The 12 Types',typeFilter:'All',typeDefense:'Points'},
   'nba-props':{position:'All',pricing:'Every Player',allGames:true,gameFilter:'All games'},court:{trend:'Pregame Rank'},
   'nhl-props':{allGames:true,side:'Best side',skater:'All skaters',status:'All games',edge:'0',pricing:'All players',zoneMatch:'Everyone'},
   myplays:{when:'Everything',playType:'Every Type',grade:'All'},

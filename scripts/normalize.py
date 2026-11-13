@@ -128,15 +128,17 @@ def nba(y):
     pat=re.compile(r"(\d+)[ -]foot")
     def shot_type(t,has_assist,dist,three):
         t=t.lower()
-        for text,key in (("putback","Putback"),("alley oop","Lob"),("cutting","Cut"),("driving","Drive"),
-                         ("hook","Hook"),("floating","Floater"),("fade","Fade"),("pullup","Pull-up"),("step back","Pull-up")):
+        for text,key in (("putback","Putback"),("alley oop","Lob"),("alley-oop","Lob"),("tip ","Putback"),("cutting","Cut"),("driving","Drive"),("running layup","Drive"),("running dunk","Drive"),
+                         ("hook","Hook"),("floating","Floater"),("runner","Floater"),("fade","Fade"),("turnaround","Fade"),("pullup","Pull-up"),("pull-up","Pull-up"),("step back","Pull-up"),("step-back","Pull-up")):
             if text in t: return key
-        if three and has_assist: return "Catch & Shoot"
+        if has_assist and any(word in t for word in ("layup","dunk")): return "Cut"
+        if has_assist and (three or "jump" in t): return "Catch & Shoot"
         return "Inside" if dist<6 else "Jumper"
     # Opening possessions for the first-basket model: a possession is a run of offensive actions (shots, free throws,
     # turnovers, offensive rebounds) by one team, which pbp does not label directly. The first 16 of each game are kept
     # as [team, points, field-goal shooters, first free-throw shooter, first scorer].
     opening = {}
+    transition = {}
     for r in rows(f"nba-pbp-{y}.csv"):
         if not regular(r): continue
         g=r["game_id"]; i=r["athlete_id_1"]
@@ -175,13 +177,25 @@ def nba(y):
                         cur[1] += pts
                         if not cur[4]: cur[4] = i
                     poss_no = st["n"][team]
+        period = num(r["period_number"])
+        clock = num(r["start_quarter_seconds_remaining"])
+        previous = transition.get(g)
+        fast = None if clock is None else int(bool(previous and previous[0] == period and previous[1] == team and 0 <= previous[2] - clock <= 8))
+        if r["team_id"] in (r["home_team_id"],r["away_team_id"]) and clock is not None:
+            if field:
+                transition[g] = (period, opp, clock) if not is_make else None
+            elif "Steal" in typ:
+                transition[g] = (period, team, clock)
+            elif any(label in typ for label in ("Turnover", "Timeout", "Jumpball", "Free Throw")):
+                transition[g] = None
         if not field or not i: continue
         x=num(r["coordinate_x"]); yy=num(r["coordinate_y"]); ar=num(r["points_attempted"],pts)
         m=pat.search(r["text"]); dist=int(m[1]) if m else round(((abs(x)-41.75)**2+yy**2)**.5,1) if x is not None and yy is not None else (25 if ar==3 else 2)
-        k=shot_type(typ,bool(r["athlete_id_2"]),dist,ar==3)
+        assisted = is_make and r["athlete_id_2"] and r["athlete_id_2"] != i
+        k=shot_type(typ,bool(assisted),dist,ar==3)
         shotGames.setdefault(g,[]).append([i,team,opp,x,yy,dist,ar,int(is_make),k,
-            int(num(r["period_number"])==1 and num(r["start_quarter_seconds_remaining"],0)>=540), poss_no])
-        if is_make and r["athlete_id_2"] and r["athlete_id_2"]!=i:
+            int(num(r["period_number"])==1 and num(r["start_quarter_seconds_remaining"],0)>=540), poss_no, fast])
+        if assisted and ar in (2,3):
             assists.setdefault(r["athlete_id_2"],[]).append([g,i,team,k,ar])
     write(f"nba-{y}",dict(teams=teams,players=players,pg=playerGames,tg=teamGames,first=first,assists=assists,dates=gameDates))
     write(f"nba-shots-{y}",shotGames)

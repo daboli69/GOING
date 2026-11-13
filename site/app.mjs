@@ -299,7 +299,7 @@ function myPlays(){
       select('When','when',['Everything',...new Set(all.map(p=>p.date))])+select('Type','playType',['Every Type',...new Set(all.map(p=>p.market))])+
       `<span class="right"></span>`+btn('Parlay Wheel','wheel','','primary')+btn('Photo Export','photo','','primary')+
       btn('Back up','backup','')+`<label class="pill" title="Restore a GOING backup file">Restore<input type="file" accept=".json,application/json" data-restore hidden></label>`)+
-    box('',show.length?table(['Play','League','Date','Line','Price','Result','Status',''],show.map(({p,r})=>[esc(p.title),p.sport.toUpperCase(),esc(p.date),esc(p.line??'—'),esc(p.odds??'—'),r.value??'—',cell(r.label,r.label==='Won'?'good heat':r.label==='Lost'?'bad heat':''),btn('Remove','remove',playKey(p))]),{sort:'myplays',wrap:'box'}):
+    box('',show.length?table(['Play','League','Date','Line','Price','Result','Status',''],show.map(({p,r})=>[esc(p.title),p.sport.toUpperCase(),esc(p.date),esc(p.line??'—'),cell(esc(p.odds??'—')+' '+btn('Edit','editPlayPrice',playKey(p),'outline')),r.value??'—',cell(r.label,r.label==='Won'?'good heat':r.label==='Lost'?'bad heat':''),btn('Remove','remove',playKey(p))]),{sort:'myplays',wrap:'box'}):
       empty('Nothing saved yet. Check the box beside a play on any research page and it shows up here.'));
 }
 // Backups hold every GOING setting saved in this browser: plays, picks, notes, saved parlays and filters.
@@ -407,6 +407,27 @@ document.addEventListener('click',e=>{
     const i=v.indexOf(':'),key=v.slice(0,i),val=v.slice(i+1),all=local('picks',{}),g=(all[S.game.id]??={}),p=(g[key]??={});
     p[act==='pick'?'label':'confidence']=val;keep('picks',all);render();return;
   }
+  if(act==='editPlayPrice'){
+    const play=local('plays',[]).find(p=>playKey(p)===v);
+    if(!play)return;
+    dialog('Edit saved price',`<label class="field">American odds <input type="text" data-play-price="${esc(v)}" value="${esc(play.odds??'')}" placeholder="+125 or -110" autocomplete="off"></label>`+
+      tools(btn('Save price','savePlayPrice',v,'primary'))+'<p class="tiny" data-price-error role="status"></p>');
+    return;
+  }
+  if(act==='savePlayPrice'){
+    const dialogNode=$('#dialog'),input=dialogNode.querySelector('[data-play-price]');
+    const value=Number(input?.value);
+    if(!Number.isSafeInteger(value)||Math.abs(value)<100){
+      dialogNode.querySelector('[data-price-error]').textContent='Enter American odds such as +125 or -110.';
+      input?.focus();
+      return;
+    }
+    const plays=local('plays',[]),play=plays.find(p=>playKey(p)===v);
+    if(play){play.odds=value;keep('plays',plays);toast('Saved price updated');}
+    dialogNode.close();
+    render();
+    return;
+  }
   if(act==='remove'){const p=local('plays',[]).find(p=>playKey(p)===v);if(p)savePlay(p,false);return;}
   if(act==='wheel'){wheel();return;}
   if(act==='wheelAll'){wheelState.checked=v==='yes'?new Set(playList().filter(x=>!wheelState.pending||x.r.label==='Pending').map(x=>playKey(x.p))):new Set();wheel(false);return;}
@@ -419,7 +440,7 @@ document.addEventListener('click',e=>{
   if(act==='backup'){backup();return;}
   if(act==='photoCol'){photoState.columns=v;photo();return;}
   if(S.route.sport==='mlb'&&M.mlb){const r=M.mlb.action(act,v);if(r){if(typeof r==='string')toast(r);render();return;}}
-  if(M[S.route.sport]?.action?.(act,v,t)&&(act.startsWith('parlay')||act.startsWith('fb')||act.startsWith('td')))render();
+  if(M[S.route.sport]?.action?.(act,v,t)&&(act.startsWith('parlay')||act.startsWith('fb')||act.startsWith('td')||act.startsWith('nbaProp')))render();
 });
 document.addEventListener('input',e=>{
   const t=e.target,k=t.dataset.field;
@@ -429,6 +450,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',e=>{
   const t=e.target,k=t.dataset.field;
+  if(t.dataset.nbaPropBound&&M.nba?.action('nbaPropBound',t.dataset.nbaPropBound,t)){render();return;}
   if(t.dataset.restore!=null){const f=t.files?.[0];t.value='';if(f)restore(f);return;}
   if(t.dataset.tdPrice!=null&&M.nfl){M.nfl.tdPrice(t.dataset.tdPrice,t.value);render();return;}
   if(t.dataset.fbPrice!=null&&M.nba){M.nba.fbPrice(t.dataset.fbPrice,t.value);render();return;}
