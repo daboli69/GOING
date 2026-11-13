@@ -1,0 +1,7 @@
+# Generated: season archives, hourly snapshots and model feeds are built by the workflow, not committed.
+.cache/
+site/data/
+dist/
+node_modules/
+__pycache__/
+*.log

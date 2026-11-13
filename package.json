@@ -1,0 +1,14 @@
+{
+  "name": "going",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "refresh": "node scripts/refresh.mjs",
+    "live": "node scripts/live.mjs",
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/build.mjs && node scripts/serve.mjs --dist",
+    "test": "node --test"
+  },
+  "engines": {"node": ">=22"}
+}

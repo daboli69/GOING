@@ -1,0 +1,106 @@
+name: Refresh and deploy
+
+# Hourly: slates, injuries, public prices and NHL lineups (about a minute).
+# 09:07 and 17:07 UTC: also rebuild the season archives (nflverse, hoopR, NHL), reusing cached downloads.
+# The local model publisher starts a run with mode=models whenever forecasts change.
+on:
+  schedule:
+    - cron: '7 * * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'live = snapshots only, full = also rebuild season archives, models = new model feeds'
+        type: choice
+        options: [live, full, models]
+        default: live
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Restore season archives
+        id: archive
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cache
+            site/data/*.json
+          key: archive-v1-${{ github.run_id }}
+          restore-keys: archive-v1-
+
+      - name: Choose mode
+        id: mode
+        run: |
+          mode="${{ inputs.mode || 'live' }}"
+          hour=$(date -u +%H)
+          if [ "${{ github.event_name }}" = "schedule" ] && { [ "$hour" = "09" ] || [ "$hour" = "17" ]; }; then mode=full; fi
+          deep=""
+          if [ -z "${{ steps.archive.outputs.cache-matched-key }}" ]; then mode=full; deep="--deep"; fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "deep=$deep" >> "$GITHUB_OUTPUT"
+          echo "Mode: $mode $deep"
+
+      - name: Rebuild season archives
+        if: steps.mode.outputs.mode == 'full'
+        run: node scripts/refresh.mjs ${{ steps.mode.outputs.deep }} || echo "::warning::Archive refresh had errors; deploying the data that did load."
+
+      - name: Save season archives
+        if: steps.mode.outputs.mode == 'full'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache
+            site/data/*.json
+          key: archive-v1-${{ github.run_id }}
+
+      - name: Capture live snapshots
+        run: node scripts/live.mjs || echo "::warning::Live snapshot failed; pages fall back to the archives."
+
+      - name: Add model feeds
+        run: |
+          mkdir -p site/data/models
+          if git fetch --depth 1 origin model-feeds 2>/dev/null; then
+            for f in nfl nba summary; do git show FETCH_HEAD:models/$f.json > site/data/models/$f.json 2>/dev/null || rm -f site/data/models/$f.json; done
+          else
+            echo "::notice::No model-feeds branch yet. Run publishers/publish_models.bat --push on the lab PC."
+          fi
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build
+        run: node scripts/build.mjs
+        env:
+          GOING_BASE: ${{ steps.pages.outputs.base_path }}/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
