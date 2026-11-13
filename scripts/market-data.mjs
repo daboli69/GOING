@@ -23,21 +23,22 @@ export function quote(m,market,g){
   if(line==null||!Number.isFinite(line)||['Anytime Goals','Anytime TD'].includes(market)&&line!==.5)return null;
   return {player,market,line,date:g.date,a:g.a,h:g.h,over,under,provider:'Kalshi',volume:Number(m.volume_fp)||0,yes:over?yes:null,no:under?no:null};
 }
-export function chooseQuotes(rows){
+export function chooseQuotes(rows,byLine=false){
   const top=new Map();
   for(const row of rows){
-    const key=[row.date,row.a,row.h,norm(row.player),row.market].join('|');
+    const key=[row.date,row.a,row.h,norm(row.player),row.market,byLine?row.line:''].join('|');
     const prev=top.get(key);
     const score=x=>(x.yes!=null&&x.no!=null?3:0)-Math.abs((x.yes??1-x.no)-.5)*4+.08*Math.log1p(x.volume);
     if(!prev||score(row)>score(prev))top.set(key,row);
   }
   return [...top.values()].map(({volume,yes,no,...x})=>x);
 }
-export async function publicQuotes(s,games){
+export async function publicQuotes(s,games,{onAlternates}={}){
   if(!series[s]||!games.length)return [];
   const by=new Map(games.flatMap(g=>eventSuffixes(s,g).map(k=>[k,g])));
   const starts=games.map(g=>g.date).sort();
   const after=Math.floor(Date.parse(starts[0]+'T00:00:00Z')/1000)-8*86400;
+  const capturedAt=new Date().toISOString();
   const all=await Promise.allSettled(Object.entries(series[s]).map(async ([market,ticker])=>{
     const rows=[];let cursor='';
     for(let page=0;page<3;page++){
@@ -58,5 +59,8 @@ export async function publicQuotes(s,games){
     }
     return rows;
   }));
-  return chooseQuotes(all.flatMap(r=>r.status==='fulfilled'?r.value:[]));
+  const rows=all.flatMap(r=>r.status==='fulfilled'?r.value:[]);
+  const quotes=chooseQuotes(rows);
+  if(s==='nba'&&onAlternates)onAlternates(chooseQuotes(rows,true).map(q=>({...q,capturedAt})));
+  return s==='nba'?quotes.map(q=>({...q,capturedAt})):quotes;
 }

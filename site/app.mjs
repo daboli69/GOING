@@ -1,5 +1,6 @@
 import {menus,routes,sections,BASE,href,viewDefaults,viewSetup} from './config.mjs';
 import {trackerLoad,trackerPage,trackerAction} from './tracker.mjs';
+import {parlayTrackerLoad,parlayTrackerPage,parlayTrackerAction} from './nba-parlay-tracker.mjs';
 import {$,current as S,today,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus,sportWordmark} from './ui.mjs';
 import {ESPN,sportPath,scoreboard,compactInjuries} from './feeds.mjs';
 import {nflPage,nflPlayer,nflAction,nflResult} from './nfl.mjs';
@@ -29,7 +30,14 @@ function header(){
   const s=S.route.sport, sec=sections[s];
   const menuHTML=(k,items)=>`<div class="navitem"><button type="button" class="navbutton ${k!=='Sports'&&items.some(([,p])=>p===S.route.path)?'active':''}" aria-expanded="${menu===k}" ${action('menu',k)}>${esc(k)} <small aria-hidden="true">▾</small></button><div class="navmenu" ${menu===k?'':'hidden'}>${items.map(([t,p])=>p?`<a href="${href(p)}" ${S.route.path===p?'aria-current="page"':''}>${esc(t)}</a>`:`<span class="nav-label">${esc(t)}</span>`).join('')}</div></div>`;
   const sportMenu=Object.entries(sections).map(([k,x])=>x.home?['GOING '+x.word+' · '+x.league,x.home]:null).filter(Boolean);
-  const nav=sec&&menus[s]?Object.entries(menus[s]).map(([k,items])=>menuHTML(k,items)).join('')+menuHTML('Sports',sportMenu):
+  const nav=sec&&menus[s]?Object.entries(menus[s]).map(([k,items])=>{
+    if(s==='nba'&&k==='Parlays'){
+      const [[title,path]]=items, active=S.route.path===path;
+      const [, [tracker,trackerPath]]=items, tracking=S.route.path===trackerPath;
+      return `<a class="navbutton${active?' active':''}" href="${href(path)}" ${active?'aria-current="page"':''}>${esc(title)}</a><a class="navbutton${tracking?' active':''}" href="${href(trackerPath)}" ${tracking?'aria-current="page"':''}>${esc(tracker)}</a>`;
+    }
+    return menuHTML(k,items);
+  }).join('')+menuHTML('Sports',sportMenu):
     Object.entries(sections).filter(([,x])=>x.home).map(([k,x])=>`<a class="navbutton" href="${href(x.home)}">${x.league}</a>`).join('');
   $('#site-header').innerHTML=`<a class="brand" href="${href('')}" aria-label="${sec?`${esc(sec.name)} | `:''}GOING home">${sec?`<span class="brand-chip">${sec.league}</span>`:''}${sec?sportWordmark(sec,''):`<img class="going-wordmark brand-main" src="${href('brand/going-wordmark.svg')}" width="461" height="100" alt="">`}</a><nav class="nav" aria-label="${sec?esc(sec.name)+' tools':'Sports'}">${nav}<a class="navbutton ${S.route.id==='tracker'?'active':''}" href="${href('tracker.html')}">Tracker</a><a class="navbutton ${S.route.id==='myplays'?'active':''}" href="${href('plays.html')}">My Plays</a></nav><div class="head-actions"><button type="button" class="icon" aria-label="Switch light/dark theme" title="Switch light/dark theme" ${action('theme','')}>${document.documentElement.dataset.theme==='light'?'☾':'☼'}</button></div>`;
 }
@@ -40,7 +48,7 @@ function render(options={}){
   if(S.error)main.innerHTML=box('',empty(S.error)+tools(btn('Try again','retry','')));
   else if(!S.loaded)main.innerHTML=box('',empty(S.route.id==='home'?'Loading today’s slates…':'Loading the slate…'));
   else{
-    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?trackerPage():isModel(S.route.id)?modelPage():modules[S.route.sport][0]();}
+    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?trackerPage():S.route.id==='nba-parlay-tracker'?parlayTrackerPage():isModel(S.route.id)?modelPage():modules[S.route.sport][0]();}
     catch(e){console.error(e);main.innerHTML=box('',empty('This view could not be rendered.')+tools(btn('Try again','retry','')));}
   }
   const next=main.querySelector('.matchup-row');
@@ -96,6 +104,11 @@ async function load(){
   if(id==='tracker'){
     try{await trackerLoad();if(token!==req)return;S.loaded=true;render();}
     catch(e){if(token!==req)return;S.error='The pick record could not load. Try again in a moment.';console.error(e);render();}
+    return;
+  }
+  if(id==='nba-parlay-tracker'){
+    try{await parlayTrackerLoad();if(token!==req)return;S.loaded=true;render();}
+    catch(e){if(token!==req)return;S.error='The parlay leg record could not load. Try again in a moment.';console.error(e);render();}
     return;
   }
   if(id==='myplays'){
@@ -288,6 +301,7 @@ document.addEventListener('click',e=>{
   if(act==='retry'){S.error=null;load();return;}
   if(isModel(S.route.id)&&modelAction(act,v)){render();return;}
   if(S.route.id==='tracker'&&trackerAction(act,v)){render();return;}
+  if(S.route.id==='nba-parlay-tracker'&&parlayTrackerAction(act,v)){render();return;}
   if(act==='game'){chooseGame(S.games.find(g=>g.id===v));return;}
   if(act==='gameStep'){chooseGame(S.games[S.games.indexOf(S.game)+Number(v)],true);return;}
   if(act==='set'){
@@ -331,7 +345,7 @@ document.addEventListener('click',e=>{
   if(act==='photo'){photo();return;}
   if(act==='photoCol'){photoState.columns=v;photo();return;}
   if(S.route.sport==='mlb'){const r=yardAction(act,v);if(r){if(typeof r==='string')toast(r);render();return;}}
-  if(modules[S.route.sport])modules[S.route.sport][2](act,v);
+  if(modules[S.route.sport]?.[2](act,v,t)&&act.startsWith('parlay'))render();
 });
 document.addEventListener('input',e=>{
   const t=e.target,k=t.dataset.field;
@@ -351,6 +365,11 @@ document.addEventListener('change',e=>{
   if(k==='hideThin'){S.f.hideThin=t.checked;render();return;}
   if(S.route.sport==='mlb'){const r=yardInput(t);if(r){if(r!=='keep')render();return;}}
   if(t.dataset.yardPrice){setPrice(t.dataset.yardPrice,t.value);render();return;}
+  if(S.route.id==='nba-parlays'&&t.dataset.parlay){
+    nbaAction('parlayField',JSON.stringify([t.dataset.parlay,t.type==='checkbox'?t.checked:t.value]),t);
+    if(t.type!=='number')render();
+    return;
+  }
   if(S.route.sport==='mlb'&&k&&yardField(k,t.value)){render();return;}
   if(isModel(S.route.id)&&k&&modelAction('field',k+':'+t.value)){render();return;}
   if(k&&!['notes','search'].includes(k))updateField(k,t.value);

@@ -18,6 +18,7 @@ export const menus={
     Models:[['Ensemble Forecasts','up/','nba-models']],
     Matchups:[['Slate Standouts','up/standouts.html','standouts'],['League Stats Chart','up/league.html','league'],['Matchup Keys','up/matchup-keys.html','keys'],['Zone Matchup Targets','up/zones.html','zones'],['Player Types','up/types.html','types'],['Shot Charts','up/shot-charts.html','shotcharts']],
     Props:[['All Props','up/all-props.html','nba-props'],['Points','up/points.html','nba-props'],['Threes','up/threes.html','nba-props'],['Assists','up/assists.html','nba-props'],['Rebounds','up/rebounds.html','nba-props'],['Assist Spots','up/assist-spots.html','nba-props'],['1st Basket','up/first-basket.html','basket']],
+    Parlays:[['Suggested Parlays','up/suggested-parlays.html','nba-parlays'],['Parlay Leg Tracker','up/parlay-tracker.html','nba-parlay-tracker']],
     Promos:[['King of the Court','up/promo-tools.html','court']]
   },
   nhl:{
@@ -50,6 +51,7 @@ export const viewDefaults={
   'nhl-props':{allGames:true,side:'Best side',skater:'All skaters',status:'All games',edge:'0',pricing:'All players',zoneMatch:'Everyone'},
   myplays:{when:'Everything',playType:'Every Type',grade:'All'},
   tracker:{sport:'All',kind:'All picks',window:'Season',lean:true},
+  'nba-parlay-tracker':{legDecision:'All',legMarket:'All',legSide:'All',legResult:'All',legWindow:'Last 30 days',legSource:'All',legRule:'All'},
   'yard-board':{floor:'All',bats:'All',gameFilter:'All games',lineup:'All lineups',hideThin:false},
   'yard-hits':{view:'Hits'},'yard-arms':{view:'Starting pitchers'},'yard-parlays':{view:'Cross-game parlays'},'yard-record':{view:'Heat tiers'}
 };
