@@ -8,6 +8,8 @@ import {nbaPage,nbaPlayer,nbaAction,nbaResult} from './nba.mjs';
 import {nhlPage,nhlPlayer,nhlAction,nhlResult} from './nhl.mjs';
 import {modelLoad,modelPage,modelAction,modelStep} from './models.mjs';
 import {homeLoad,homePage} from './home.mjs';
+import {collegeLoad,collegePage} from './college.mjs';
+import {isCollege} from './college-core.mjs';
 
 import {yardPage,yardPlayer,yardAction,yardResult,yardField,yardInput,ENGINE_VIEWS} from './yard.mjs';
 import {setYardData} from './yard-engine.mjs';
@@ -38,7 +40,8 @@ function header(){
     }
     return menuHTML(k,items);
   }).join('')+menuHTML('Sports',sportMenu):
-    Object.entries(sections).filter(([,x])=>x.home).map(([k,x])=>`<a class="navbutton" href="${href(x.home)}">${x.league}</a>`).join('');
+    Object.entries(sections).filter(([k,x])=>x.home&&!isCollege(k)).map(([,x])=>`<a class="navbutton" href="${href(x.home)}">${x.league}</a>`).join('')+
+    menuHTML('College',Object.entries(sections).filter(([k])=>isCollege(k)).map(([,x])=>[x.name+' · '+x.sport,x.home]));
   $('#site-header').innerHTML=`<a class="brand" href="${href('')}" aria-label="${sec?`${esc(sec.name)} | `:''}GOING home">${sec?`<span class="brand-chip">${sec.league}</span>`:''}${sec?sportWordmark(sec,''):`<img class="going-wordmark brand-main" src="${href('brand/going-wordmark.svg')}" width="461" height="100" alt="">`}</a><nav class="nav" aria-label="${sec?esc(sec.name)+' tools':'Sports'}">${nav}<a class="navbutton ${S.route.id==='tracker'?'active':''}" href="${href('tracker.html')}">Tracker</a><a class="navbutton ${S.route.id==='myplays'?'active':''}" href="${href('plays.html')}">My Plays</a></nav><div class="head-actions"><button type="button" class="icon" aria-label="Switch light/dark theme" title="Switch light/dark theme" ${action('theme','')}>${document.documentElement.dataset.theme==='light'?'☾':'☼'}</button></div>`;
 }
 function render(options={}){
@@ -48,7 +51,7 @@ function render(options={}){
   if(S.error)main.innerHTML=box('',empty(S.error)+tools(btn('Try again','retry','')));
   else if(!S.loaded)main.innerHTML=box('',empty(S.route.id==='home'?'Loading today’s slates…':'Loading the slate…'));
   else{
-    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?trackerPage():S.route.id==='nba-parlay-tracker'?parlayTrackerPage():isModel(S.route.id)?modelPage():modules[S.route.sport][0]();}
+    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?trackerPage():S.route.id==='nba-parlay-tracker'?parlayTrackerPage():isCollege(S.route.sport)?collegePage():isModel(S.route.id)?modelPage():modules[S.route.sport][0]();}
     catch(e){console.error(e);main.innerHTML=box('',empty('This view could not be rendered.')+tools(btn('Try again','retry','')));}
   }
   const next=main.querySelector('.matchup-row');
@@ -57,7 +60,7 @@ function render(options={}){
   footer();
 }
 function routeTo(p,replace=false){
-  if(p!==location.pathname+location.hash){history[replace?'replaceState':'pushState'](null,'',p);}
+  if(p!==location.pathname+location.search+location.hash){history[replace?'replaceState':'pushState'](null,'',p);}
   dateHash=location.hash;menu=null;$('#dialog').close();lastDialog=null;
   start();
   window.scrollTo(0,0);
@@ -88,6 +91,10 @@ const savedGames={};
 function start(){
   S.route=route();S.sort=null;S.error=null;
   S.f=viewSetup(S.route,location.hash);S.game=null;S.games=[];
+  if(S.route.id==='tracker'){
+    const league=new URLSearchParams(location.search).get('sport')?.toLowerCase();
+    if(isCollege(league))S.f.sport=league.toUpperCase();
+  }
   S.loaded=false;
   S.lineStats={};
   document.documentElement.dataset.sport=S.route.sport;
@@ -105,6 +112,12 @@ async function load(){
     try{await trackerLoad();if(token!==req)return;S.loaded=true;render();}
     catch(e){if(token!==req)return;S.error='The pick record could not load. Try again in a moment.';console.error(e);render();}
     return;
+  }
+  if(isCollege(s)){
+    const data=await collegeLoad(s,id);
+    if(token!==req)return;
+    S.data=data;
+    S.loaded=true;render();return;
   }
   if(id==='nba-parlay-tracker'){
     try{await parlayTrackerLoad();if(token!==req)return;S.loaded=true;render();}
@@ -289,7 +302,7 @@ const internal=a=>{
 };
 document.addEventListener('click',e=>{
   const a=e.target.closest('a[href]');
-  if(a&&e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&internal(a)){e.preventDefault();routeTo(a.pathname+a.hash);return;}
+  if(a&&e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&internal(a)){e.preventDefault();routeTo(a.pathname+a.search+a.hash);return;}
   const t=e.target.closest('[data-act]');
   if(!t){if(menu&&!e.target.closest('.nav')){menu=null;header();}return;}
   const {act,v}=t.dataset;

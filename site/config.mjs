@@ -4,10 +4,16 @@ export const sections={
   nba:{name:'GOING UP',word:'UP',sport:'Basketball',league:'NBA',home:'up/'},
   nfl:{name:'GOING LONG',word:'LONG',sport:'Football',league:'NFL',home:'long/'},
   nhl:{name:'GOING GOAL',word:'GOAL',sport:'Hockey',league:'NHL',home:'goal/'},
-  mlb:{name:'GOING YARD',word:'YARD',sport:'Baseball',league:'MLB',home:'yard/'}
+  mlb:{name:'GOING YARD',word:'YARD',sport:'Baseball',league:'MLB',home:'yard/'},
+  cbb:{name:'GOING CBB',word:'CBB',sport:'Men’s college basketball',league:'CBB',home:'cbb/'},
+  cwb:{name:'GOING CWB',word:'CWB',sport:'Women’s college basketball',league:'CWB',home:'cwb/'},
+  fbs:{name:'GOING FBS',word:'FBS',sport:'College football',league:'FBS',home:'fbs/'}
 };
 // [title, path relative to BASE, view id]. Titles double as view keys inside the sport modules, so keep them stable.
 export const menus={
+  cbb:{Matchups:[['Slate Standouts','cbb/','college-slate'],['Team Stats','cbb/team-stats.html','college-teams'],['Player Leaders','cbb/player-leaders.html','college-players']]},
+  cwb:{Matchups:[['Slate Standouts','cwb/','college-slate'],['Team Stats','cwb/team-stats.html','college-teams'],['Player Leaders','cwb/player-leaders.html','college-players']]},
+  fbs:{Previews:[['Game Previews','fbs/','college-slate'],['Team Stats','fbs/team-stats.html','college-teams'],['Game Lines','fbs/game-lines.html','college-lines']]},
   nfl:{
     Models:[['Ensemble Forecasts','long/','nfl-models']],
     Previews:[['Game Previews','long/game-previews.html','nfl-preview'],['TD Data','long/td-data.html','td'],['Opening Drive Tool','long/opening-drives.html','drives']],
@@ -52,6 +58,7 @@ export const viewDefaults={
   myplays:{when:'Everything',playType:'Every Type',grade:'All'},
   tracker:{sport:'All',kind:'All picks',window:'Season',lean:true},
   'nba-parlay-tracker':{legDecision:'All',legMarket:'All',legSide:'All',legResult:'All',legWindow:'Last 30 days',legSource:'All',legRule:'All'},
+  'college-players':{collegeSample:'3'},
   'yard-board':{floor:'All',bats:'All',gameFilter:'All games',lineup:'All lineups',hideThin:false},
   'yard-hits':{view:'Hits'},'yard-arms':{view:'Starting pitchers'},'yard-parlays':{view:'Cross-game parlays'},'yard-record':{view:'Heat tiers'}
 };
@@ -69,3 +76,6 @@ export const nflTeams={
 export const nhlColors={ANA:'f47a38',BOS:'ffb81c',BUF:'286ed7',CAR:'cc0022',CBJ:'294b87',CGY:'d2001c',CHI:'cf0a2c',COL:'862633',DAL:'00865d',DET:'ce1126',EDM:'ff4c00',FLA:'c8102e',LAK:'828a8f',MIN:'2a7859',MTL:'af1e2d',NJD:'ce1126',NSH:'ffb81c',NYI:'f47d30',NYR:'2465c6',OTT:'c8102e',PHI:'f74902',PIT:'fcb514',SEA:'75a8bd',SJS:'006d75',STL:'2060b5',TBL:'3155ad',TOR:'2c6eca',UTA:'6cace4',VAN:'2878a0',VGK:'b4975a',WPG:'517bab',WSH:'c8102e'};
 export const nbaPropTabs=['All Props','Points','Threes','Rebounds','Assists','Assist Spots'].map(t=>routes.find(r=>r.sport==='nba'&&r.title===t));
 export const footers={mlb:['Going Yard (hr-board)','https://github.com/daboli69/hr-board','Statcast via Baseball Savant, MLB StatsAPI lineups and box scores, FanGraphs career rates.'],nfl:['nflverse-data','https://github.com/nflverse/nflverse-data','Schedules, regular-season play-by-play, and rosters.'],nba:['sportsdataverse / hoopR','https://github.com/sportsdataverse/sportsdataverse-data','ESPN box scores and play-by-play.'],nhl:['NHL public game feed','https://api-web.nhle.com/v1/score/now','Schedules, play-by-play, box scores, and standings.']};
+footers.cbb=['hoopR','https://github.com/sportsdataverse/hoopR-mbb-data','Team and player box scores. Schedules and scores via ESPN.'];
+footers.cwb=['wehoop','https://github.com/sportsdataverse/wehoop-wbb-data','Team and player box scores. Schedules and scores via ESPN.'];
+footers.fbs=['cfbfastR','https://github.com/sportsdataverse/cfbfastR-cfb-data/blob/main/DATASETS.md','FBS matchup metrics. Scores and available game lines via ESPN.'];

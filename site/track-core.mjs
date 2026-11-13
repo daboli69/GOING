@@ -8,6 +8,11 @@ export const TOOLS={
   'nfl-best':'GOING LONG · Best Plays',
   'nfl-props':'GOING LONG · Player Props',
   'nfl-td':'GOING LONG · TD Data',
+  'cbb-baseline':'GOING CBB · Winner baseline',
+  'cwb-baseline':'GOING CWB · Winner baseline',
+  'fbs-baseline':'GOING FBS · Winner baseline',
+  'fbs-spread':'GOING FBS · Spread baseline',
+  'fbs-total':'GOING FBS · Game total baseline',
   'nhl-best':'GOING GOAL · Best Plays',
   'nhl-shots':'GOING GOAL · Shots',
   'nhl-goals':'GOING GOAL · Goals',
@@ -21,7 +26,7 @@ export const TOOLS={
 };
 // Individual ensemble members are tracked as "<sport>-model:<name>".
 export const toolLabel=t=>TOOLS[t]||(t.includes('-model:')?(t.startsWith('nba')?'GOING UP':'GOING LONG')+' · Model: '+t.split(':')[1]:t);
-export const isModelTool=t=>/-model(:|$)/.test(t);
+export const isModelTool=t=>/-model(:|$)|^(cbb|cwb|fbs)-baseline$/.test(t);
 
 export function americanNumber(o){
   if(o==null||o==='')return null;
@@ -70,7 +75,7 @@ export function add(s,p,prob){
   if(p.result==='void'){s.void++;return s;}
   s.n++;s[p.result]++;
   const u=units(p.result,p.odds);
-  if(u!=null){s.units+=u;s.priced++;if(p.result!=='push')s.stake++;}
+  if(u!=null&&americanNumber(p.odds)!=null){s.units+=u;s.priced++;if(p.result!=='push')s.stake++;}
   const b=impliedProb(p.odds);if(b!=null&&p.result!=='push'){s.be+=b;s.beN++;}
   if(prob!=null&&p.result!=='push'){const y=p.result==='won'?1:0;s.brier+=(prob-y)**2;s.brierN++;s.ll+=-Math.log(Math.min(1-1e-6,Math.max(1e-6,y?prob:1-prob)));}
   return s;

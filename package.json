@@ -6,6 +6,7 @@
     "start": "node scripts/serve.mjs",
     "refresh": "node scripts/refresh.mjs",
     "live": "node scripts/live.mjs",
+    "college": "node scripts/college.mjs",
     "build": "node scripts/build.mjs",
     "preview": "node scripts/build.mjs && node scripts/serve.mjs --dist",
     "test": "node --test",

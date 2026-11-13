@@ -7,9 +7,12 @@ One site for the ensemble models and the sports dashboards.
 | GOING UP | Basketball (NBA) | Ensemble forecasts, matchup tools, prop research, shot charts, King of the Court |
 | GOING LONG | Football (NFL) | Ensemble forecasts, game previews, TD data, opening drives, props, King of the Endzone |
 | GOING GOAL | Hockey (NHL) | Game previews, line matchups, props, crease, icebreaker and hat-trick promos |
+| GOING CBB | Men’s college basketball | Slate standouts, matchup keys, team stats and player leaderboards |
+| GOING CWB | Women’s college basketball | Slate standouts, matchup keys, team stats and player leaderboards |
+| GOING FBS | College football (FBS) | Game previews, team stats, EPA and success rates, moneyline, spread and game totals |
 | GOING YARD | Baseball (MLB) | The Going Yard home run model: HR Board, Top Plays, Top Picks, Daily Card, Signal Convergence, Game Scan, pitchers and bullpens, Team vs Pitch Mix, Split Overlaps, target teams, weather and parks, hits and H+R+RBI, King of the Bases, strikeouts, game totals, Edge Finder, Price Research, Alt Line Finder, parlays and jackpots, Parlay Builder, Parlay Scanner, Ladder Challenge, Model Record, HR Calendar, HR Patterns, My Bets, CLV, Guide |
 
-Each section uses its own accent color: orange for basketball, green for football, blue for hockey and red for baseball. Everything else (type, boards, heat cells, charts) is the sports dash design.
+Each section uses its own accent color and the same dashboard typography, boards and charts.
 
 ## How the data stays current
 
@@ -38,6 +41,20 @@ Several views (Top Picks, Daily Card, Signal Convergence, Team vs Pitch Mix, Spl
 Prices you type into the Edge Finder, the Ladder Challenge, the Price Research minimum and the My Bets journal use the same browser storage keys as hr-board's page. My Bets grades each player from the MLB box score once his game is final and never overwrites a mark you set yourself. Backups use hr-board's file format, so either page can restore them. Both live on daboli69.github.io, so the two stay in step.
 
 When the live board has no games (offseason or an off day), the section shows the last slate hr-board published and says so. It switches back on its own once games return. Player photos and team logos come from MLB's image service.
+
+## College dashboards
+
+The hourly Pages workflow refreshes the college sections with `npm run college`. [hoopR](https://github.com/sportsdataverse/hoopR-mbb-data) and [wehoop](https://github.com/sportsdataverse/wehoop-wbb-data) provide basketball team and player box scores. ESPN supplies schedules and scores, plus available FBS game lines. [cfbfastR](https://github.com/sportsdataverse/cfbfastR-cfb-data/blob/main/DATASETS.md) provides FBS pregame EPA, success rates and pace. All use publicly available data and require no credentials. The pages show when the schedule, prices or box scores were checked. Missing quotes and stats appear as dashes.
+
+CBB and CWB provide basketball matchup and player research without betting markets. FBS markets cover full-game moneylines, spreads and totals. The college winner baseline starts with equal Elo ratings each season, updates with completed games, and applies a home-field or home-court adjustment to forecasts at non-neutral sites. Projected scores blend team points scored and opponent points allowed, with both averages pulled toward the league scoring average. Forecasts require three completed games per team. The winner percentages are uncalibrated, and the projected scores and winner ratings can disagree.
+
+Filter Pick Tracker by CBB, CWB or FBS to follow results by tool and market. The FBS spread and total tools also break results out by the size of the projected difference from the line. The tracker freezes the last valid pregame capture, grades by final score, and calculates hypothetical flat-stake ROI only where it captured a price. Canceled games are voided. Missing results stay pending. The record starts at deployment, with no retrospective picks.
+
+```bash
+npm run college
+node scripts/track.mjs
+npm start
+```
 
 ## Pick Tracker
 

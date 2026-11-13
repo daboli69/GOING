@@ -13,6 +13,7 @@ import { nflPage, nflResult } from '../site/nfl.mjs';
 import { nbaPage, nbaResult } from '../site/nba.mjs';
 import { nhlPage, nhlResult } from '../site/nhl.mjs';
 import { outcome, leanOf, impliedProb, mlbStat } from '../site/track-core.mjs';
+import { collegeSports, isCollege, collegePicks, collegeSettlement } from '../site/college-core.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const data=join(root,'site','data'), out=join(data,'tracker');
@@ -175,6 +176,26 @@ if(yard?.players?.length&&!yard.fallback){
 let dropped=0;
 for(const [k,p] of store)if(!p.result&&Date.parse(p.start)>now&&scope.has(p.sport+'|'+p.game)&&!seen.has(k)&&p.kind==='prop'){store.delete(k);dropped++;}
 
+/* ---------- college capture and grading ---------- */
+const collegeResults=new Map(),collegeScope=new Set();
+for(const sport of Object.keys(collegeSports)){
+  const snapshot=await read('college/'+sport+'.json');
+  if(!snapshot)continue;
+  for(const result of snapshot.results)collegeResults.set(sport+'|'+result.id,result);
+  for(const game of snapshot.games){
+    const checked=Date.parse(game.marketAt),start=Date.parse(game.start);
+    // A stale or historical feed can still supply results, but cannot replace a pregame capture.
+    if(game.status!=='scheduled'||!Number.isFinite(start)||start<=now||!Number.isFinite(checked)||checked>now||now-checked>90*60_000)continue;
+    collegeScope.add(sport+'|'+game.id);
+    for(const pick of collegePicks(sport,game))upsert(pick);
+  }
+}
+for(const [k,p] of store){
+  if(!p.result&&p.kind==='game'&&Date.parse(p.start)>now&&collegeScope.has(p.sport+'|'+p.game)&&!seen.has(k)){
+    store.delete(k);dropped++;
+  }
+}
+
 /* ---------- grading ---------- */
 const finals=new Map();
 const fin=(s,id,a,h)=>{if(a!=null&&h!=null)finals.set(s+'|'+id,{a:+a,h:+h});};
@@ -196,7 +217,10 @@ let graded=0;
 for(const p of store.values()){
   if(p.result||Date.parse(p.start)>now-2*3600_000)continue;
   let value=null;
-  if(p.kind==='model'){
+  if(isCollege(p.sport)){
+    const result=collegeSettlement(p,collegeResults.get(p.sport+'|'+p.game));
+    if(result)Object.assign(p,result);
+  }else if(p.kind==='model'){
     const f=finals.get(p.sport+'|'+p.game);
     if(f){value=f.a===f.h?null:(f.h>f.a?p.h:p.a);p.value=value?`${p.a} ${f.a}, ${p.h} ${f.h}`:'Tie';p.result=value==null?'push':value===p.side?'won':'lost';}
   }else if(p.sport==='mlb'){
@@ -209,7 +233,7 @@ for(const p of store.values()){
     if(value!=null){p.value=value;p.result=outcome(+value,p.line,p.side);}
   }
   if(p.result){p.graded=nowIso;graded++;}
-  else if(Date.parse(p.start)<now-4*86400_000){p.result='void';p.graded=nowIso;}  // no result after four days: did not play or no data
+  else if(!isCollege(p.sport)&&Date.parse(p.start)<now-4*86400_000){p.result='void';p.graded=nowIso;}  // no result after four days: did not play or no data
 }
 
 /* ---------- write ---------- */
