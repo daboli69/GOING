@@ -71,7 +71,7 @@ export function slate(opts={}){
   return box('',nav+`<div class="matchup-row">${current.games.length?current.games.map(g=>{
     const multi=opts.multi&&current.f.multi;
     const on=opts.multi?(multi||[]).includes(g.id):current.game?.id===g.id&&!current.f.allGames;
-    const caption=s==='nfl'?dateLabel(gameDay(g),true).replace(/, (\w+) (\d+)/,(_,m,d)=>', '+(1+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(m))+'/'+d):final(g)?opts.score?`${g.sa}　　　　　 ${g.sh}`:'Final':liveGame(g)?`${g.sa}–${g.sh} · Live`:et(g);
+    const caption=liveGame(g)&&g.sa!=null&&g.sh!=null?`${g.sa}–${g.sh} · Live`:s==='nfl'?dateLabel(gameDay(g),true).replace(/, (\w+) (\d+)/,(_,m,d)=>', '+(1+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(m))+'/'+d):final(g)?opts.score?`${g.sa}　　　　　 ${g.sh}`:'Final':et(g);
     const b=opts.primetime&&g.time>='19:00'?badge('PRIMETIME','g'):opts.tall&&s==='nhl'&&current.lineups?.[g.a]&&current.lineups?.[g.h]?badge('✓ LINEUP','g'):'';
     return `<button class="game ${opts.tall?'tall ':''}${on?'on':''}" ${action(opts.multi?'multi':'game',g.id)} aria-label="${g.a} @ ${g.h} ${esc(caption)}" aria-pressed="${!!on}"><span class="game-logo">${logo(g.a)}<span>@</span>${logo(g.h)}</span><span>${esc(caption)}</span>${b}</button>`;
   }).join(''):'<span class="subtle">No games on this slate.</span>'}</div>`,'','slate');

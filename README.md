@@ -13,17 +13,51 @@ Each section uses its own accent color: orange for basketball, green for footbal
 
 ## How the data stays current
 
-Two sources feed the site, and neither commits data to `main`.
+GitHub Actions publishes the static snapshots. The optional Cloudflare Worker serves fresh data from public feeds and the model branch.
 
-**Public data (GitHub Actions, `.github/workflows/deploy.yml`).** The workflow runs every hour. It saves slates, injuries, Kalshi public player prices, NHL projected lineups and line-matchup stats (`scripts/live.mjs`, about a minute), then builds and deploys the site to GitHub Pages. Twice a day (09:07 and 17:07 UTC) it also rebuilds the season archives from nflverse, hoopR and the NHL feed (`scripts/refresh.mjs`). Downloads and archives sit in the Actions cache, so each rebuild fetches only what changed. A push to `main` also deploys.
+**Public data (GitHub Actions, `.github/workflows/deploy.yml`).** At :07 each hour the workflow saves slates, injuries, Kalshi prices, NHL projected lineups and line-matchup stats, then deploys GitHub Pages. At :22, :37 and :52 it refreshes prices and line-matchup stats on the last complete snapshot and deploys Pages. Twice a day (09:07 and 17:07 UTC) it also rebuilds the season archives. A push to `main` also deploys. GitHub's scheduled runs and Pages caching can add delay to snapshot updates.
 
-**Model forecasts (your PC).** The NFL and NBA labs run locally and use private inputs, so they cannot run on GitHub. `publishers/publish_models.bat` runs each lab's own Python, exports the saved forecasts read-only, and commits them to the `model-feeds` branch. It then starts a deploy. When the forecasts haven't changed, it pushes nothing. The site keeps showing the last published forecasts while the PC is off, along with how old they are.
+**Model forecasts (your PC).** The NFL and NBA labs run locally with their private inputs. `publishers/publish_models.bat` exports the saved forecasts and pushes the three JSON feeds to `model-feeds` only when forecast content changes. Timestamp-only changes are ignored. The publisher starts a Pages deploy if production `LIVE_API` is empty. The site keeps showing the last published forecasts while the PC is off.
 
 ```bat
 publishers\publish_models.bat
 ```
 
 Lab locations default to `Documents\ChatGPT\GOING\research\nfl-ensemble-lab` and `...\NBA ensemble`. Set `GOING_NFL_LAB` or `GOING_NBA_LAB` to override them.
+
+## Live Worker
+
+`going-live` runs on Workers Free with no cron or KV. It serves ESPN scores (30 s), NBA and NHL slates and GitHub model feeds (60 s), and injuries and NHL projected lineups (600 s). NFL injuries come from the compact hourly Pages snapshot because the raw ESPN payload exceeds the CPU budget. Kalshi player prices and NHL line-matchup stats stay on Pages.
+
+The Cache API keeps a last good copy per Cloudflare location and route key. Requests get `X-Going-Cache: STALE` if a refresh fails and a previous copy is available. Cache entries can be evicted, and independent Cloudflare locations can each fetch their own copy. `/health` reports the latest observed status, cache result, and timestamps for each route family in the current location. A null entry means there is no observation in that location.
+
+The browser gives the Worker three seconds, then silently uses the existing Pages snapshots on failure or when `LIVE_API` is empty. Visible tabs check game data used by the view each minute around game time. The landing page uses slate counts and the model summary. Model cache entries become eligible for refresh at minute boundaries. Model views and the landing page poll just after every second boundary so a successful publish normally reaches an open tab within about two minutes.
+
+**Free plan.** Cloudflare still lists 100,000 requests per day, 10 ms of CPU per invocation, and 50 subrequests per invocation. The busiest landing page polls at most four live endpoints per minute plus one model request every two minutes. At 100 ten-minute visits per day, five initial calls plus 40 live calls and five model calls per visit give an upper estimate of **5,000 requests/day**, excluding other Workers on the same account and direct API traffic. Cache hits still count. [Cloudflare limits](https://developers.cloudflare.com/workers/platform/limits/) · [Cache API](https://developers.cloudflare.com/workers/runtime-apis/cache/)
+
+### Deploy from GitHub
+
+1. Sign in to your existing Cloudflare account or create a free account. In **Workers & Pages**, keep the Workers plan on **Free** and set up your `workers.dev` subdomain. Copy the account ID from **Account home → ⋯ → Copy account ID**. [Account ID](https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/) · [workers.dev setup](https://developers.cloudflare.com/workers/configuration/routing/workers-dev/)
+2. In Cloudflare, go to **My Profile → API Tokens → Create Token → Create Custom Token**. Grant **Account → Workers Scripts → Edit** for that specific account. This covers scripts, deployments, secrets and the existing `workers.dev` subdomain. The workflow passes the account ID explicitly and uses no zone routes or storage permissions. [Cloudflare API tokens](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/) · [Workers permissions](https://developers.cloudflare.com/workers/authorization/workers/)
+3. In GitHub, go to **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**. Choose resource owner `daboli69`, **Only select repositories → GOING**, and **Repository permissions → Contents → Read-only**. GitHub includes Metadata read access. [Fine-grained tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
+4. In **GOING → Settings → Secrets and variables → Actions → New repository secret**, add `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `MODEL_FEEDS_TOKEN`. The last secret is the fine-grained GitHub token and becomes `GITHUB_TOKEN` in the Worker. GitHub reserves names starting with `GITHUB_`. [GitHub secret naming](https://docs.github.com/en/actions/reference/security/secrets#naming-your-secrets)
+5. Merge the Worker PR, or run **Actions → Deploy going-live Worker → Run workflow** from `main` after the workflow is present there. Copy the HTTPS URL from the run summary. Check `/health` and `/models/summary`, then set `LIVE_API` in `site/config.mjs` to that URL and push the config change to `main` for Pages to deploy.
+
+### Local preview and verification
+
+In `worker/`, run `npx wrangler dev`. For model testing in your local runtime, set `GITHUB_TOKEN` in the shell and set `CLOUDFLARE_INCLUDE_PROCESS_ENV=true` before starting Wrangler. From the repo root run `npm start`, and for local preview only set `LIVE_API` to `http://localhost:8787`. Run `npm test` for the route and cache tests.
+
+Local Wrangler profiling exercised cold and warm requests for every enabled route with live upstream payloads. All returned HTTP 200 and the warm data requests hit the cache. The largest sampled JavaScript estimate was about 1.7 ms. Check production invocation CPU as well, since local sampling and Cloudflare's CPU accounting differ. Parsing and scanning only the first page of each NFL Kalshi series took about 24–36 ms locally, before pagination or quote processing.
+
+- [ ] Open the deployed Worker at `/health` and confirm HTTP 200 and `ok: true`. Request a few data routes first and confirm their status and timestamps appear.
+- [ ] Open GOING, GOING LONG, GOING UP, GOING GOAL and GOING YARD with the Worker URL set. Repeat locally with `LIVE_API=''`, then with the Worker stopped.
+- [ ] During a live NFL, NBA or NHL game, keep its page visible and confirm the score changes without reloading. Keep a game selected or a search focused while it updates. Hide the tab and confirm polling pauses.
+- [ ] When a forecast has changed, run the publisher on the PC. Confirm it pushed to `model-feeds`, `/models/nfl` or `/models/nba` picks up its `generated_at` within about a minute, and the open site updates on its next eligible poll. If the publisher reports no changes, repeat this check after the lab generates a changed forecast.
+- [ ] In **Workers & Pages → going-live → Observability → Logs**, check cold and warm requests for each route and compare the invocation CPU time with 10 ms. `npx wrangler tail` can also show invocation failures. [Cloudflare CPU timing](https://developers.cloudflare.com/changelog/post/2025-04-09-workers-timing/)
+
+### Change the Windows publish interval
+
+Open **Task Scheduler → Task Scheduler Library → GOING model publish → Properties → Triggers**. Select the existing trigger and click **Edit**. Under **Advanced settings**, enable **Repeat task every** and type **10 minutes** in the interval box. Keep the existing duration, start time, and task action. Save both dialogs and confirm the next run time. [Windows task repetition](https://learn.microsoft.com/en-us/windows/win32/taskschd/repeating-a-task)
 
 ## GOING YARD
 

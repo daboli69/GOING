@@ -1,22 +1,23 @@
-import {menus,routes,sections,BASE,href,viewDefaults,viewSetup} from './config.mjs';
+import {menus,routes,sections,BASE,href,LIVE_API,viewSetup} from './config.mjs';
 import {trackerLoad,trackerPage,trackerAction} from './tracker.mjs';
-import {$,current as S,today,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus} from './ui.mjs';
+import {$,current as S,today,dateKey,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus} from './ui.mjs';
 import {ESPN,sportPath,scoreboard,compactInjuries} from './feeds.mjs';
 import {nflPage,nflPlayer,nflAction,nflResult} from './nfl.mjs';
 import {nbaPage,nbaPlayer,nbaAction,nbaResult} from './nba.mjs';
 import {nhlPage,nhlPlayer,nhlAction,nhlResult} from './nhl.mjs';
 import {modelLoad,modelPage,modelAction,modelStep} from './models.mjs';
-import {homeLoad,homePage} from './home.mjs';
+import {homeLoad,homeLive,homeApply,homeReset,homeActive,homePage} from './home.mjs';
+import {liveGet,liveSlate,liveScores,liveModels,liveOdds,withScores,gamesOn} from './live-api.mjs';
 
 import {yardPage,yardPlayer,yardAction,yardResult,yardField,yardInput,ENGINE_VIEWS} from './yard.mjs';
 import {setYardData} from './yard-engine.mjs';
 import {setPrice} from './yard-more.mjs';
 
 const modules={nfl:[nflPage,nflPlayer,nflAction,nflResult],nba:[nbaPage,nbaPlayer,nbaAction,nbaResult],nhl:[nhlPage,nhlPlayer,nhlAction,nhlResult],mlb:[yardPage,yardPlayer,yardAction,yardResult]};
-const defaults=viewDefaults;
 S.today=today;
 const memory={};
 let req=0, menu=null, lastDialog=null, resizeTimer, dateHash=location.hash, playArchive={};
+let liveTimer, modelTimer, polling=0, scoreBoard, homeDay, slateDay;
 const isMulti=id=>['endzone','ice','hat','crease'].includes(id);
 const isModel=id=>/-models$/.test(id);
 // Path below the site root, e.g. "up/points.html#x"; "index.html" files map to their folder.
@@ -36,6 +37,8 @@ function header(){
 function render(options={}){
   if(!S.route)return;
   const main=$('#main'),row=main.querySelector('.matchup-row'),scroll=row?.scrollLeft||0;
+  const position=options.refresh&&[window.scrollX,window.scrollY];
+  const tables=options.refresh&&[...main.querySelectorAll('.tablewrap')].map(el=>[el.scrollLeft,el.scrollTop]);
   const active=document.activeElement,focus=active?.dataset?.field==='search'?[active.selectionStart,active.selectionEnd]:null;
   if(S.error)main.innerHTML=box('',empty(S.error)+tools(btn('Try again','retry','')));
   else if(!S.loaded)main.innerHTML=box('',empty(S.route.id==='home'?'Loading today’s slates…':'Loading the slate…'));
@@ -47,6 +50,10 @@ function render(options={}){
   if(next){next.scrollLeft=scroll;if(options.scrollGame)next.querySelector('.game.on')?.scrollIntoView({block:'nearest',inline:'nearest'});}
   if(focus){const input=main.querySelector('[data-field=search]');input?.focus({preventScroll:true});try{input?.setSelectionRange(...focus);}catch{}}
   footer();
+  if(position){
+    main.querySelectorAll('.tablewrap').forEach((el,i)=>{if(tables[i])el.scrollTo(...tables[i]);});
+    window.scrollTo({left:position[0],top:position[1],behavior:'instant'});
+  }
 }
 function routeTo(p,replace=false){
   if(p!==location.pathname+location.hash){history[replace?'replaceState':'pushState'](null,'',p);}
@@ -67,17 +74,17 @@ async function dataFor(s,y){
   else promise=Promise.all([get(dataURL('nhl-'+iceTag+'.json'),{}),get(dataURL('nhl-shots-'+iceTag+'.json'),{})]).then(([x,shots])=>({...x,shots}));
   memory[tag]=promise;return promise;
 }
-// Hourly snapshots published with the site. If a day was not captured, NBA falls back to ESPN in the browser and NHL to the season archive.
 async function slateFor(s,d){
-  const saved=await get(dataURL('live/slate-'+s+'-'+d+'.json'),null);
+  const saved=await liveSlate(s,d);
   if(saved)return saved;
   if(s==='nba')return get(`${ESPN}/${sportPath.nba}/scoreboard?dates=${d.replaceAll('-','')}`,null).then(j=>j&&scoreboard(j,'nba'));
   return null;
 }
-const injuriesFor=s=>get(dataURL('live/injuries-'+s+'.json'),null).then(x=>x??get(`${ESPN}/${sportPath[s]}/injuries`,{}).then(compactInjuries).catch(()=>({})));
-const oddsFor=(s,d)=>get(dataURL('live/odds-'+s+(s==='nfl'?'':'-'+d)+'.json'),[]);
+const injuriesFor=s=>liveGet('/injuries/'+s,'live/injuries-'+s+'.json',null).then(x=>x??get(`${ESPN}/${sportPath[s]}/injuries`,{}).then(compactInjuries).catch(()=>({})));
+const lineupsFor=d=>liveGet('/nhl/lineups/'+d,'live/nhl-lineups-'+d+'.json',null,x=>x&&Object.keys(x).length>0);
 const savedGames={};
 function start(){
+  stopPolling();scoreBoard=null;
   S.route=route();S.sort=null;S.error=null;
   S.f=viewSetup(S.route,location.hash);S.game=null;S.games=[];
   S.loaded=false;
@@ -85,13 +92,16 @@ function start(){
   document.documentElement.dataset.sport=S.route.sport;
   const sec=sections[S.route.sport];
   document.title=S.route.id==='home'?'GOING':(sec?sec.name:'GOING')+' · '+S.route.title;
+  if(S.route.id==='home')homeReset();
+  slateDay=dateKey();
   header();render();load();
 }
 async function load(){
+  stopPolling();
   const token=++req,{sport:s,id}=S.route;
   if(id==='home'){
-    try{await homeLoad();}catch(e){console.error(e);}
-    if(token!==req)return;S.loaded=true;render();return;
+    const data=await homeLoad();
+    if(token!==req)return;homeDay=data.live.day;homeApply(data);S.loaded=true;render();poll();return;
   }
   if(id==='tracker'){
     try{await trackerLoad();if(token!==req)return;S.loaded=true;render();}
@@ -109,7 +119,12 @@ async function load(){
     playArchive=Object.fromEntries(loadSports);render();return;
   }
   if(isModel(id)){
-    try{await modelLoad(s);if(token!==req)return;S.loaded=true;render();}
+    try{
+      const [feed,board]=await Promise.all([liveModels(s),liveScores(s)]);
+      if(token!==req)return;
+      scoreBoard=board;modelLoad(s,feed);applyScores(s);
+      S.loaded=true;render();poll();
+    }
     catch(e){if(token!==req)return;S.error='The model feed could not load. Try again in a moment.';console.error(e);render();}
     return;
   }
@@ -130,13 +145,12 @@ async function load(){
   }
   try{
     const d=S.day,year=s==='nfl'?S.year:seasonFor(s,d);
-    const [data,dayGames,injuries,odds,lineups]=await Promise.all([dataFor(s,year),
+    const [data,dayGames,injuries,odds,lineups,board]=await Promise.all([dataFor(s,year),
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
-      injuriesFor(s),oddsFor(s,d),
-      s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{}]);
+      injuriesFor(s),liveOdds(s,d),s==='nhl'?lineupsFor(d):null,s==='nfl'?liveScores(s):null]);
     if(token!==req)return;
     if(s==='nba')S.hoops=year;if(s==='nhl')S.ice=year;
-    S.data=data;S.odds=odds;S.injuries=injuries;S.lineups=lineups;
+    S.data=data;S.odds=odds||[];S.injuries=injuries;S.lineups=lineups||{};
     if(s==='nfl'){
       const sched=data.schedule?.filter(g=>+g.id.slice(0,4)===S.year)||[];
       S.week??=sched.find(g=>g.date>=today)?.week??sched.at(-1)?.week??1;
@@ -155,12 +169,86 @@ async function load(){
       }else S.f.multi=S.games.map(g=>g.id);
       S.f.teamFilter=null;
     }
-    if(id==='nba-props'&&odds.length&&odds.some(x=>S.route.title==='All Props'||x.market===(S.route.title==='Assist Spots'?'Assists':S.route.title)))S.f.pricing='With A Line';
+    scoreBoard=board;applyScores(s);
+    if(id==='nba-props'&&S.odds.some(x=>S.route.title==='All Props'||x.market===(S.route.title==='Assist Spots'?'Assists':S.route.title)))S.f.pricing='With A Line';
     S.loaded=true;
     render();
     loadLineStats();
+    poll();
   }catch(e){if(token!==req)return;S.error='The public data could not load. Check your connection and try again.';console.error(e);render();}
 }
+function applyScores(s){
+  S.games=withScores(s,S.games,scoreBoard);
+  if(S.game)S.game=S.games.find(g=>g.id===S.game.id)||S.game;
+}
+function stopPolling(){
+  polling++;clearTimeout(liveTimer);clearTimeout(modelTimer);
+}
+function poll(immediate=false){
+  stopPolling();
+  if(document.hidden||!S.loaded||S.error)return;
+  const {id,sport}=S.route;
+  if(id!=='home'&&!Object.hasOwn(sportPath,sport))return;
+  const generation=polling, current=()=>generation===polling&&!document.hidden;
+  // Check the last slate before polling, so a scheduled kickoff can start updates.
+  const schedule=(refresh,delay,setTimer)=>{
+    const tick=async()=>{
+      try{await refresh(current);}catch{}
+      if(current())setTimer(setTimeout(tick,delay()));
+    };
+    setTimer(setTimeout(tick,immediate?0:delay()));
+  };
+  schedule(refreshLive,()=>60000,id=>liveTimer=id);
+  // Poll just after a model cache boundary so an open page sees changes on its next poll.
+  if(id==='home'||isModel(id)){
+    const offset=500+Math.random()*1500;
+    schedule(refreshModels,()=>120000-Date.now()%120000+offset,id=>modelTimer=id);
+  }
+}
+async function refreshLive(current){
+  const {id,sport:s}=S.route;
+  if(id==='home'){
+    const active=homeActive();
+    if(!active.length&&dateKey()===homeDay)return;
+    const data=await homeLive(dateKey()===homeDay?active:undefined);
+    if(current()){homeDay=data.day;homeApply({live:data});render({refresh:true});}
+    return;
+  }
+  const model=isModel(id),day=dateKey(),rolling=!model&&s!=='nfl'&&S.day===slateDay&&day!==slateDay;
+  if(!rolling&&!gamesOn(S.games))return;
+  const d=rolling?day:S.day,g=S.game;
+  const [games,board,odds,lineups,lines]=await Promise.all([
+    !model&&s!=='nfl'?slateFor(s,d).catch(()=>null):null,
+    model||s==='nfl'?liveScores(s):null,
+    model?null:liveOdds(s,d),
+    !model&&s==='nhl'?lineupsFor(d):null,
+    id==='nhl-lines'&&g?lineStatsFor(d,g):null
+  ]);
+  if(!current())return;
+  if(games){
+    S.games=games;
+    if(rolling){S.day=d;slateDay=d;}
+    if(S.game&&!games.some(g=>g.id===S.game.id))S.game=null;
+  }
+  if(board)scoreBoard=board;
+  applyScores(s);
+  if(odds)S.odds=odds;
+  if(lineups)S.lineups=lineups;
+  if(lines&&S.game?.id===g.id)S.lineStats=lines;
+  render({refresh:true});
+}
+async function refreshModels(current){
+  const {id,sport}=S.route;
+  const feed=await liveModels(id==='home'?'summary':sport,null);
+  if(!feed||!current())return;
+  if(id==='home')homeApply({models:feed});
+  else{
+    if((feed.generated_at||'')<(S.model?.generated_at||''))return;
+    modelLoad(sport,feed);applyScores(sport);
+  }
+  render({refresh:true});
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopPolling();else poll(true);});
 function chooseGame(g,scroll=false){
   if(!g)return;
   // GOING YARD: a game filters the page; tapping the same game again shows every game.
@@ -177,11 +265,12 @@ function loadLineStats(){
   if(S.route.id!=='nhl-lines'||!S.game)return;
   const g=S.game,token=req,d=S.day;
   S.lineStats={};
-  get(dataURL('live/nhl-lines-'+d+'-'+g.a+'-'+g.h+'.json'),{}).then(x=>{
-    if(token!==req||S.game!==g)return;
-    S.lineStats=x;render();
+  lineStatsFor(d,g).then(x=>{
+    if(token!==req||S.game?.id!==g.id)return;
+    S.lineStats=x||{};render();
   });
 }
+const lineStatsFor=(d,g)=>liveGet(null,'live/nhl-lines-'+d+'-'+g.a+'-'+g.h+'.json',null);
 function updateField(k,v){
   if(k==='date'){
     if(v&&v!==S.day){S.day=v;S.f.gameFilter='All games';S.sort=null;load();}
@@ -201,7 +290,7 @@ function updateField(k,v){
   render();
 }
 function changePeriod(n){
-  if(isModel(S.route.id)){if(modelStep(n))render();return;}
+  if(isModel(S.route.id)){if(modelStep(n)){applyScores(S.route.sport);render();}return;}
   if(S.route.sport==='nfl'){
     const list=[...new Set((S.data.schedule||[]).filter(g=>+g.id.slice(0,4)===S.year).map(g=>g.week))].sort((a,b)=>a-b);
     const next=list[list.indexOf(S.week)+n];if(next==null)return;
@@ -352,7 +441,7 @@ document.addEventListener('change',e=>{
   if(S.route.sport==='mlb'){const r=yardInput(t);if(r){if(r!=='keep')render();return;}}
   if(t.dataset.yardPrice){setPrice(t.dataset.yardPrice,t.value);render();return;}
   if(S.route.sport==='mlb'&&k&&yardField(k,t.value)){render();return;}
-  if(isModel(S.route.id)&&k&&modelAction('field',k+':'+t.value)){render();return;}
+  if(isModel(S.route.id)&&k&&modelAction('field',k+':'+t.value)){applyScores(S.route.sport);render();return;}
   if(k&&!['notes','search'].includes(k))updateField(k,t.value);
 });
 // Pages that change after an async fetch (box-score grading, backup restore) ask for a redraw.

@@ -1,6 +1,6 @@
 // Ensemble model views for GOING LONG (NFL lab feed) and GOING UP (NBA Game Center export).
 // Both feeds are published from the local labs by publishers/publish_models.py; nothing here is computed from betting prices.
-import {current as S,esc,box,grid,metric,logo,team,teamName,teamBanner,table,cell,info,empty,slate,hero,badge,get,dataURL,dateKey,dateLabel,today,round,pct,tools} from './ui.mjs';
+import {current as S,esc,box,grid,metric,logo,team,teamName,teamBanner,table,cell,info,empty,slate,hero,badge,dateKey,dateLabel,today,round,pct,tools} from './ui.mjs';
 import {signed,heat} from './math.mjs';
 
 const ago=iso=>{
@@ -13,8 +13,8 @@ const winPct=(p,t)=>`${logo(t)} ${esc(t)} ${pct(p)}`;
 const favored=(p,home,away)=>p>=.5?[home,p]:[away,1-p];
 const verdict=(pick,winner)=>winner==null?cell('—','none'):pick===winner?cell('Right','good heat'):cell('Wrong','bad heat');
 
-export async function modelLoad(s){
-  const feed=await get(dataURL('models/'+s+'.json'));
+export function modelLoad(s,feed){
+  const selected=S.game?.id;
   S.model=feed;S.data={};S.injuries={};S.odds=[];
   if(s==='nfl'){
     const weeks=[...new Set(feed.games.map(g=>g.season*100+g.week))].sort((a,b)=>a-b);
@@ -28,6 +28,7 @@ export async function modelLoad(s){
     const pick=dates.includes(S.mday)?S.mday:dates.includes(today)?today:dates.find(d=>d>=today)||dates.at(-1);
     S.mday=pick;nbaGames();
   }
+  S.game=S.games.find(g=>g.id===selected)||S.game;
 }
 export function modelStep(n){
   if(S.route.sport==='nfl'){const w=S.mweeks[S.mweeks.indexOf(S.mweek)+n];if(w==null)return false;S.mweek=w;nflGames();}
