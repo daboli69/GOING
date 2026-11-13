@@ -2,7 +2,7 @@ import {nbaPropTabs,href} from './config.mjs';
 import {total,mean,round,pct,div,rate,heat,signed,seasonLimit,distanceZone,nbaType,leaderShares} from './math.mjs';
 import {current as S,esc,box,plain,grid,card,metric,logo,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,person,market,basePlay,propOdds,gameDay,gamesFor,final,dialog,badge,action,local,keep,et} from './ui.mjs';
 import {parlayPage,parlayAction} from './nba-parlays.mjs';
-import {openingTables,teamFirst,shotTables,makeEdge,earlyShares,blendShare,scorerShares,fairChances,impliedChance,americanFrom,roundRobin} from './first-basket.mjs';
+import {openingTables,teamFirst,shotTables,makeEdge,earlyShares,blendShare,scorerShares,fairChances,impliedChance,americanFrom,roundRobin,regression,convictionTier} from './first-basket.mjs';
 import {propQuotes} from './ui.mjs';
 import {allowedRanks,markets} from './nba-parlay-engine.mjs';
 
@@ -354,14 +354,18 @@ export function firstBasketBoard(){
         const fta=total(l,r=>r[12]), ftm=total(l,r=>r[6]-2*r[15]-r[7]), ftPct=(ftm+20*.78)/(fta+20);
         const edge=makeEdge(sh.players[p.id]||[],opp,shotT);
         return {id:p.id,share:blendShare(early[p.id]||{},usage),usage,make:shotT.early*edge,edge,
-          ftShare:att?.44*fta/att:.15,ftScore:1-(1-ftPct)**2,parts:early[p.id]||{}};
+          ftShare:att?.44*fta/att:.15,ftScore:1-(1-ftPct)**2,ftPct,parts:early[p.id]||{}};
       });
       const given=scorerShares(cands,shotT.early);
       side[t]={opp,out,bench:given.bench,starters:starters.map(({p,status,lastStarted},i)=>{
         const c=cands[i], s=given.players[p.id];
         return {p,status,lastStarted,team:t,opp,game:g,teamFirst:tf.first[t],share:s.share,given:s.given,prob:tf.first[t]*s.given,
-          usage:c.usage,edge:c.edge,ftShare:c.ftShare,early:c.parts.early,firstShot:c.parts.firstShot,games:c.parts.games||0};
+          usage:c.usage,edge:c.edge,ftShare:c.ftShare,ftPct:c.ftPct,early:c.parts.early,firstShot:c.parts.firstShot,games:c.parts.games||0,
+          firstShots:c.parts.firstShots||0,teamFirstCount:c.parts.teamFirst||0,gameFirst:c.parts.gameFirst||0,regression:regression(c.parts),tf};
       })};
+      // Rank each starter's early share within his team, for the reasons.
+      const order=[...side[t].starters].sort((a,b)=>(b.early??-1)-(a.early??-1));
+      for(const r of side[t].starters)r.earlyRank=order.indexOf(r)+1;
     }
     const rows=[g.a,g.h].flatMap(t=>side[t].starters);
     games.push({g,tf,side,rows,sum:rows.reduce((a,r)=>a+r.prob,0),opening});
@@ -369,45 +373,99 @@ export function firstBasketBoard(){
   m.fb={games,rows:games.flatMap(x=>x.rows),league:opening.league,early:shotT.early};m.fbKey=key;m.fbInjuries=S.injuries;
   return m.fb;
 }
-function firstBasketView(){
+// Every starter's price check, conviction and written reasons, shared by the board, the suggestions and the Why dialog.
+function fbAnalysis(){
   const board=firstBasketBoard(), f=S.f, prices=fbPrices(), hold=(+f.fbHold||30)/100, minEdge=(+f.fbMinEdge||0)/100, ratio=+f.fbRatio||1;
-  if(!board.rows.length)return box('First Basket Board · Whole Slate',empty('No games on this slate.'));
   const kalshi=r=>propQuotes(r.p,'First Basket',S.odds)[0]?.over;
   const priceOf=r=>prices[r.p.id]??kalshi(r)??'';
   const fair={};
   for(const x of board.games)Object.assign(fair,fairChances(Object.fromEntries(x.rows.map(r=>[r.p.id,priceOf(r)]).filter(([,v])=>v!=='')),hold).fair);
-  const verdict=r=>{const fc=fair[r.p.id];if(fc==null)return null;const e=r.prob-fc;return {fair:fc,edge:e,play:e>=minEdge&&r.prob>=ratio*fc};};
-  const rows=[...board.rows].sort((a,b)=>b.prob-a.prob), shown=f.fbShow==='All starters'?rows:rows.slice(0,30);
-  const plays=rows.map(r=>({r,v:verdict(r)})).filter(x=>x.v?.play).map(x=>({...x,edge:x.v.edge,game:x.r.game.id}));
+  const ranked=[...board.rows].sort((a,b)=>b.prob-a.prob);
+  const rows=ranked.map((r,i)=>{
+    const fc=fair[r.p.id], v=fc==null?null:{fair:fc,edge:r.prob-fc,ratio:r.prob/fc,play:r.prob-fc>=minEdge&&r.prob>=ratio*fc,price:priceOf(r)};
+    const reasons=[], add=(w,text)=>reasons.push({w,text});
+    const t=r.team, o=r.opp, tf=r.tf, [tw,tn]=tf.tipRecord[t], pos=tf.pos[t];
+    const tipMine=t===r.game.a?tf.tip:1-tf.tip;
+    add(r.teamFirst>=.55?1:r.teamFirst<=.42?-1:0,`${t} scores first ${pct(r.teamFirst,0)}: wins the tip ${pct(tipMine,0)} (${tw} of ${tn} tips, pulled toward 50%), scores on ${pct(pos.pOff,0)} of opening possessions and ${o} allows ${pct(pos.pAllow,0)} (matchup ${pct(pos.p,0)} per possession).`);
+    if(r.early!=null)add(r.early>=.27||r.earlyRank===1?1:r.early<.15?-1:0,`Takes ${pct(r.early,0)} of ${t}'s attempts in its first 8 possessions over ${r.games} starts${r.earlyRank===1?' (team high)':', '+['','1st','2nd','3rd','4th','5th'][r.earlyRank]+' on the team'}. With his ${pct(r.usage,0)} usage, that makes him the scorer in ${pct(r.given,0)} of the times ${t} scores first.`);
+    else add(-1,`No early-possession starts yet; his share leans on season usage (${pct(r.usage,0)}).`);
+    if(r.games)add(r.firstShot>=.3?1:0,`Took ${t}'s first shot in ${r.firstShots} of ${r.games} starts (${pct(r.firstShot,0)}).`);
+    if(r.edge>=1.05)add(1,`Shot-type edge: his early shot mix converts about ${pct(r.edge-1,0)} better than average against ${o} (his makes and ${o}'s allowed rate by shot type, shrunk hard).`);
+    else if(r.edge<=.95)add(-1,`Shot-type drag: his early shot mix converts about ${pct(1-r.edge,0)} worse than average against ${o}.`);
+    if(r.ftShare>=.22)add(r.ftShare>=.28?1:0,`Draws fouls: ${pct(r.ftShare,0)} of his attempts are free-throw trips (${pct(r.ftPct,0)} at the line), and free throws count as the first basket.`);
+    const g=r.regression;
+    if(g?.kind==='positive')add(1,`Positive regression: scored ${t}'s first points ${g.actual} times in ${r.games} starts, but his shot volume says ${round(g.expected,1)}. He keeps getting the early looks (${r.firstShots} first shots); the makes should come, and a price built on recent first baskets may underrate him.`);
+    else if(g?.kind==='negative')add(-1,`Negative regression: scored ${t}'s first points ${g.actual} times in ${r.games} starts against ${round(g.expected,1)} expected from his volume${r.firstShots<g.actual?', with only '+r.firstShots+' first shots':''}. Results ran hot; expect fewer, and watch for a price that chases them.`);
+    else if(g&&r.games>=5)add(0,`Results track volume: ${g.actual} team-first scores against ${round(g.expected,1)} expected.`);
+    if(r.games&&r.games<4)add(-1,`Small sample: ${r.games} starts of early-possession data.`);
+    if(r.status)add(-1,`${r.status} on the injury report: confirm he starts before betting.`);
+    if(!r.lastStarted)add(-1,'Projected starter who did not start the last game: confirm the lineup.');
+    if(i<5)add(1,`Model ${pct(r.prob,1)}, ${['1st','2nd','3rd','4th','5th'][i]} on the slate (fair odds ${americanFrom(r.prob)}).`);
+    if(v)add(v.play?2:-2,v.play?`Priced ${v.price}: ${pct(v.fair,1)} after removing the vig, against the model's ${pct(r.prob,1)}. Edge ${pct(v.edge,1)} at ${round(v.ratio,2)}× the price.`:
+      `Priced ${v.price}: ${pct(v.fair,1)} after removing the vig against the model's ${pct(r.prob,1)}. ${v.edge<minEdge?'Edge under '+pct(minEdge,1):'Ratio '+round(v.ratio,2)+'× is under '+ratio+'×'}, so no play at this price.`);
+    const score=reasons.reduce((a,x)=>a+x.w,0);
+    const tier=convictionTier(score,!!v,v?.play)||(r.prob>=.1&&!v&&score>=4?'Lean':null);
+    return {r,v,reasons,score,tier:r.prob<.08?null:tier,rank:i+1};
+  });
+  return {board,rows,priceOf};
+}
+const fbReasonList=reasons=>`<ul class="fb-reasons">${reasons.map(x=>`<li class="${x.w>0?'good':x.w<0?'bad':''}">${x.w>0?'▲':x.w<0?'▼':'•'} ${esc(x.text)}</li>`).join('')}</ul>`;
+function fbWhy(id){
+  const a=fbAnalysis().rows.find(x=>x.r.p.id===id);if(!a)return;
+  dialog(a.r.p.name+' · first basket',`<p class="subtle">${esc(a.r.team+' vs '+a.r.opp+' · '+et(a.r.game)+' ET')} · Model ${pct(a.r.prob,1)} · Conviction ${a.score>0?'+':''}${a.score}${a.tier?' · '+a.tier:''}</p>`+fbReasonList(a.reasons));
+}
+function firstBasketView(){
+  const {board,rows,priceOf}=fbAnalysis(), f=S.f;
+  if(!board.rows.length)return box('First Basket Board · Whole Slate',empty('No games on this slate.'));
+  const shown=f.fbShow==='All starters'?rows:rows.slice(0,30);
+  const regBadge=g=>g?.kind==='positive'?' '+badge('↑ Positive regression','g'):g?.kind==='negative'?' '+badge('↓ Negative regression','r'):'';
+  const nameCell=r=>cell(person(r.p).html+(r.status?' '+badge(r.status,'r'):'')+(!r.lastStarted?' '+badge('Fill-in starter'):'')+regBadge(r.regression),'player-cell');
+  const board1=table(['#','Player','Game','Team 1st','Share if team 1st','First basket','Fair odds','Price','No-vig','Edge','Conviction',''],shown.map(({r,v,score,tier},i)=>[
+    i+1,nameCell(r),esc(r.game.a+' @ '+r.game.h+' · '+et(r.game)),pct(r.teamFirst,1),pct(r.given,1),cell(pct(r.prob,1),heat(r.prob,.08,.04)),
+    esc(americanFrom(r.prob)),`<input class="fb-price" type="text" inputmode="numeric" placeholder="+600" aria-label="Price for ${esc(r.p.name)}" data-fb-price="${esc(r.p.id)}" value="${esc(priceOf(r))}">`,
+    v?pct(v.fair,1):'—',v?cell((v.edge>=0?'+':'')+pct(v.edge,1),heat(v.edge,0,.03)):'—',
+    cell((score>0?'+':'')+score+(tier?' '+badge(tier,tier==='Strong'?'g':''):''),score>=4?'good heat':score<=0?'bad heat':''),
+    btn('Why','fbWhy',r.p.id,'outline')+btn('Scratch','fbOut',r.p.id,'outline')]),{wrap:'box',cls:'compact'});
+  const out=board.games.flatMap(x=>Object.values(x.side).flatMap(s=>s.out));
+  const scratchedList=fbScratched();
+  const scratched=out.map(o=>btn(esc(o.p.name+' · '+(o.status||'out'))+(scratchedList.includes(o.p.id)?' ×':''),scratchedList.includes(o.p.id)?'fbOut':'noop',o.p.id,'outline')).join('');
+  // Suggestions: every starter whose signals line up, several per game allowed.
+  const picks=rows.filter(x=>x.tier).sort((a,b)=>(b.v?.edge??-1)-(a.v?.edge??-1)||b.score-a.score||b.r.prob-a.r.prob);
+  const byGame=new Map();for(const x of picks){const l=byGame.get(x.r.game.id)||[];l.push(x);byGame.set(x.r.game.id,l);}
+  const suggestions=picks.length?grid(1,picks.map(x=>{
+    const mates=(byGame.get(x.r.game.id)||[]).filter(y=>y!==x).map(y=>y.r.p.name);
+    return card(`${esc(x.r.p.name)} · ${esc(x.r.team)} ${badge(x.tier,x.tier==='Strong'?'g':'')} <span class="subtle">${pct(x.r.prob,1)} · fair ${americanFrom(x.r.prob)}${x.v?' · priced '+esc(x.v.price)+' · edge '+pct(x.v.edge,1):' · add a price to confirm'}</span>`,
+      fbReasonList(x.reasons.filter(y=>y.w!==0||y.text.startsWith(x.r.team+' scores first')))+
+      (mates.length?`<p class="subtle">Also suggested from this game: ${esc(mates.join(', '))}. Only one player can score first, so take them as separate singles; they never belong on the same round-robin ticket.</p>`:''));
+  })):empty('No starter has enough signals lined up yet. Enter prices to test the edge, or check back after lineups post.');
+  const watch=rows.filter(x=>x.r.regression?.kind).sort((a,b)=>a.r.regression.diff-b.r.regression.diff);
+  const regression=watch.length?table(['Player','Game','Starts','First shots','Scored team-first','Expected from volume','Difference','Read'],watch.map(({r})=>[
+    nameCell(r),esc(r.game.a+' @ '+r.game.h),r.games,r.firstShots,r.regression.actual,round(r.regression.expected,1),(r.regression.diff>0?'+':'')+round(r.regression.diff,1),
+    r.regression.kind==='positive'?badge('Due: positive regression','g'):badge('Fade: negative regression','r')]),{wrap:'box',cls:'compact'}):empty('No starter on this slate is far enough from his expected count to flag yet.');
+  const plays=rows.filter(x=>x.v?.play&&x.tier).map(x=>({r:x.r,edge:x.v.edge,game:x.r.game.id}));
   const rr=roundRobin(plays,Math.max(2,Math.min(8,+f.fbRR||3)),Math.max(2,Math.min(4,+f.fbBy||2)));
-  const nameCell=r=>cell(person(r.p).html+(r.status?' '+badge(r.status,'r'):'')+(!r.lastStarted?' '+badge('Fill-in starter'):''),'player-cell');
-  const board1=table(['#','Player','Game','Team 1st','Share if team 1st','First basket','Fair odds','Price','No-vig','Edge','Call',''],shown.map((r,i)=>{
-    const v=verdict(r);
-    return [i+1,nameCell(r),esc(r.game.a+' @ '+r.game.h+' · '+et(r.game)),pct(r.teamFirst,1),pct(r.given,1),cell(pct(r.prob,1),heat(r.prob,.08,.04)),
-      esc(americanFrom(r.prob)),`<input class="fb-price" type="text" inputmode="numeric" placeholder="+600" aria-label="Price for ${esc(r.p.name)}" data-fb-price="${esc(r.p.id)}" value="${esc(priceOf(r))}">`,
-      v?pct(v.fair,1):'—',v?cell((v.edge>=0?'+':'')+pct(v.edge,1),heat(v.edge,0,.03)):'—',v?badge(v.play?'Play':'Skip',v.play?'g':''):'—',btn('Scratch','fbOut',r.p.id,'outline')];
-  }),{wrap:'box',cls:'compact'});
-  const scratched=board.games.flatMap(x=>Object.values(x.side).flatMap(s=>s.out)).map(o=>btn(esc(o.p.name+' · '+(o.status||'out'))+(fbScratched().includes(o.p.id)?' ×':''),fbScratched().includes(o.p.id)?'fbOut':'noop',o.p.id,'outline')).join('');
+  const rrBody=rr.picks.length<2?empty('Fewer than two priced suggestions clear the edge filters. Enter prices to compare, or lower the minimum edge.'):
+    `<p class="subtle">Top ${rr.picks.length} priced suggestions by edge, by ${f.fbBy||2}s: ${rr.combos.length} tickets.${rr.skipped?` ${rr.skipped} combination${rr.skipped>1?'s':''} with two players from the same game ${rr.skipped>1?'were':'was'} skipped, since only one can score first.`:''} Each ticket pays only if every player in it scores first in his game.</p>`+
+    (rr.combos.length?table(['Ticket','Players','Model chance','Price (combined)'],rr.combos.map((c,i)=>{
+      const p=c.reduce((a,x)=>a*x.r.prob,1), q=c.reduce((a,x)=>a*impliedChance(priceOf(x.r)),1);
+      return [i+1,esc(c.map(x=>x.r.p.name).join(' + ')),pct(p,2),esc(americanFrom(q))];
+    }),{wrap:'box',cls:'compact'}):empty('Every combination pairs two players from the same game. Add plays from other games.'));
   const checks=table(['Game','Tip','Score per possession','Team scores first','Starters total',''],board.games.map(x=>{
     const {g,tf}=x, ok=x.sum>=.9&&x.sum<=1.001;
     return [esc(g.a+' @ '+g.h),esc(g.a+' '+pct(tf.tip,0)+' ('+tf.tipRecord[g.a].join('/')+' tips) · '+g.h+' '+pct(1-tf.tip,0)+' ('+tf.tipRecord[g.h].join('/')+')'),
       esc(g.a+' '+pct(tf.pos[g.a].p,0)+' · '+g.h+' '+pct(tf.pos[g.h].p,0)),esc(g.a+' '+pct(tf.first[g.a],1)+' · '+g.h+' '+pct(tf.first[g.h],1)),
       cell(pct(x.sum,1),ok?'good heat':'bad heat'),ok?'':badge('Check model','r')];
   }),{wrap:'box',cls:'compact'});
-  const rrBody=rr.picks.length<2?empty('Fewer than two plays clear the edge filters. Enter prices to compare, or lower the minimum edge.'):
-    `<p class="subtle">${rr.picks.length} plays, one per game, by ${rr.combos[0].length}s: ${rr.combos.length} tickets. Each ticket pays only if every player in it scores first in his game.</p>`+
-    table(['Ticket','Players','Model chance','Price (combined)'],rr.combos.map((c,i)=>{
-      const p=c.reduce((a,x)=>a*x.r.prob,1), q=c.reduce((a,x)=>a*impliedChance(priceOf(x.r)),1);
-      return [i+1,esc(c.map(x=>x.r.p.name).join(' + ')),pct(p,2),esc(americanFrom(q))];
-    }),{wrap:'box',cls:'compact'});
   return box('First Basket Board · Whole Slate',
-    `<p class="subtle">P(first basket) = P(team scores first) × P(he scores | team scores first). Team: tip rate shrunk toward 50%, then alternating possessions scored at each team's opening-possession rate against what the opponent allows (league ${pct(board.league,0)}). Player: share of the team's attempts in its first 8 possessions, blended with first-shot share and shrunk toward usage, times a ${pct(board.early,0)} early make rate adjusted only for a real shot-type edge, plus free throws. Free throws count as the first basket.</p>`+
+    `<p class="subtle">P(first basket) = P(team scores first) × P(he scores | team scores first). Team: tip rate shrunk toward 50%, then alternating possessions scored at each team's opening-possession rate against what the opponent allows (league ${pct(board.league,0)}). Player: share of the team's attempts in its first 8 possessions, blended with first-shot share and shrunk toward usage, times a ${pct(board.early,0)} early make rate adjusted only for a real shot-type edge, plus free throws. Free throws count as the first basket. Conviction adds the signals for a player (▲) and subtracts those against (▼); tap Why on any row for the full reasoning.</p>`+
     tools(select('Show','fbShow',['Top 30','All starters'])+`<label class="field">Min. edge (pts) <input type="number" min="0" max="20" step=".5" data-field="fbMinEdge" value="${esc(f.fbMinEdge)}"></label>`+
       `<label class="field">Min. ratio <input type="number" min="1" max="3" step=".05" data-field="fbRatio" value="${esc(f.fbRatio)}"></label>`+
       `<label class="field">Hold for partial boards % <input type="number" min="0" max="80" step="1" data-field="fbHold" value="${esc(f.fbHold)}"></label>`)+
     (scratched?tools('<span class="subtle">Out or scratched:</span>'+scratched):'')+board1+
-    `<p class="subtle">Type your sportsbook price for any player (Kalshi prices fill in when Kalshi lists this market). No-vig: a full board is normalized to 100%; a partial board is divided by the hold above. A play needs the edge and the ratio (model ÷ no-vig) both. Starters are projected from the last game and the injury report; scratch anyone ruled out when lineups post and the board re-runs.</p>`,
+    `<p class="subtle">Type your sportsbook price for any player (Kalshi prices fill in when Kalshi lists this market). No-vig: a full board is normalized to 100%; a partial board is divided by the hold above. Starters are projected from the last game and the injury report; scratch anyone ruled out when lineups post and the board re-runs.</p>`,
     'Your prices are saved in this browser for this date. First basket is a hard market: even good picks hit single digits to low double digits per leg, so size it as a small side bet.')+
+  box('Suggested Plays',`<p class="subtle">Every starter whose signals line up: Strong at +5 conviction or more, Lean at +3 with a priced edge (+4 before a price is entered), and at least an 8% model chance. Several players from one game can qualify; each is a separate single.</p>`+suggestions)+
+  box('Regression Watch',`<p class="subtle">Scored his team's first points well below what his share of early attempts predicts (due for positive regression), or well above it (negative regression, a fade candidate). Flags need a gap of at least 1.5 scores and one standard deviation.</p>`+regression)+
   box('Round Robin',tools(`<label class="field">Plays <input type="number" min="2" max="8" data-field="fbRR" value="${esc(f.fbRR)}"></label>`+select('By','fbBy',[['2','2s'],['3','3s'],['4','4s']]))+rrBody)+
   box('Model Check',checks+'<p class="subtle">Across a game\'s ten starters the first-basket chances should total about 95–100% (the bench takes the rest). A total outside 90–100% means a starter is missing or a share is off.</p>')+
   fbCalibration();
@@ -481,6 +539,7 @@ export function nbaPlayer(id){
 }
 export function nbaAction(act,v,target){
   if(S.route.id==='nba-parlays'&&act.startsWith('parlay'))return parlayAction(act,v,parlayData(),target);
+  if(act==='fbWhy'){fbWhy(v);return false;}
   if(act==='fbOut'){const list=fbScratched();keep('fb-out:'+S.day,list.includes(v)?list.filter(x=>x!==v):[...list,v]);return true;}
   if(act==='allSummaries'){dialog('All Matchup Summaries',S.games.map(g=>plain(versus(g),getSummary(g,S.f.window||'Season'))).join(''),true);return true;}
   if(act==='history'){dialog('Historical Data',nightly(75),true);return true;}

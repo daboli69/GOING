@@ -90,7 +90,7 @@ export function makeEdge(playerShots,defense,tables){
 export function earlyShares(first,teamCode,starts,beforeDay){
   const out={};
   for(const [id,games] of Object.entries(starts)){
-    let mine=0,all=0,firstShots=0,n=0;
+    let mine=0,all=0,firstShots=0,n=0,teamFirst=0,gameFirst=0;
     for(const gid of games){
       const z=first?.[gid];
       if(!z?.poss||!(z.date<beforeDay))continue;
@@ -99,11 +99,24 @@ export function earlyShares(first,teamCode,starts,beforeDay){
       n++;
       for(const p of own){all+=p[2].length+(p[3]?1:0);mine+=p[2].filter(x=>x===id).length+(p[3]===id?1:0);}
       if(z.by?.[teamCode]?.shot===id)firstShots++;
+      if(z.by?.[teamCode]?.pts===id)teamFirst++;
+      if(z.firstPts===id)gameFirst++;
     }
-    out[id]={games:n,early:all?mine/all:null,firstShot:n?firstShots/n:null};
+    out[id]={games:n,early:all?mine/all:null,firstShot:n?firstShots/n:null,firstShots,teamFirst,gameFirst};
   }
   return out;
 }
+// Regression: how often he actually scored his team's first points, against how often his share of the team's early
+// attempts says he should have (conversion treated as noise, as in the model). Well below: positive regression is due,
+// and a market that chases recent first baskets may underrate him. Well above: results ran hot, so negative regression.
+export function regression({games,early,teamFirst=0}){
+  if(!games||early==null)return null;
+  const expected=games*early, diff=teamFirst-expected, z=diff/Math.sqrt(Math.max(expected*(1-early),.5));
+  return {expected,actual:teamFirst,diff,z,kind:diff<=-1.5&&z<=-1?'positive':diff>=1.5&&z>=1?'negative':null};
+}
+// Conviction: the sum of signal weights (+ for the play, - against). Tiers decide what the board suggests.
+export const convictionTier=(score,priced,play)=>priced?(play&&score>=5?'Strong':play&&score>=3?'Lean':null):(score>=5?'Strong':score>=4?'Lean':null);
+
 // Blend early share and first-shot share, then shrink toward usage by games of sample.
 export function blendShare({games,early,firstShot},usage){
   if(!games||early==null)return usage;
@@ -136,12 +149,15 @@ export function fairChances(prices,hold){
 }
 export const americanFrom=p=>!(p>0&&p<1)?'—':p>=.5?String(-Math.round(100*p/(1-p))):'+'+Math.round(100*(1-p)/p);
 
-// Round robin: the top edges, one player per game, and every pair (or triple) among them.
+// Round robin: the top edges (several from one game allowed) and every pair, triple or more among them. Only one player
+// can score first in a game, so any combination holding two players from the same game is skipped and counted.
 export function roundRobin(plays,size,by=2){
-  const picks=[],games=new Set();
-  for(const p of [...plays].sort((a,b)=>b.edge-a.edge)){if(picks.length>=size)break;if(games.has(p.game))continue;games.add(p.game);picks.push(p);}
-  const combos=[];
-  const walk=(start,cur)=>{if(cur.length===by){combos.push(cur);return;}for(let i=start;i<picks.length;i++)walk(i+1,[...cur,picks[i]]);};
+  const picks=[...plays].sort((a,b)=>b.edge-a.edge).slice(0,size);
+  const combos=[];let skipped=0;
+  const walk=(start,cur)=>{
+    if(cur.length===by){if(new Set(cur.map(x=>x.game)).size<cur.length)skipped++;else combos.push(cur);return;}
+    for(let i=start;i<picks.length;i++)walk(i+1,[...cur,picks[i]]);
+  };
   walk(0,[]);
-  return {picks,combos};
+  return {picks,combos,skipped};
 }

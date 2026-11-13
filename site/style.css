@@ -56,3 +56,4 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 @media(max-width:860px){.site-header{min-height:66px}}
 .game .badge{font-size:9px}.period-label{font-size:18px}.tools .sq.pill{display:inline-grid;place-items:center;padding:0}.panel .section-label{font-weight:700;letter-spacing:.07em}.pill .team-mark{width:19px;height:19px}
 .fb-price{width:5.6em}
+.fb-reasons{margin:4px 0 0;padding-left:0;list-style:none;display:grid;gap:4px}.fb-reasons li{line-height:1.35}.fb-reasons li.good{color:var(--green)}.fb-reasons li.bad{color:var(--red)}
