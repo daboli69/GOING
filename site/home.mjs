@@ -2,16 +2,55 @@
 import {sections,menus,href} from './config.mjs';
 import {esc,get,dataURL,pct,dateLabel,today,sportWordmark} from './ui.mjs';
 
-let summary={};
+let summary={},nextCheck=0,loading=null;
 export async function homeLoad(){
-  const [live,models,yard,college,ufc]=await Promise.all([get(dataURL('live/manifest.json'),{}),get(dataURL('models/summary.json'),{}),get(dataURL('yard/summary.json'),{}),get(dataURL('college/summary.json'),{}),get(dataURL('fights/summary.json'),{})]);
-  summary={live,models,yard,college,ufc};
+  if(loading)return loading;
+  const feeds={live:'live/manifest.json',models:'models/summary.json',yard:'yard/summary.json',
+    college:'college/summary.json',ufc:'fights/summary.json'};
+  nextCheck=(Math.floor(Date.now()/60000)+5)*60000;
+  loading=Promise.all(Object.entries(feeds).map(async ([key,path])=>[key,await get(dataURL(path),null)]))
+    .then(rows=>{
+      const changed=rows.filter(([key,value])=>value&&JSON.stringify(value)!==JSON.stringify(summary[key]));
+      Object.assign(summary,Object.fromEntries(changed));
+      return changed.length>0;
+    }).finally(()=>{loading=null;});
+  return loading;
 }
-const ago=iso=>{
-  if(!iso)return null;
-  const m=Math.round((Date.now()-Date.parse(iso))/60000);
-  return m<2?'just now':m<90?m+' min ago':m<36*60?Math.round(m/60)+' h ago':Math.round(m/1440)+' days ago';
-};
+const eastern={timeZone:'America/New_York'};
+const clockTime=new Intl.DateTimeFormat('en-US',{...eastern,hour:'numeric',minute:'2-digit'});
+const clockDate=new Intl.DateTimeFormat('en-US',{...eastern,month:'short',day:'numeric'});
+const fullDate=new Intl.DateTimeFormat('en-US',{...eastern,year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
+const dayKey=new Intl.DateTimeFormat('en-CA',{...eastern,year:'numeric',month:'2-digit',day:'2-digit'});
+const minutesFormat=new Intl.NumberFormat('en-US');
+const elapsed=(ms,now)=>minutesFormat.format(Math.max(0,Math.floor((now-ms)/60000)))+' min ago';
+const clockLabel=(ms,now)=>(dayKey.format(ms)===dayKey.format(now)?'':clockDate.format(ms)+' · ')+clockTime.format(ms)+' ET';
+const clockIcon='<span class="update-clock-icon" aria-hidden="true"></span>';
+
+function clock(label,iso,now){
+  const ms=Date.parse(iso);
+  const value=Number.isFinite(ms)?
+    `<time datetime="${new Date(ms).toISOString()}" title="${esc(fullDate.format(ms))}" data-update-clock>${esc(clockLabel(ms,now))}</time><span class="update-age">${elapsed(ms,now)}</span>`:
+    '<span class="muted">Timestamp unavailable</span>';
+  return `<div class="update-clock">${clockIcon}<div class="update-clock-body"><span class="update-label">${esc(label)}</span><span class="update-value">${value}</span></div></div>`;
+}
+export function tickHomeClocks(){
+  const now=Date.now();
+  for(const time of document.querySelectorAll('[data-update-clock]')){
+    const ms=Date.parse(time.dateTime);
+    time.textContent=clockLabel(ms,now);
+    time.nextElementSibling.textContent=elapsed(ms,now);
+  }
+  return navigator.onLine&&now>=nextCheck?homeLoad():false;
+}
+
+function updates(s){
+  const slate=summary.live?.updated;
+  if(s==='nba'||s==='nfl')return [['Live snapshot',slate],['Ensemble forecast',summary.models?.[s]?.generated_at]];
+  if(s==='nhl')return [['Live snapshot',slate]];
+  if(s==='mlb')return [['Board generated',summary.yard?.generated_at]];
+  if(s==='ufc')return [['Card snapshot',summary.ufc?.updated]];
+  return [['Schedule checked',summary.college?.[s]?.updated]];
+}
 const fact=(k,v)=>v==null||v===''?'':`<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`;
 const plural=(n,w)=>n+' '+w+(n===1?'':'s');
 const pickLine=p=>p?`${esc(p.team)} ${pct(p.p)} <span class="muted">vs ${esc(p.opp)}</span>`:null;
@@ -38,18 +77,19 @@ function facts(s){
       fact('Heat top 10, season',Y.record?`${pct(Y.record.hr/Y.record.n,1)} <span class="muted">homered (${Y.record.hr} of ${Y.record.n})</span>`:null);
   }
   const C=summary.college?.[s];
-  return C?.available?fact(C.date===today?'Today':dateLabel(C.date,true),plural(C.games,'game'))+fact('Schedule checked',esc(ago(C.updated))):'';
+  return C?.available?fact(C.date===today?'Today':dateLabel(C.date,true),plural(C.games,'game')):'';
 }
 export function homePage(){
+  const now=Date.now();
+  const latest=Math.max(...Object.keys(sections).flatMap(s=>updates(s).map(([,iso])=>Date.parse(iso))).filter(Number.isFinite));
   const doors=Object.entries(sections).map(([s,x])=>{
     const name=sportWordmark(x);
     if(!x.home)return `<article class="door soon" data-door="${s}"><h2 class="door-name">${name}</h2><p class="door-sport">${esc(x.sport)} · ${esc(x.league)}</p><p class="door-soon">Coming soon. Baseball dashboards and models are not built yet.</p></article>`;
     return `<article class="door" data-door="${s}"><h2 class="door-name"><a href="${href(x.home)}">${name}</a></h2><p class="door-sport">${esc(x.sport)} · ${esc(x.league)}</p>`+
-      `<dl class="door-facts">${facts(s)||'<div><dt>Today</dt><dd class="muted">No snapshot yet</dd></div>'}</dl><nav class="door-links" aria-label="${esc(x.name)} shortcuts">${quick[s].map(t=>link(s,t)).join('')}</nav></article>`;
+      `<dl class="door-facts">${facts(s)||'<div><dt>Today</dt><dd class="muted">No snapshot yet</dd></div>'}</dl><nav class="door-links" aria-label="${esc(x.name)} shortcuts">${quick[s].map(t=>link(s,t)).join('')}</nav>`+
+      `<div class="door-updates">${updates(s).map(([label,iso])=>clock(label,iso,now)).join('')}</div></article>`;
   }).join('');
-  const L=summary.live||{},M=summary.models||{};
-  const fresh=[L.updated&&'Slates, injuries and prices '+ago(L.updated),L.archive_updated&&'season archives '+ago(L.archive_updated),
-    M.nfl?.generated_at&&'NFL model '+ago(M.nfl.generated_at),M.nba?.generated_at&&'NBA model '+ago(M.nba.generated_at),summary.yard?.generated_at&&'MLB board '+ago(summary.yard.generated_at)].filter(Boolean);
-  return `<section class="going-intro"><h1 class="going-title"><img class="going-wordmark" src="${href('brand/going-wordmark.svg')}" width="461" height="100" alt="GOING"></h1><p class="lede">Ensemble models and matchup dashboards for basketball, football, hockey, baseball and UFC.</p></section>`+
-    `<div class="doors">${doors}</div><p class="tiny freshness">${fresh.length?'Updated: '+fresh.map(esc).join(' · '):'Update times appear after the first automatic refresh.'}</p>`;
+  const introClock=clock('Last updated',Number.isFinite(latest)?new Date(latest).toISOString():null,now);
+  return `<section class="going-intro"><div><h1 class="going-title"><img class="going-wordmark" src="${href('brand/going-wordmark.svg')}" width="461" height="100" alt="GOING"></h1><p class="lede">Ensemble models and matchup dashboards for basketball, football, hockey, baseball and UFC.</p></div><div class="going-update">${introClock}</div></section>`+
+    `<div class="doors">${doors}</div>`;
 }

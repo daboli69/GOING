@@ -1,7 +1,7 @@
 import {menus,routes,sections,BASE,href,viewDefaults,viewSetup} from './config.mjs';
 import {$,current as S,today,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus,sportWordmark} from './ui.mjs';
 import {ESPN,sportPath,scoreboard,compactInjuries} from './feeds.mjs';
-import {homeLoad,homePage} from './home.mjs';
+import {homeLoad,homePage,tickHomeClocks} from './home.mjs';
 import {isCollege} from './college-core.mjs';
 import {refreshScores} from './live-scores.mjs';
 
@@ -482,10 +482,14 @@ document.addEventListener('going:render',()=>render());
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menu){menu=null;header();}});
 window.addEventListener('popstate',()=>{dateHash=location.hash;start();});
 window.addEventListener('hashchange',()=>{if(dateHash!==location.hash){dateHash=location.hash;start();}});
-// Live scores: once a minute while the tab is visible, and right away when it comes back into view.
+// Update scores and the landing page clocks while the tab is visible.
 async function tickScores(){
   if(document.visibilityState!=='visible'||!S.loaded||S.error||!S.route)return;
   const s=S.route.sport,token=req;
+  if(S.route.id==='home'){
+    if(await tickHomeClocks()&&token===req)render();
+    return;
+  }
   if(s==='ufc'){
     if(['ufc-cards','ufc-forecasts'].includes(S.route.id)&&await M.ufc.refresh(S.data).catch(()=>false)&&token===req)render();
     return;
