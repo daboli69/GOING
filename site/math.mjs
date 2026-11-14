@@ -28,21 +28,6 @@ export function distanceZone(s){
   if(s[6]===3)return Math.abs(s[4]||0)>=21.5&&s[5]<24?'Corner 3':'Above the Break 3';
   return s[5]<=4?'Restricted Area':s[5]<13?'Paint':'Mid-Range';
 }
-export function nbaType(shots){
-  if(!shots.length)return '—';
-  const n=k=>shots.filter(k).length/shots.length;
-  if(n(s=>s[6]===3)>.68)return 'A';
-  if(n(s=>s[8]==='Pull-up'&&s[6]===3)>.24)return 'C';
-  if(n(s=>s[6]===3)>.48)return 'B';
-  if(n(s=>s[8]==='Drive')>.31)return 'D';
-  if(n(s=>['Cut','Lob','Putback'].includes(s[8]))>.24)return 'F';
-  if(n(s=>s[8]==='Hook')>.14)return 'G';
-  if(n(s=>s[8]==='Floater')>.13)return 'H';
-  if(n(s=>s[8]==='Fade')>.14)return 'I';
-  if(n(s=>s[5]>=13&&s[6]!==3)>.35)return 'J';
-  if(n(s=>s[5]<6)>.5)return 'K';
-  return 'E';
-}
 export function leaderShares(players, key, spread, runs=1200){
   if(!players.length)return new Map();
   let seed=11921;
