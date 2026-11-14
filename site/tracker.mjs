@@ -33,7 +33,7 @@ function memberships(){
 }
 const record=s=>`${s.won}-${s.lost}${s.push?'-'+s.push:''}`;
 const unitsText=x=>x==null?'—':signed(x,1)+'u';
-const pickOdds=p=>esc(p.odds??'—')+(isCollege(p.sport)&&p.odds!=null&&p.provider?` <span class="muted">${esc(p.provider)}</span>`:'');
+const pickOdds=p=>esc(p.odds??'—')+((isCollege(p.sport)||p.sport==='ufc')&&p.odds!=null&&p.provider?` <span class="muted">${esc(p.provider)}</span>`:'');
 const captureTime=iso=>new Date(iso).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 const collegeCapture=({p,m})=>[
   p.at?esc(captureTime(p.at)):'—',
@@ -48,12 +48,14 @@ const brierCell=s=>{const b=brier(s);return b==null?'—':round(b,3);};
 
 export function trackerPage(){
   const f=S.f;
-  const college=isCollege(f.sport.toLowerCase()),captureCols=college?['Captured','Version','Projection','Gap vs line']:[];
-  const head=`<h1>Pick Tracker ${info('Every hour, before games start, the tracker captures model forecasts and priced picks. College winners, spreads and totals are graded using final scores, with canceled games voided. Units assume a 1-unit stake at the recorded price. College games with missing final results stay pending.')}</h1>`+
+  const college=isCollege(f.sport.toLowerCase()),ufc=f.sport==='UFC';
+  const captureCols=college?['Captured','Version','Projection','Gap vs line']:ufc?['Captured','Version']:[];
+  const capture=r=>college?collegeCapture(r):ufc?[r.p.at?esc(captureTime(r.p.at)):'—',esc(r.p.version??'—')]:[];
+  const head=`<h1>Pick Tracker ${info('Each refresh captures model forecasts and priced picks before play starts. The tracker grades college picks from final scores and UFC winner forecasts from confirmed bout results. UFC draws push and no contests are voided. Missing college and UFC results stay pending. Units assume a 1-unit stake at the recorded price.')}</h1>`+
     `<p class="subtle">Updated ${ago(index.updated)} · ${index.picks??0} picks recorded · ${index.graded??0} graded · ${index.pending??0} waiting on results</p>`;
   if(!picks.length)return head+box('',empty('No picks recorded yet. The tracker records picks every hour before games start, so they will appear after the next update.'));
   const markets=['All markets',...new Set(picks.map(p=>p.market))].sort((a,b)=>a==='All markets'?-1:b==='All markets'?1:a.localeCompare(b));
-  const filters=tools(['All','NBA','NFL','NHL','MLB','CBB','CWB','FBS'].map(s=>btn(s,'set','sport:'+s,f.sport===s?'on':'')).join('')+
+  const filters=tools(['All','NBA','NFL','NHL','MLB','CBB','CWB','FBS','UFC'].map(s=>btn(s,'set','sport:'+s,f.sport===s?'on':'')).join('')+
     select('Picks','kind',['All picks','Model picks','Prop picks','Game picks'])+select('Market','market',markets)+select('Window','window',['Last 7 days','Last 30 days','Season'])+
     `<label class="field"><input type="checkbox" data-field="lean" ${f.lean?'checked':''}> Only sides the tool leaned toward</label>`);
   const rows=memberships(),scoped=f.tool?rows.filter(r=>r.t===f.tool):rows;
@@ -93,6 +95,7 @@ export function trackerPage(){
   const byMarket=table(['Market','Graded','Record','Hit rate','Units','ROI'],[...mk].sort((a,b)=>b[1].n-a[1].n).map(([k,s])=>[esc(k),s.n,record(s),hitCell(s),unitsText(s.priced?s.units:null),roiCell(s)]),{sort:'tracker-markets',cls:'compact'});
 
   const describe=p=>{
+    if(p.sport==='ufc')return `${esc(p.player)} to win <span class="muted">vs ${esc(p.opponent)}</span>`;
     if(isCollege(p.sport)){
       const pick=esc(collegePickLabel(p))+(p.market==='Winner'?' to win':' '+(p.market==='Spread'?signed(p.line,1):esc(p.line)));
       return `${pick} <span class="muted">· ${esc(p.awayName)} vs ${esc(p.homeName)}</span>`;
@@ -102,9 +105,9 @@ export function trackerPage(){
   const toolsOf=r=>[...new Set(scoped.filter(x=>x.p.k===r.p.k).map(x=>toolLabel(x.t).split(' · ').slice(1).join(' · ')))].join(', ');
   const done=[...seen.values()].filter(r=>r.p.result).sort((a,b)=>b.p.start.localeCompare(a.p.start)).slice(0,f.more?400:40);
   const recent=table(['Date','League','Pick','Tools','Odds','Chance','Result','Actual','Units',...captureCols],done.map(r=>{const p=r.p,u=p.odds==null?null:units(p.result,p.odds);return [esc(p.date),p.sport.toUpperCase(),cell(describe(p)),esc(toolsOf(r)),pickOdds(p),r.m.prob==null?'—':pct(r.m.prob),
-    cell(esc(p.result),p.result==='won'?'good heat':p.result==='lost'?'bad heat':''),esc(p.value??'—'),u==null?'—':signed(u,2),...(college?collegeCapture(r):[])];}),{sort:'tracker-recent',wrap:'box',empty:'Nothing graded in this view yet.'});
+    cell(esc(p.result),p.result==='won'?'good heat':p.result==='lost'?'bad heat':''),esc(p.value??'—'),u==null?'—':signed(u,2),...capture(r)];}),{sort:'tracker-recent',wrap:'box',empty:'Nothing graded in this view yet.'});
   const waiting=[...seen.values()].filter(r=>!r.p.result).sort((a,b)=>a.p.start.localeCompare(b.p.start));
-  const pending=waiting.length?`<details class="details"><summary>Waiting on results (${waiting.length})</summary>`+table(['Starts','League','Pick','Tools','Odds','Chance',...captureCols],waiting.slice(0,200).map(r=>[esc(captureTime(r.p.start)),r.p.sport.toUpperCase(),cell(describe(r.p)),esc(toolsOf(r)),pickOdds(r.p),r.m.prob==null?'—':pct(r.m.prob),...(college?collegeCapture(r):[])]),{cls:'compact'})+'</details>':'';
+  const pending=waiting.length?`<details class="details"><summary>Waiting on results (${waiting.length})</summary>`+table(['Starts','League','Pick','Tools','Odds','Chance',...captureCols],waiting.slice(0,200).map(r=>[esc(captureTime(r.p.start)),r.p.sport.toUpperCase(),cell(describe(r.p)),esc(toolsOf(r)),pickOdds(r.p),r.m.prob==null?'—':pct(r.m.prob),...capture(r)]),{cls:'compact'})+'</details>':'';
 
   return head+filters+(f.tool?tools(`<span class="subtle">Showing ${esc(toolLabel(f.tool))}</span>`+btn('Show every tool','tool',f.tool)):'')+metrics+
     box('By tool',byTool,'Click a tool to focus every number on this page on it. Rated tools also show each rating on its own row. Hit rate is coloured against the break-even rate of the prices captured, not against 50%.')+

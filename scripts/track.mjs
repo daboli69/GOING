@@ -14,6 +14,7 @@ import { nbaPage, nbaResult } from '../site/nba.mjs';
 import { nhlPage, nhlResult } from '../site/nhl.mjs';
 import { outcome, leanOf, impliedProb, mlbStat } from '../site/track-core.mjs';
 import { collegeSports, isCollege, collegePicks, collegeSettlement } from '../site/college-core.mjs';
+import { fightPick, fightSettlement } from '../site/fights-core.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const data=join(root,'site','data'), out=join(data,'tracker');
@@ -196,6 +197,22 @@ for(const [k,p] of store){
   }
 }
 
+/* ---------- UFC capture and grading ---------- */
+const fightBoard=await read('fights/board.json');
+const fightResults=new Map((await read('fights/results.json')||[]).map(b=>[b.id,b]));
+for(const card of fightBoard?.cards||[]){
+  const checked=Date.parse(card.checked),start=Date.parse(card.start);
+  // Freeze the entire card at its start because the feed gives segment times, not individual start times.
+  if(card.status!=='scheduled'||!(start>now)||!(checked<=now&&now-checked<=90*60_000))continue;
+  for(const bout of card.bouts){
+    if(bout.status!=='scheduled')continue;
+    const oddsTime=Date.parse(bout.market?.checked);
+    const priced=oddsTime<=now&&now-oddsTime<=90*60_000;
+    const pick=fightPick(card,priced?bout:{...bout,market:null});
+    if(pick)upsert(pick);
+  }
+}
+
 /* ---------- grading ---------- */
 const finals=new Map();
 const fin=(s,id,a,h)=>{if(a!=null&&h!=null)finals.set(s+'|'+id,{a:+a,h:+h});};
@@ -215,9 +232,12 @@ function boxscore(pk){
 }
 let graded=0;
 for(const p of store.values()){
-  if(p.result||Date.parse(p.start)>now-2*3600_000)continue;
+  if(p.result||Date.parse(p.start)>now-(p.sport==='ufc'?0:2*3600_000))continue;
   let value=null;
-  if(isCollege(p.sport)){
+  if(p.sport==='ufc'){
+    const result=fightSettlement(p,fightResults.get(p.game));
+    if(result)Object.assign(p,result);
+  }else if(isCollege(p.sport)){
     const result=collegeSettlement(p,collegeResults.get(p.sport+'|'+p.game));
     if(result)Object.assign(p,result);
   }else if(p.kind==='model'){
@@ -233,7 +253,7 @@ for(const p of store.values()){
     if(value!=null){p.value=value;p.result=outcome(+value,p.line,p.side);}
   }
   if(p.result){p.graded=nowIso;graded++;}
-  else if(!isCollege(p.sport)&&Date.parse(p.start)<now-4*86400_000){p.result='void';p.graded=nowIso;}  // no result after four days: did not play or no data
+  else if(p.sport!=='ufc'&&!isCollege(p.sport)&&Date.parse(p.start)<now-4*86400_000){p.result='void';p.graded=nowIso;}  // no result after four days: did not play or no data
 }
 
 /* ---------- write ---------- */

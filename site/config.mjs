@@ -7,10 +7,12 @@ export const sections={
   mlb:{name:'GOING YARD',word:'YARD',sport:'Baseball',league:'MLB',home:'yard/'},
   cbb:{name:'GOING CBB',word:'CBB',sport:'Men’s college basketball',league:'CBB',home:'cbb/'},
   cwb:{name:'GOING CWB',word:'CWB',sport:'Women’s college basketball',league:'CWB',home:'cwb/'},
-  fbs:{name:'GOING FBS',word:'FBS',sport:'College football',league:'FBS',home:'fbs/'}
+  fbs:{name:'GOING FBS',word:'FBS',sport:'College football',league:'FBS',home:'fbs/'},
+  ufc:{name:'GOING FIGHTS',word:'FIGHTS',sport:'Mixed martial arts',league:'UFC',home:'fights/'}
 };
 // [title, path relative to BASE, view id]. Titles double as view keys inside the sport modules, so keep them stable.
 export const menus={
+  ufc:{Fights:[['Fight Cards','fights/','ufc-cards'],['Fighter Stats','fights/fighter-stats.html','ufc-fighters'],['Fight Lines','fights/fight-lines.html','ufc-lines']]},
   cbb:{Matchups:[['Slate Standouts','cbb/','college-slate'],['Team Stats','cbb/team-stats.html','college-teams'],['Player Leaders','cbb/player-leaders.html','college-players']]},
   cwb:{Matchups:[['Slate Standouts','cwb/','college-slate'],['Team Stats','cwb/team-stats.html','college-teams'],['Player Leaders','cwb/player-leaders.html','college-players']]},
   fbs:{Previews:[['Game Previews','fbs/','college-slate'],['Team Stats','fbs/team-stats.html','college-teams'],['Game Lines','fbs/game-lines.html','college-lines']]},
@@ -64,6 +66,7 @@ export const viewDefaults={
   'nba-parlay-tracker':{legDecision:'All',legMarket:'All',legSide:'All',legResult:'All',legWindow:'Last 30 days',legSource:'All',legRule:'All'},
   'nfl-parlay-tracker':{legDecision:'All',legMarket:'All',legSide:'All',legResult:'All',legWindow:'All time',legSource:'All',legRule:'All'},
   'college-players':{collegeSample:'3'},
+  'ufc-fighters':{fightRoster:'All listed fighters'},
   'yard-board':{floor:'All',bats:'All',gameFilter:'All games',lineup:'All lineups',hideThin:false},
   'yard-hits':{view:'Hits'},'yard-arms':{view:'Starting pitchers'},'yard-parlays':{view:'Cross-game parlays'},'yard-record':{view:'Heat tiers'}
 };
@@ -84,3 +87,4 @@ export const footers={mlb:['Going Yard (hr-board)','https://github.com/daboli69/
 footers.cbb=['hoopR','https://github.com/sportsdataverse/hoopR-mbb-data','Team and player box scores. Schedules and scores via ESPN.'];
 footers.cwb=['wehoop','https://github.com/sportsdataverse/wehoop-wbb-data','Team and player box scores. Schedules and scores via ESPN.'];
 footers.fbs=['cfbfastR','https://github.com/sportsdataverse/cfbfastR-cfb-data/blob/main/DATASETS.md','FBS matchup metrics. Scores and available game lines via ESPN.'];
+footers.ufc=['ESPN UFC','https://www.espn.com/mma/','UFC cards, fighter statistics, results, and available fight lines.'];

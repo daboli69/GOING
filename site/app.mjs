@@ -15,6 +15,7 @@ const loaders={
     action:y.yardAction,result:y.yardResult,field:y.yardField,input:y.yardInput,engineViews:y.ENGINE_VIEWS,setYardData:e.setYardData,setPrice:more.setPrice})),
   models:()=>import('./models.mjs'),
   college:()=>import('./college.mjs'),
+  ufc:()=>import('./fights.mjs').then(m=>({page:m.fightsPage,load:m.fightsLoad,refresh:m.fightsRefresh})),
   tracker:()=>import('./tracker.mjs'),
   parlayTracker:()=>import('./nba-parlay-tracker.mjs'),
   nflParlayTracker:()=>import('./nfl-parlay-tracker.mjs'),
@@ -110,7 +111,7 @@ function start(){
   S.f=viewSetup(S.route,location.hash);S.game=null;S.games=[];
   if(S.route.id==='tracker'){
     const league=new URLSearchParams(location.search).get('sport')?.toLowerCase();
-    if(isCollege(league))S.f.sport=league.toUpperCase();
+    if(isCollege(league)||league==='ufc')S.f.sport=league.toUpperCase();
   }
   S.loaded=false;
   S.lineStats={};
@@ -132,10 +133,13 @@ async function load(){
     catch(e){if(token!==req)return;S.error=failed('The pick record could not load. Try again in a moment.');console.error(e);render();}
     return;
   }
-  if(isCollege(s)){
+  if(isCollege(s)||s==='ufc'){
     let data;
-    try{await need('college');data=await M.college.collegeLoad(s,id);}
-    catch(e){if(token!==req)return;S.error=failed('The college data could not load. Try again in a moment.');console.error(e);render();return;}
+    try{
+      await need(s==='ufc'?'ufc':'college');
+      data=s==='ufc'?await M.ufc.load():await M.college.collegeLoad(s,id);
+    }
+    catch(e){if(token!==req)return;S.error=failed('The slate could not load. Try again in a moment.');console.error(e);render();return;}
     if(token!==req)return;
     S.data=data;
     S.loaded=true;render();tickScores();return;
@@ -482,6 +486,10 @@ window.addEventListener('hashchange',()=>{if(dateHash!==location.hash){dateHash=
 async function tickScores(){
   if(document.visibilityState!=='visible'||!S.loaded||S.error||!S.route)return;
   const s=S.route.sport,token=req;
+  if(s==='ufc'){
+    if(S.route.id==='ufc-cards'&&await M.ufc.refresh(S.data).catch(()=>false)&&token===req)render();
+    return;
+  }
   const games=['nba','nhl','nfl'].includes(s)&&!isModel(S.route.id)?S.games:isCollege(s)&&S.route.id!=='college-players'?S.data?.games:null;
   if(!games?.length)return;
   if(await refreshScores(s,games).catch(()=>false)&&token===req)render();

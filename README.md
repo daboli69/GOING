@@ -10,6 +10,7 @@ One site for the ensemble models and the sports dashboards.
 | GOING CBB | Men’s college basketball | Slate standouts, matchup keys, team stats and player leaderboards |
 | GOING CWB | Women’s college basketball | Slate standouts, matchup keys, team stats and player leaderboards |
 | GOING FBS | College football (FBS) | Game previews, team stats, EPA and success rates, moneyline, spread and game totals |
+| GOING FIGHTS | Mixed martial arts (UFC) | Fight cards, Tale of the Tape, fighter stats, moneylines and round totals |
 | GOING YARD | Baseball (MLB) | The Going Yard home run model: HR Board, Top Plays, Top Picks, Daily Card, Signal Convergence, Game Scan, pitchers and bullpens, Team vs Pitch Mix, Split Overlaps, target teams, weather and parks, hits and H+R+RBI, King of the Bases, strikeouts, game totals, Edge Finder, Price Research, Alt Line Finder, parlays and jackpots, Parlay Builder, Parlay Scanner, Ladder Challenge, Model Record, HR Calendar, HR Patterns, My Bets, CLV, Guide |
 
 Each section uses its own accent color and the same dashboard typography, boards and charts.
@@ -131,6 +132,14 @@ npm run college
 node scripts/track.mjs
 npm start
 ```
+
+## GOING FIGHTS
+
+The hourly Pages workflow publishes [ESPN UFC](https://www.espn.com/mma/) cards, results, fighter profiles and available moneylines and round totals. The fight card lists outcomes for recent events and shows scheduled bouts for upcoming cards. Tale of the Tape compares fighter attributes, career stats and the last five bouts in the archive. The feed excludes Contender Series and Road to UFC cards.
+
+The winner baseline uses Elo, starting at 1500 and updating with UFC bout results since 2020. Each fighter needs three graded bouts before a forecast appears. Win estimates are uncalibrated. Pick Tracker captures winner forecasts before the card starts, grades them by ESPN results, and counts hypothetical ROI only where it captured a matching moneyline. Draws push, no contests and canceled bouts are void, and missing outcomes stay pending. The record starts at deployment. Round totals are displayed for research.
+
+For a local preview, run `npm run fights`, `node scripts/track.mjs`, and `npm start`.
 
 ## Pick Tracker
 
