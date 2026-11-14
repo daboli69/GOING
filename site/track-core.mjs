@@ -14,6 +14,7 @@ export const TOOLS={
   'fbs-spread':'GOING FBS · Spread baseline',
   'fbs-total':'GOING FBS · Game total baseline',
   'ufc-baseline':'GOING FIGHTS · UFC Elo',
+  'ufc-ensemble':'GOING FIGHTS · UFC Ensemble',
   'nhl-best':'GOING GOAL · Best Plays',
   'nhl-shots':'GOING GOAL · Shots',
   'nhl-goals':'GOING GOAL · Goals',
@@ -27,7 +28,7 @@ export const TOOLS={
 };
 // Individual ensemble members are tracked as "<sport>-model:<name>".
 export const toolLabel=t=>TOOLS[t]||(t.includes('-model:')?(t.startsWith('nba')?'GOING UP':'GOING LONG')+' · Model: '+t.split(':')[1]:t);
-export const isModelTool=t=>/-model(:|$)|^(cbb|cwb|fbs|ufc)-baseline$/.test(t);
+export const isModelTool=t=>/-model(:|$)|^(cbb|cwb|fbs|ufc)-baseline$|^ufc-ensemble$/.test(t);
 
 export function americanNumber(o){
   if(o==null||o==='')return null;

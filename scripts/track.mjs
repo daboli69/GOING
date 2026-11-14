@@ -208,8 +208,12 @@ for(const card of fightBoard?.cards||[]){
     if(bout.status!=='scheduled')continue;
     const oddsTime=Date.parse(bout.market?.checked);
     const priced=oddsTime<=now&&now-oddsTime<=90*60_000;
-    const pick=fightPick(card,priced?bout:{...bout,market:null});
-    if(pick)upsert(pick);
+    const source=priced?bout:{...bout,market:null};
+    const forecasts=[bout.forecast,bout.baseline].filter((f,i,list)=>f&&list.findIndex(x=>x?.version===f.version)===i);
+    for(const forecast of forecasts){
+      const pick=fightPick(card,source,forecast);
+      if(pick)upsert(pick);
+    }
   }
 }
 

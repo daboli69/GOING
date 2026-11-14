@@ -18,7 +18,7 @@ const pickLine=p=>p?`${esc(p.team)} ${pct(p.p)} <span class="muted">vs ${esc(p.o
 const record=r=>r?.games?`${pct(r.accuracy,1)} <span class="muted">of ${r.games} graded</span>`:null;
 const quick={nba:['Ensemble Forecasts','Slate Standouts','All Props','Shot Charts','Suggested Parlays'],nfl:['Ensemble Forecasts','Game Previews','TD Data','Best Plays'],nhl:['Game Previews','Line Matchups','Best Plays','Shots'],mlb:['HR Board','Top Plays','Game Scan','Model Record'],
   cbb:['Slate Standouts','Team Stats','Player Leaders'],cwb:['Slate Standouts','Team Stats','Player Leaders'],fbs:['Game Previews','Game Lines','Team Stats'],
-  ufc:['Fight Cards','Fighter Stats','Fight Lines']};
+  ufc:['Fight Cards','Ensemble Forecasts','Fighter Stats','Fight Lines']};
 const link=(s,t)=>{const r=Object.values(menus[s]).flat().find(x=>x[0]===t);return r?`<a class="pill" href="${href(r[1])}">${esc(t)}</a>`:'';};
 
 function facts(s){

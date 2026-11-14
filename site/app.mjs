@@ -487,7 +487,7 @@ async function tickScores(){
   if(document.visibilityState!=='visible'||!S.loaded||S.error||!S.route)return;
   const s=S.route.sport,token=req;
   if(s==='ufc'){
-    if(S.route.id==='ufc-cards'&&await M.ufc.refresh(S.data).catch(()=>false)&&token===req)render();
+    if(['ufc-cards','ufc-forecasts'].includes(S.route.id)&&await M.ufc.refresh(S.data).catch(()=>false)&&token===req)render();
     return;
   }
   const games=['nba','nhl','nfl'].includes(s)&&!isModel(S.route.id)?S.games:isCollege(s)&&S.route.id!=='college-players'?S.data?.games:null;

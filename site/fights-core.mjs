@@ -2,6 +2,14 @@ import {impliedProb} from './track-core.mjs';
 
 export const fightMinBouts=3;
 export const fightVersion='ufc-elo-v1';
+export const ufcModelVersion='ufc-ensemble-v1';
+export const ufcMembers={
+  form:{label:'Rating & form',weight:0.46},
+  striking:{label:'Striking matchup',weight:0.18},
+  grappling:{label:'Grappling matchup',weight:0.18},
+  styles:{label:'Similar opponents',weight:0.18}
+};
+export const fightTool=version=>version===ufcModelVersion?'ufc-ensemble':'ufc-baseline';
 const expected=(a,b)=>1/(1+10**((b-a)/400));
 
 export function fightHistory(cards){
@@ -38,17 +46,18 @@ export function fightForecast(bout,history){
   return {prob:[expected(a.rating,b.rating),expected(b.rating,a.rating)],n,version:fightVersion};
 }
 
-export function fightPick(card,bout){
-  const forecast=bout.forecast;
+export function fightPick(card,bout,forecast=bout.forecast){
   if(!forecast||forecast.prob[0]===forecast.prob[1])return null;
   const i=forecast.prob[0]>forecast.prob[1]?0:1;
   const f=bout.fighters[i],opp=bout.fighters[1-i];
   const prob=forecast.prob[i],market=bout.market,odds=market?.moneyline?.[f.id]??null;
   const implied=impliedProb(odds);
-  return {k:['ufc',bout.id,...bout.fighters.map(x=>x.id).sort()].join('|'),sport:'ufc',kind:'model',
+  const tool=fightTool(forecast.version),key=['ufc',bout.id,...bout.fighters.map(x=>x.id).sort()];
+  if(tool==='ufc-ensemble')key.push(tool);
+  return {k:key.join('|'),sport:'ufc',kind:'model',
     game:bout.id,event:card.id,date:card.date,start:card.start,id:f.id,side:f.id,player:f.name,opponent:opp.name,
     a:bout.fighters[0].id,h:bout.fighters[1].id,market:'Winner',line:null,odds,
-    provider:odds!=null?market.provider:null,version:forecast.version,tools:{'ufc-baseline':{prob,edge:implied==null?null:prob-implied,lean:true}}};
+    provider:odds!=null?market.provider:null,version:forecast.version,tools:{[tool]:{prob,edge:implied==null?null:prob-implied,lean:true}}};
 }
 
 export function fightSettlement(p,bout){

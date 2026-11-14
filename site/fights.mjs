@@ -1,6 +1,6 @@
 import {current as S,esc,get,dataURL,dateLabel,tools,select,search,table,box,empty,round,pct,badge} from './ui.mjs';
 import {href} from './config.mjs';
-import {fightMinBouts,fightPick} from './fights-core.mjs';
+import {fightMinBouts,fightPick,fightTool,ufcModelVersion,ufcMembers} from './fights-core.mjs';
 import {impliedProb} from './track-core.mjs';
 import {parseFightCards,ufcScoreboard} from './fights-feeds.mjs';
 
@@ -24,7 +24,7 @@ export async function fightsRefresh(snapshot){
       if(!update||!['live','final','canceled'].includes(update.status))continue;
       const {status,winner,round,clock}=update,payload={status,winner,round,clock};
       if(Object.entries(payload).some(([k,v])=>bout[k]!==v)){
-        Object.assign(bout,payload);delete bout.forecast;changed=true;
+        Object.assign(bout,payload);changed=true;
       }
     }
   }
@@ -49,6 +49,64 @@ const boutResult=b=>{
   return [winner?winner.name+' wins':'Result pending',b.method,b.round?'R'+b.round:null,b.clock].filter(Boolean).join(' · ');
 };
 const tracker=`<a class="pill" href="${href('tracker.html')}?sport=UFC">View UFC tracker</a>`;
+const pickChance=p=>p?.tools[fightTool(p.version)]?.prob;
+const forecastName=b=>b.forecast?.version===ufcModelVersion?'Ensemble':'Elo';
+const record=(w,l,d)=>`${w}–${l}${d?'-'+d:''}`;
+const marketChances=b=>{
+  const [a,c]=b.fighters.map(f=>impliedProb(b.market?.moneyline?.[f.id]));
+  return a!=null&&c!=null?[a/(a+c),c/(a+c)]:null;
+};
+const picked=(card,b)=>{
+  const p=fightPick(card,b);
+  return p?`${esc(p.player)} ${pct(pickChance(p))} <span class="muted">· ${forecastName(b)}</span>`:b.forecast?'Even':'—';
+};
+
+function matchupForecast(b){
+  const f=b.forecast;
+  if(!f)return box('Winner forecast',empty(b.status==='scheduled'?
+    `Forecasts publish before the card and require at least ${fightMinBouts} completed UFC bouts per fighter in the archive.`:
+    'No pre-event forecast was saved for this bout.'));
+  const [a,c]=b.fighters,sideBySide=(label,values)=>[label,...values.map(percent)];
+  const rows=[sideBySide(forecastName(b),f.prob)];
+  if(f.members){
+    for(const m of f.members)rows.push(sideBySide(esc(ufcMembers[m.key].label),[m.prob,1-m.prob]));
+    if(b.baseline)rows.push(sideBySide('Raw Elo baseline',b.baseline.prob));
+  }
+  const market=marketChances(b);
+  if(market)rows.push(sideBySide('Market with vig removed',market));
+  const probabilities=box('Winner forecast',table(['Model',name(a),name(c)],rows,{cls:'compact'}),
+    'The ensemble averages available model probabilities. Each model is trained on earlier bouts. Sportsbook prices are shown for comparison.');
+  if(!f.profiles)return probabilities;
+  const row=(label,fmt)=>[label,...f.profiles.map(p=>p?fmt(p):'—')];
+  const matchup=[
+    ['UFC bouts in archive',...f.n],
+    row('Style from archived stats',p=>esc(p.style)),
+    row('Prior bouts with stats',p=>p.n),
+    row('Sig. strikes landed / min',p=>numeric(p.strikes)),
+    row('Sig. strikes absorbed / min',p=>numeric(p.absorbed)),
+    row('Takedown attempts / 15 min',p=>numeric(p.td)),
+    row('Takedown defense',p=>percent(p.tdDef)),
+    row('Control share',p=>percent(p.control)),
+    ['Record vs similar opponents',...f.similar.map(m=>m?.n?record(m.wins,m.losses,m.draws)+' · '+m.n+' bouts':'—')],
+    ['Previous meetings',...(f.direct.wins+f.direct.losses+f.direct.draws?
+      [record(f.direct.wins,f.direct.losses,f.direct.draws),record(f.direct.losses,f.direct.wins,f.direct.draws)]:['—','—'])]
+  ];
+  return probabilities+box('Style matchup',table(['Pregame history',name(a),name(c)],matchup,{cls:'compact'}),
+    'Styles compare striking pace, takedown attempts, clinch and ground striking share, and submission attempts from earlier UFC bouts. The similar-opponent model adjusts each result for opponent strength and shrinks small samples. Displayed rates include smoothing.');
+}
+
+function backtest(model){
+  if(!model?.ensemble?.n)return '';
+  const comparison=(label,a,b)=>[[label,'Ensemble',a.n,percent(a.accuracy),numericScore(a.brier),numericScore(a.logLoss)],
+    [label,'Elo',b.n,percent(b.accuracy),numericScore(b.brier),numericScore(b.logLoss)]];
+  const rows=[...comparison('All test bouts',model.ensemble,model.elo),
+    ...(model.styleCovered?.ensemble.n?comparison('Similar opponents model available',model.styleCovered.ensemble,model.styleCovered.elo):[]),
+    ...model.folds.flatMap(f=>comparison(f.year,f.ensemble,f.elo))];
+  return box('Backtest',table(['Period','Model','Bouts','Winner accuracy','Brier','Log loss'],rows,{cls:'compact'}),
+    'Each test year uses models fitted on prior years. Both models are compared on the same bouts. Fighter ratings and stats update after each card. Lower Brier scores and log loss indicate better probability forecasts. The live tracker starts separately at publication.')+
+    `<p class="tiny">${model.training.toLocaleString('en-US')} training bouts · ${(model.statsCoverage.archive+model.statsCoverage.espn).toLocaleString('en-US')} bouts with statistics</p>`;
+}
+const numericScore=x=>x==null?'—':x.toFixed(4);
 
 function tape(b,profiles){
   const [left,right]=b.fighters, sides=[left,right].map(f=>profiles[f.id]||{});
@@ -67,31 +125,36 @@ function tape(b,profiles){
 }
 
 function cardPage(card,bouts,archive){
-  const rows=bouts.map(b=>{
-    const pick=fightPick(card,b);
-    const p=pick?.tools['ufc-baseline']?.prob;
-    const baseline=p!=null?`${esc(pick.player)} ${pct(p)}`:b.forecast?'Even':'—';
-    return [matchup(b),esc(b.segment??'—'),esc(b.division??'—'),b.rounds??'—',esc(boutResult(b)),baseline];
-  });
+  const rows=bouts.map(b=>[matchup(b),esc(b.segment??'—'),esc(b.division??'—'),b.rounds??'—',esc(boutResult(b)),picked(card,b)]);
   const active=bouts.find(b=>b.id===S.f.fightBout)||bouts[0];
-  return box('Card',table(['Bout','Card segment','Division','Scheduled rounds','Status / result','Winner baseline'],rows,
+  return box('Card',table(['Bout','Card segment','Division','Scheduled rounds','Status / result','Winner forecast'],rows,
     {sort:'ufc-card',empty:'No bouts match this card and search.'}),
-    `Elo uses UFC results from ${archive.historyStart} onward and needs at least ${fightMinBouts} graded bouts per fighter. The percentages are uncalibrated estimates for the two named fighters. The tracker records them before the event starts.`)+
+    'The tracker records forecasts before the event starts. Open Ensemble Forecasts for individual model probabilities and matchup history.')+
     (active?tools(select('Compare bout','fightBout',bouts.map(b=>[b.id,b.fighters.map(f=>f.name).join(' vs ')])))+tape(active,archive.fighters):'');
 }
 
 function marketPage(card,bouts){
   const rows=bouts.filter(b=>b.status==='scheduled').map(b=>{
-    const m=b.market,p=fightPick(card,b);
+    const m=b.market;
     return [matchup(b),...b.fighters.map(f=>{
       const price=m?.moneyline[f.id];
       return price!=null?`${signed(price)} <span class="muted">(${percent(impliedProb(price))})</span>`:'—';
     }),m?.total?.line??'—',signed(m?.total?.over),signed(m?.total?.under),
-      p?`${esc(p.player)} ${pct(p.tools['ufc-baseline'].prob)}`:'—',m?`${esc(m.provider)} · ${esc(stamp(m.checked))}`:'—'];
+      picked(card,b),m?`${esc(m.provider)} · ${esc(stamp(m.checked))}`:'—'];
   });
-  return box('Fight Lines',table(['Bout','Fighter 1 ML (implied)','Fighter 2 ML (implied)','Rounds','Over','Under','Winner baseline','Source / checked'],
+  return box('Fight Lines',table(['Bout','Fighter 1 ML (implied)','Fighter 2 ML (implied)','Rounds','Over','Under','Winner forecast','Source / checked'],
     rows,{sort:'ufc-lines',empty:'No scheduled bouts for this card.'}),
     'ESPN lists prices where the sportsbook supplies them. The tracker grades winner forecasts and uses the captured moneyline for hypothetical ROI. Round totals are shown for research.');
+}
+
+function forecastPage(card,bouts,model){
+  const active=bouts.find(b=>b.id===S.f.fightBout)||bouts.find(b=>b.forecast)||bouts[0];
+  if(active)S.f.fightBout=active.id;
+  const rows=bouts.map(b=>[matchup(b),esc(b.division??'—'),picked(card,b),b.forecast?.members?.length??'—',
+    esc(boutResult(b))]);
+  return box('Card forecasts',table(['Bout','Division','Winner forecast','Models used','Status'],rows,{sort:'ufc-forecasts'}))+
+    (active?tools(select('Compare bout','fightBout',bouts.map(b=>[b.id,b.fighters.map(f=>f.name).join(' vs ')])))+matchupForecast(active):'')+
+    backtest(model);
 }
 
 function directoryPage(snapshot){
@@ -121,5 +184,6 @@ export function fightsPage(){
   const controls=tools(select('Event','fightCard',options)+search('Search fighters or divisions')+tracker+
     `<a class="pill" href="https://www.espn.com/mma/fightcenter/_/id/${encodeURIComponent(card.id)}/league/ufc" target="_blank" rel="noopener">ESPN FightCenter</a>`);
   const eventDetails=`<p class="subtle">${badge(cardStatus(card),card.status==='live'?'g':'')} ${esc(stamp(card.start))}${card.venue?' · '+esc(card.venue):''}</p>`;
-  return head+controls+eventDetails+meta+(id==='ufc-lines'?marketPage(card,bouts):cardPage(card,bouts,snapshot));
+  const body=id==='ufc-lines'?marketPage(card,bouts):id==='ufc-forecasts'?forecastPage(card,bouts,snapshot.model):cardPage(card,bouts,snapshot);
+  return head+controls+eventDetails+meta+body;
 }
