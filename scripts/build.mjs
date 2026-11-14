@@ -33,12 +33,12 @@ for(const f of code.filter(f=>f.endsWith('.mjs')))deps[f]=[...(await readFile(jo
 const tree=(...roots)=>{const seen=new Set(),walk=f=>{if(seen.has(f)||!deps[f])return;seen.add(f);deps[f].forEach(walk);};roots.forEach(walk);return [...seen];};
 const core=tree('app.mjs');
 const sectionCode=r=>r.id==='tracker'?['tracker.mjs']:r.id==='nba-parlay-tracker'?['nba-parlay-tracker.mjs']:r.id==='nfl-parlay-tracker'?['nfl-parlay-tracker.mjs']:/-models$/.test(r.id)?['models.mjs']:
-  isCollege(r.sport)?['college.mjs']:{nfl:['nfl.mjs'],nba:['nba.mjs'],nhl:['nhl.mjs'],mlb:['yard.mjs','yard-engine.mjs','yard-more.mjs']}[r.sport]||[];
+  isCollege(r.sport)?['college.mjs']:{nfl:['nfl.mjs'],nba:['nba.mjs'],nhl:['nhl.mjs'],mlb:['yard.mjs','yard-engine.mjs','yard-more.mjs'],ufc:['fights.mjs']}[r.sport]||[];
 const preload=r=>tree(...core,...sectionCode(r)).filter(f=>f!=='app.mjs').map(f=>`<link rel="modulepreload" href="${f}?v=${v}">`).join('\n');
 const describe=r=>{
   const sec=sections[r.sport];
   return sec?`${sec.name}: ${r.title} for ${sec.league==='CBB'||sec.league==='CWB'||sec.league==='FBS'?sec.sport.toLowerCase():sec.league} research, refreshed through the day.`:
-    'GOING: models and matchup dashboards for the NBA, NFL, NHL, MLB and college basketball and football.';
+    'GOING: models and matchup dashboards for the NBA, NFL, NHL, MLB, UFC and college basketball and football.';
 };
 const shell=(await readFile(join(site,'index.html'),'utf8')).replace('src="app.mjs"',`src="app.mjs?v=${v}"`).replace('href="style.css"',`href="style.css?v=${v}"`);
 const page=r=>{

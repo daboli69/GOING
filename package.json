@@ -7,6 +7,7 @@
     "refresh": "node scripts/refresh.mjs",
     "live": "node scripts/live.mjs",
     "college": "node scripts/college.mjs",
+    "fights": "node scripts/fights.mjs",
     "build": "node scripts/build.mjs",
     "preview": "node scripts/build.mjs && node scripts/serve.mjs --dist",
     "test": "node --test",

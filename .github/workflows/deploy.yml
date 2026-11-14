@@ -113,6 +113,26 @@ jobs:
             site/data/college
           key: college-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
+      - name: Restore UFC feeds
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            .cache/fights
+            site/data/fights
+          key: ufc-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ufc-v1-
+
+      - name: Refresh UFC feeds
+        run: node scripts/fights.mjs || echo "::warning::UFC refresh failed. Keeping the last available snapshot."
+
+      - name: Save UFC feeds
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            .cache/fights
+            site/data/fights
+          key: ufc-v1-${{ github.run_id }}-${{ github.run_attempt }}
+
       # GOING YARD: hr-board runs its own model on its own schedule; this copies what it last published.
       - name: Add GOING YARD board
         run: node scripts/yard.mjs || echo "::warning::GOING YARD data could not be refreshed."
