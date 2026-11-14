@@ -12,7 +12,7 @@ export const sections={
 };
 // [title, path relative to BASE, view id]. Titles double as view keys inside the sport modules, so keep them stable.
 export const menus={
-  ufc:{Fights:[['Fight Cards','fights/','ufc-cards'],['Fighter Stats','fights/fighter-stats.html','ufc-fighters'],['Fight Lines','fights/fight-lines.html','ufc-lines']]},
+  ufc:{Fights:[['Fight Cards','fights/','ufc-cards'],['Ensemble Forecasts','fights/forecasts.html','ufc-forecasts'],['Fighter Stats','fights/fighter-stats.html','ufc-fighters'],['Fight Lines','fights/fight-lines.html','ufc-lines']]},
   cbb:{Matchups:[['Slate Standouts','cbb/','college-slate'],['Team Stats','cbb/team-stats.html','college-teams'],['Player Leaders','cbb/player-leaders.html','college-players']]},
   cwb:{Matchups:[['Slate Standouts','cwb/','college-slate'],['Team Stats','cwb/team-stats.html','college-teams'],['Player Leaders','cwb/player-leaders.html','college-players']]},
   fbs:{Previews:[['Game Previews','fbs/','college-slate'],['Team Stats','fbs/team-stats.html','college-teams'],['Game Lines','fbs/game-lines.html','college-lines']]},

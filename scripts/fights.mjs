@@ -2,6 +2,8 @@
 import {mkdir,readFile,rename,writeFile} from 'node:fs/promises';
 import {parseFightCards,parseFightMarket,parseFightResult,parseFighter,ufcScoreboard,ufcCore} from '../site/fights-feeds.mjs';
 import {fightHistory,fightForecast} from '../site/fights-core.mjs';
+import {attachUfcStats} from './ufc-model-data.mjs';
+import {buildUfcEnsemble} from './ufc-ensemble.mjs';
 
 const cache=new URL('../.cache/fights/',import.meta.url),out=new URL('../site/data/fights/',import.meta.url);
 await Promise.all([mkdir(cache,{recursive:true}),mkdir(out,{recursive:true})]);
@@ -14,10 +16,10 @@ async function save(file,data){
   await rename(tmp,file);
 }
 
-async function download(url){
+async function download(url,type='json'){
   const response=await fetch(url,{signal:AbortSignal.timeout(9000)});
   if(!response.ok)throw new Error('HTTP '+response.status);
-  return response.json();
+  return type==='text'?response.text():response.json();
 }
 
 async function cached(name,maxAge,read,stale=true){
@@ -60,6 +62,7 @@ const all=[...byId.values()].sort((a,b)=>b.start.localeCompare(a.start));
 const recent=all.filter(c=>c.status==='final').slice(0,8);
 const active=all.filter(c=>c.status==='live'||c.status==='scheduled'&&Date.parse(c.start)>now-day).reverse();
 const visible=[...active,...recent];
+const previous=await readFile(new URL('board.json',out),'utf8').then(JSON.parse).catch(()=>null);
 const isRecent=new Set(recent.map(c=>c.id));
 const boutURL=(c,b)=>ufcCore+'/leagues/ufc/events/'+c.id+'/competitions/'+b.id;
 
@@ -106,17 +109,39 @@ await mapLimit(jobs,8,job=>job());
 
 const completed=all.filter(c=>Date.parse(c.start)<now&&c.bouts.some(b=>b.status==='final'));
 const history=fightHistory(completed);
+const statsCoverage=await attachUfcStats(completed,{cached,download,mapLimit,day});
+const ensemble=statsCoverage.archive>2000?buildUfcEnsemble(completed):null;
 for(const card of active){
   if(card.status!=='scheduled'||Date.parse(card.start)<=now)continue;
-  for(const bout of card.bouts)if(bout.status==='scheduled')bout.forecast=fightForecast(bout,history);
+  for(const bout of card.bouts)if(bout.status==='scheduled'){
+    bout.baseline=fightForecast(bout,history);
+    bout.forecast=ensemble?.forecast(bout,card)??bout.baseline;
+  }
 }
+// Keep the last pre-event forecast visible next to live and final results.
+for(const card of visible){
+  if(card.status==='scheduled'&&Date.parse(card.start)>now)continue;
+  const old=previous?.cards?.find(c=>c.id===card.id);
+  if(!old||Date.parse(old.checked)>=Date.parse(card.start))continue;
+  for(const bout of card.bouts){
+    const prior=old.bouts.find(b=>b.id===bout.id&&b.fighters.every((f,i)=>f.id===bout.fighters[i].id));
+    if(!prior?.forecast)continue;
+    bout.forecast=prior.forecast;
+    bout.baseline=prior.baseline;
+    if(!bout.segment&&prior.segment)bout.segment=prior.segment;
+  }
+}
+// Bout totals are training inputs and need not be sent to the browser.
+for(const card of completed)for(const bout of card.bouts)delete bout.modelStats;
 const fighters=Object.fromEntries([...ids].map(id=>[id,{...history.get(id),...profiles[id]}]));
 const results=all.flatMap(c=>c.bouts.filter(b=>b.status==='final'||b.status==='canceled').map(b=>({
   id:b.id,status:b.status,winner:b.winner,outcome:b.outcome??null,method:b.method??null,round:b.round,clock:b.clock,fighters:b.fighters
 })));
 const updated=current.at;
-await save(new URL('board.json',out),{updated,historyStart,archiveYears:seasons.filter(([,data])=>data).map(([y])=>y),cards:visible,fighters});
+const model=ensemble?{...ensemble.report,statsCoverage}:null;
+await save(new URL('board.json',out),{updated,historyStart,archiveYears:seasons.filter(([,data])=>data).map(([y])=>y),cards:visible,fighters,model});
 await save(new URL('results.json',out),results);
 const featured=active.find(c=>c.status==='live')||active.find(c=>Date.parse(c.start)>now)||recent[0];
 await save(new URL('summary.json',out),{updated,event:featured?.name??null,date:featured?.date??null,bouts:featured?.bouts.length??null,status:featured?.status??null});
 console.log('UFC:',active.length,'active and upcoming cards,',recent.length,'recent cards,',results.length,'results,',ids.size,'fighter profiles.');
+console.log('UFC model:',JSON.stringify({statsCoverage,training:model?.training,members:model?.members,ensemble:model?.ensemble,elo:model?.elo}));

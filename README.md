@@ -137,7 +137,11 @@ npm start
 
 The hourly Pages workflow publishes [ESPN UFC](https://www.espn.com/mma/) cards, results, fighter profiles and available moneylines and round totals. The fight card lists outcomes for recent events and shows scheduled bouts for upcoming cards. Tale of the Tape compares fighter attributes, career stats and the last five bouts in the archive. The feed excludes Contender Series and Road to UFC cards.
 
-The winner baseline uses Elo, starting at 1500 and updating with UFC bout results since 2020. Each fighter needs three graded bouts before a forecast appears. Win estimates are uncalibrated. Pick Tracker captures winner forecasts before the card starts, grades them by ESPN results, and counts hypothetical ROI only where it captured a matching moneyline. Draws push, no contests and canceled bouts are void, and missing outcomes stay pending. The record starts at deployment. Round totals are displayed for research.
+Ensemble Forecasts combines four regularized logistic models. Rating and form use Elo, recent results relative to opponent strength, experience, layoffs, and prior meetings. The striking model compares strike volume, accuracy, absorption and knockdowns. The grappling model compares takedowns against opponent defense, control and submission attempts. The similar-opponent model measures prior results against fighters with similar striking pace, takedown volume, clinch and ground striking share, and submission attempts. Small samples are shrunk and unpublished components carry no weight.
+
+Historical bout statistics come from the pinned [UFC Stats archive compiled by UFC DataLab](https://github.com/komaksym/UFC-DataLab/tree/8524e139a08384cff001c222db3b173e2a7a3776), with newer completed bouts filled from [ESPN FightCenter](https://www.espn.com/mma/). Each forecast uses stats and results from cards that finished earlier. Book prices are displayed separately. Fighters need three graded UFC bouts each, and the raw Elo baseline remains available when style stats are thin. The backtest refits each test year on earlier years and scores Elo on the same bouts.
+
+Pick Tracker captures the ensemble and Elo forecasts before the card starts, grades them by ESPN results, and counts hypothetical ROI where it captured a matching moneyline. Draws push, no contests and canceled bouts are void, and missing outcomes stay pending. Live ensemble tracking starts at deployment. Round totals are displayed for research.
 
 For a local preview, run `npm run fights`, `node scripts/track.mjs`, and `npm start`.
 
