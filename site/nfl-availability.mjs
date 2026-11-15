@@ -1,6 +1,7 @@
-import {ESPN,sportPath,compactInjuries} from './feeds.mjs';
+import {sportPath,compactInjuries} from './feeds.mjs';
 
-const root=ESPN+'/'+sportPath.nfl;
+// ESPN's web host allows these requests from the published site.
+const root='https://site.web.api.espn.com/apis/site/v2/sports/'+sportPath.nfl;
 const minute=60000,day=1440*minute;
 const teamCode=code=>({LAR:'LA',WSH:'WAS'}[code]||code);
 const instant=ms=>new Date(ms).toISOString();
@@ -67,9 +68,9 @@ export async function refreshNflAvailability(games,previous,{now=Date.now(),read
     if(card)applicable[queries[i].id]={...applicable[queries[i].id],...card};
   }
   const reportTime=Date.parse(league?.timestamp),prevTime=Date.parse(previous?.reportAt);
-  const valid=Array.isArray(league?.injuries)&&league.injuries.some(t=>t.displayName&&Array.isArray(t.injuries))&&
-    (!Number.isFinite(prevTime)||Number.isFinite(reportTime)&&reportTime>=prevTime);
-  if(!valid&&!cards.some(p=>p?.header))return previous;
+  const hasReport=Array.isArray(league?.injuries)&&league.injuries.some(t=>t.displayName&&Array.isArray(t.injuries));
+  const valid=hasReport&&(!Number.isFinite(prevTime)||Number.isFinite(reportTime)&&reportTime>=prevTime);
+  if(!hasReport&&!cards.some(p=>p?.header))return previous;
   return {checkedAt:instant(now),reportAt:valid&&Number.isFinite(reportTime)?instant(reportTime):previous?.reportAt??null,
     teams:valid?{...previous?.teams,...compactInjuries(league)}:previous?.teams??{},games:applicable};
 }
