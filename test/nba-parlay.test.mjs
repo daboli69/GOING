@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {allowedRanks,buildTicket,defaults,evaluate,legKey,record,ticketMath} from '../site/nba-parlay-engine.mjs';
 import {captureLegs,finalPlayers,gradeLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
 import {chooseQuotes} from '../scripts/market-data.mjs';
+import {parlayPage,savedParlayTickets} from '../site/nba-parlays.mjs';
+import {current as S} from '../site/ui.mjs';
 
 const now=Date.parse('2026-11-12T16:00Z');
 const lows={rank:2,end:2,total:30}, highs={rank:28,end:28,total:30};
@@ -17,6 +19,29 @@ function row(overrides={}){
 }
 const over={...defaults,side:'Over'};
 const evaluateRows=(rows,cfg=over,taken=new Set())=>evaluate(rows,cfg,{now,taken});
+
+test('Suggested Parlays opens with incomplete saved filters and shows usable legs without rewriting storage',()=>{
+  const key='suite:nba-parlay-tickets';
+  const leg={name:'Example',stat:'Points',line:6.5,side:'Over',price:-110,provider:'Kalshi'};
+  const original=JSON.stringify([null,{id:'saved',date:'2026-11-12',filters:{stats:null},legs:[null,leg]}]);
+  const values=new Map([[key,original],['suite:nba-parlay-settings',JSON.stringify({stats:null,players:{},legs:4})]]);
+  const storage=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+  const {f,route}=S;
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:k=>values.get(k)}});
+  try{
+    Object.assign(S,{f:{},route:{sport:'nba'}});
+    const html=parlayPage({rows:[row()],games:[],roster:[]});
+    assert.match(html,/data-parlay="legs"[^>]*value="4"/);
+    assert.match(html,/Incomplete/);
+    assert.match(html,/result:saved:1/);
+    assert.deepEqual(savedParlayTickets()[0].legs,[leg]);
+    assert.equal(values.get(key),original);
+  }finally{
+    Object.assign(S,{f,route});
+    if(storage)Object.defineProperty(globalThis,'localStorage',storage);
+    else delete globalThis.localStorage;
+  }
+});
 
 test('prop history treats whole-number pushes as neither wins nor losses',()=>{
   assert.deepEqual(record([4,5,6],5,'Under'),{hits:1,n:2,pushes:1,rate:.5});

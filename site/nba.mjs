@@ -200,7 +200,7 @@ function assistData(player,opponent){
     memo.assistArchive=assistArchive(source(),players(),games,id=>profile(id).letter);
   }
   const roster=players().filter(p=>p.team===player.team&&p.id!==player.id);
-  const report=S.injuries[teamName(player.team)]||[];
+  const report=nbaInjuryReport(player.team);
   const statuses=new Map(report.map(row=>[nbaName(row.name),row.status]));
   const unavailable=new Set(roster.filter(p=>outStatus(statuses.get(nbaName(p.name)))).map(p=>p.id));
   const recent=teamStat(player.team).l.slice(-3).map(log=>log[0]);
@@ -464,6 +464,10 @@ function typePage(){
 }
 
 const nbaName=name=>String(name||'').normalize('NFKD').replace(/[^\p{L}\p{N}]/gu,'').toLowerCase();
+function nbaInjuryReport(team){
+  const report=S.injuries?.[teamName(team)];
+  return Array.isArray(report)?report.filter(row=>row&&typeof row.name==='string'):[];
+}
 const gameNumber=value=>value==null||value===''||!Number.isFinite(Number(value))?null:Number(value);
 function defenseLogs(stat,profile,key,byType){
   const memo=reset();
@@ -498,7 +502,8 @@ export function parlayData(quotes=S.odds){
   const useCache=quotes===S.odds;
   if(useCache&&previous&&previous.games===S.games&&previous.odds===S.odds&&previous.injuries===S.injuries)return previous;
   const byPlayer=new Map();
-  for(const quote of quotes){
+  for(const quote of Array.isArray(quotes)?quotes:[]){
+    if(!quote||(quote.id==null&&!quote.player))continue;
     const key=quote.id==null?'name:'+nbaName(quote.player):'id:'+quote.id, list=byPlayer.get(key)||[];
     list.push(quote);byPlayer.set(key,list);
   }
@@ -511,7 +516,7 @@ export function parlayData(quotes=S.odds){
   const rows=roster.flatMap(player=>{
     const game=gamesFor(player.team), opp=game.a===player.team?game.h:game.a;
     const spread=gameNumber(game.odds?.spread)??gameNumber(game.odds?.details?.match(/([+-]\d+(?:\.\d+)?)\s*$/)?.[1]);
-    const report=S.injuries[teamName(player.team)]||[];
+    const report=nbaInjuryReport(player.team);
     const status=report.find(x=>nbaName(x.name)===nbaName(player.name))?.status;
     const isOut=x=>/^(out|injured reserve|suspension|suspended)$/i.test(x||'');
     const teammates=byTeam.get(player.team)||[];
@@ -541,7 +546,7 @@ export function parlayData(quotes=S.odds){
         type:pType,typeDeltas:needsType&&pType!=='—'?defense.deltas.get(opp)||[]:[],typeRank:needsType?defense.rank.get(opp):null,posRank:vs.rank.get(opp),
         pace:mean([teamStat(player.team).game.pace,teamStat(opp).game.pace].filter(x=>x!=null)),
         threeRate:teamStat(player.team).o.tpr,out:isOut(status),uncertain:/day.to.day|questionable|doubtful|^dtd$/i.test(status||'')?status:null,
-        injuryReport:Object.hasOwn(S.injuries,teamName(player.team)),
+        injuryReport:Array.isArray(S.injuries?.[teamName(player.team)]),
         absences:absences.map(({name,played})=>{
           const without=logs.filter(r=>r[2]===player.team&&!played.has(r[0]));
           return {name,n:without.length,delta:without.length>=3?mean(without,r=>r[key])-avg:null};
