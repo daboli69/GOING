@@ -98,9 +98,8 @@ export const hero=(g)=>g?box('',`<h1>${logo(g.a)} ${esc(teamName(g.a))} <span cl
 export const matchup=()=>current.game||{a:current.f.away,h:current.f.home};
 export const versus=g=>`${team(g.a)} <span class="muted">@</span> ${team(g.h)}`;
 export const oddsNote=(g)=>g?.odds?.provider?'<span class="tiny">Game lines: '+esc(g.odds.provider)+' via ESPN.</span>':'';
-export const injuryList=(t)=>{
-  const list=current.injuries[teamName(t)]||[];
-  return list.length?`<div class="chips">${list.slice(0,24).map(x=>`<span title="${esc(x.detail)}">${badge([x.name,x.pos,x.status].filter(Boolean).join(' · '),x.status==='Out'||x.status==='Injured Reserve'?'r':'')}</span>`).join('')}</div>`:'<span class="tiny">No entries on the available report.</span>';
+export const injuryList=(t,list=current.injuries[teamName(t)]||[])=>{
+  return list.length?`<div class="chips">${list.slice(0,24).map(x=>`<span title="${esc(x.detail)}">${badge([x.name,x.pos,x.status].filter(Boolean).join(' · '),/^(out|inactive|injured reserve)$/i.test(x.status||'')?'r':'')}</span>`).join('')}</div>`:'<span class="tiny">No entries on the available report.</span>';
 };
 export function local(k,fallback){try{return JSON.parse(localStorage.getItem('suite:'+k))??fallback;}catch{return fallback;}}
 export function keep(k,v){localStorage.setItem('suite:'+k,JSON.stringify(v));}

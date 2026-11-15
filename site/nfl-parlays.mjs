@@ -1,8 +1,30 @@
 // GOING LONG Suggested Parlays: the shared parlay page (parlay-ui.mjs) with the NFL engine and filters.
-import {current as S,slate,tools,btn,esc} from './ui.mjs';
+import {current as S,slate,tools,btn,esc,box,table,round,teamName,today} from './ui.mjs';
 import {href} from './config.mjs';
+import {nflInjuryContext} from './nfl-availability.mjs';
+import {nflOut} from './nfl-workload.mjs';
 import {defaults,evaluate,markets,weights,yardMarkets,tdMarkets,ticketRules,warnings,PRIOR} from './nfl-parlay-engine.mjs';
 import {createParlays} from './parlay-ui.mjs';
+
+function workloadChanges(data){
+  if(!data.changes.length)return '';
+  const rows=[...data.changes].sort((a,b)=>Math.abs(b.value-b.baseline)/Math.max(b.baseline,1)-Math.abs(a.value-a.baseline)/Math.max(a.baseline,1));
+  return box('Injury-adjusted projections',table(['Player','Game','Stat','Baseline','Adjusted','RotoWire via Sleeper','Teammates out'],
+    rows.map(r=>[esc(r.player.name+' · '+r.player.team),esc(r.game.a+' @ '+r.game.h),esc(r.stat),round(r.baseline,1),
+      round(r.value,1),r.sleeper==null?'—':round(r.sleeper,1),esc(r.absences.join(', '))]),{sort:'nfl-workload',wrap:'box'}),
+    'Available players can pick up part of the vacated work at their position. GOING estimates the split from recent usage and blends in current RotoWire projections from Sleeper when available. These projections can appear without a market line.','nfl-workload');
+}
+
+function injuryReport(){
+  const rows=S.games.filter(g=>g.date>=today).flatMap(g=>[g.a,g.h].flatMap(team=>{
+    const opponent=team===g.a?g.h:g.a;
+    const {report}=nflInjuryContext(S.nflAvailability,S.injuries,g,team,opponent,teamName);
+    return report.filter(r=>nflOut(r.status)||/questionable|doubtful/i.test(r.status||'')).map(r=>[
+      esc(g.a+' @ '+g.h),esc(team),esc(r.name),esc(r.pos??'—'),esc(r.status)]);
+  }));
+  return rows.length?`<details class="details" data-nfl-injuries ${S.f.nflInjuriesOpen?'open':''}><summary>Injuries and inactives (${rows.length})</summary>`+
+    table(['Matchup','Team','Player','Pos.','Status'],rows,{sort:'nfl-reported-injuries',wrap:'box'})+'</details>':'';
+}
 
 const nfl=createParlays({
   settingsKey:'nfl-parlay-settings',ticketsKey:'nfl-parlay-tickets',
@@ -18,7 +40,7 @@ const nfl=createParlays({
     (f.tdMax??1)+' max TD legs',f.stacks?'correlated stacks allowed':'',f.weather===false?'weather cut off':''].filter(Boolean),
   period:()=>S.year+'-'+S.week,periodLabel:()=>S.year+' Week '+S.week,
   nav:()=>slate({navOnly:true}),
-  intro:()=>{
+  intro:data=>{
     const availability=S.nflAvailability;
     const format=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
     const stamp=iso=>Number.isFinite(Date.parse(iso))?format.format(new Date(iso)):null;
@@ -28,7 +50,8 @@ const nfl=createParlays({
       games?games+' games with inactives reported for both teams':null].filter(Boolean).join(' · ');
     return tools(`<a class="pill" href="${href('long/parlay-tracker.html')}">NFL Leg Tracker</a>`+
       btn('Check for updates','nflParlayCheck','')+`<span class="subtle">${esc(status||'Waiting for a timestamped injury report')}</span>`)+
-      '<p class="subtle">The suggested draft updates as injury reports, game-day inactives and published prices change. Generate to save a ticket to your history.</p>';
+      '<p class="subtle">The suggested draft updates as injury reports, game-day inactives, projections and published prices change. Generate to save a ticket to your history.</p>'+
+      workloadChanges(data)+injuryReport();
   },
   recent:{key:'last8',label:'L8'},
   legText:leg=>tdMarkets.has(leg.stat)?leg.stat+': '+(leg.side==='Over'?'Yes':'No'):leg.side+' '+leg.line+' '+leg.stat+(yardMarkets.has(leg.stat)?' yds':''),

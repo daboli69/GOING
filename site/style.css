@@ -38,6 +38,7 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .door[data-door=cbb]{--door:var(--c-cbb)}.door[data-door=cwb]{--door:var(--c-cwb)}.door[data-door=fbs]{--door:var(--c-fbs)}
 .door[data-door=ufc]{--door:var(--c-ufc)}
 :root[data-sport=ufc] .tools select{max-width:min(65vw,440px)}
+.nfl-workload .tablewrap,[data-nfl-injuries] .tablewrap{max-height:22rem}
 :root:is([data-sport=cbb],[data-sport=cwb],[data-sport=fbs]) .tools select{max-width:min(65vw,440px)}
 .door:hover{border-color:color-mix(in srgb,var(--door) 60%,var(--edge))}
 .door-name{grid-area:name;min-width:0}.door-name a{display:block;width:fit-content;max-width:100%}.door-name .sport-wordmark{width:clamp(245px,38vw,490px);max-width:100%}

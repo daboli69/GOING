@@ -4,6 +4,7 @@ import {assess,evaluate,defaults,shrunk,correlation,ticketRules,warnings,badWeat
 import {buildTicket,ticketMath} from '../site/parlay-core.mjs';
 import {kickoff,playerRole} from '../site/nfl.mjs';
 import {nflInjuryContext,refreshNflAvailability} from '../site/nfl-availability.mjs';
+import {mergeSleeperNfl,nflWorkload,parseSleeperNfl} from '../site/nfl-workload.mjs';
 
 const now=Date.parse('2026-11-14T12:00:00Z');
 const rank=(r,total=32)=>({rank:r,end:r,total});
@@ -37,6 +38,30 @@ test('game-day inactives override an earlier questionable report and stay scoped
   assert.equal(run({out:true,inactive:true}).cut,'Confirmed inactive');
   const unavailable=await refreshNflAvailability([game],availability,{now:checkTime+60000,read:async()=>null});
   assert.equal(unavailable,availability);
+});
+
+test('an injured lead back redistributes workload and older fantasy projections cannot override the shift',()=>{
+  const game={id:'2026_10_KC_ATL',week:10,date:'2026-11-15',time:'13:00',a:'KC',h:'ATL'};
+  const asOf=Date.parse('2026-11-15T16:40Z'),games=['g1','g2','g3','g4','g5'];
+  const player=(id,name,rush)=>({id,name,pos:'RB',logs:games.map(game=>({game,rush,rushY:rush*4,targets:0}))});
+  const [starter,backup,other]=[player('1','Lead Back',18),player('2','Next Back',3),player('3','Other Back',2)];
+  const projections=(updated,week=10)=>parseSleeperNfl([{company:'rotowire',category:'proj',season_type:'regular',season:'2026',week,
+    updated_at:updated,date:game.date,team:'KC',opponent:'ATL',player:{first_name:'Next',last_name:'Back',position:'RB'},
+    stats:{rush_att:14,rush_yd:55,pts_ppr:16}}],2026,10,asOf);
+  const current=projections(asOf-60000),old=projections(asOf-600000);
+  const report=[{name:starter.name,status:'Inactive',date:'2026-11-15T16:35Z'}];
+  const context=rows=>nflWorkload(game,'KC',[starter,backup,other],games,report,rows,asOf);
+  const result=context(current).projection(backup,'Rushing',12);
+  assert.ok(result.value>50);
+  assert.equal(result.sleeper,55);
+  assert.deepEqual(result.absences,[starter.name]);
+  assert.equal(context(current).projection(starter,'Rushing',72).out,true);
+  const stale=context(old).projection(backup,'Rush Attempts',3);
+  assert.equal(stale.sleeper,null);
+  assert.ok(stale.value>3);
+  assert.equal(mergeSleeperNfl(current,old),current);
+  assert.equal(projections(asOf+1000),null);
+  assert.equal(projections(asOf,11),null);
 });
 
 test('a receiving Over against a weak defense for his role qualifies, with reasons from each data source',()=>{

@@ -179,6 +179,9 @@ export function assess(row,side,cfg,context){
     if(absent.delta!=null)impact+=clamp(direction*absent.delta/Math.max(row.avg||1,1),-.3,.3);
   }
   if(row.absenceAdjustment)leg.reasons.push('Projection '+signed(row.absenceAdjustment)+' from teammate-out splits');
+  if(row.workload?.usageShift)leg.reasons.push('Workload shift with '+row.workload.absences.join(', ')+' out');
+  if(row.workload?.usageShift)leg.flags.push('Hit rates reflect prior usage');
+  if(row.workload?.sleeper!=null)leg.reasons.push('RotoWire via Sleeper '+format(row.workload.sleeper));
   if(row.rest!=null){
     if(row.rest<=5){impact-=.1;leg.flags.push('Short week ('+row.rest+' days)');}
     else if(row.rest>=13){impact+=.1;leg.reasons.push('Off a bye');}
@@ -191,7 +194,7 @@ export function assess(row,side,cfg,context){
   leg.context={role:row.role,defense:d?{rank:d.rank,value:d.value,league:d.league,label:d.label}:null,spread:row.spread,script:row.script,total:row.total,
     teamTotal:row.teamTotal,model:row.model,weather:w||null,proe:row.proe,pace:row.pace,snaps:row.snaps,share:row.share,recentShare:row.recentShare,
     rzShare:row.rzShare,ryoe:row.ryoe,cbRoom:row.cbRoom,cbOut:row.cbOut,qbOut:row.qbOut,olOut:row.olOut,rest:row.rest,
-    absences:row.absences,absenceAdjustment:row.absenceAdjustment,status:row.status,inactivesPosted:row.inactivesPosted};
+    absences:row.absences,absenceAdjustment:row.absenceAdjustment,status:row.status,inactivesPosted:row.inactivesPosted,workload:row.workload};
   leg.cut=Object.values(checks).find(Boolean)||null;
   if(!leg.cut){
     const value=clamp((edge||0)*5,0,1)+(gap==null?0:clamp(gap/Math.max(Math.abs(leg.line),1),0,1));
