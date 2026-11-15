@@ -9,11 +9,13 @@ const rates=[[.5,'Below 50%'],[.6,'50–59%'],[.7,'60–69%'],[Infinity,'70%+']]
 const breakdowns={
   'Stat & side':l=>l.stat+' · '+l.side,
   'Role':l=>l.context?.role||'Unknown',
+  'Form sample':l=>l.context?.formSource==='comparable-role'?'Comparable role':
+    l.context?.comparableGames!=null?'Role change, limited comparable games':'Season history',
   'Defense vs role':l=>thirds(l.context?.defense?.rank),
   'Line vs projection':l=>l.projection==null?'No projection':bucket((l.projection-l.line)*(l.side==='Over'?1:-1)/Math.max(Math.abs(l.line),1),
     [[0,'Against the side'],[.1,'0–10% in favor'],[.25,'10–25% in favor'],[Infinity,'25%+ in favor']]),
   'Last 8 hit rate':l=>bucket(l.form?.last8?.rate,rates),
-  'Season hit rate':l=>bucket(l.form?.season?.rate,rates),
+  'Sample hit rate':l=>bucket(l.form?.season?.rate,rates),
   'Venue hit rate':l=>bucket(l.form?.venue?.rate,rates),
   'Shrunk chance vs price':l=>l.edge==null?'Unknown':bucket(l.edge,[[0,'Below the price'],[.05,'0–5 points above'],[.1,'5–10 points above'],[Infinity,'10+ points above']]),
   'Game script':l=>{const s=l.context?.script;return s==null?'Unknown':s>=7?'Favored by 7+':s>=3?'Favored by 3–6.5':s>-3?'Close (under 3)':s>-7?'Underdog by 3–6.5':'Underdog by 7+';},
@@ -30,7 +32,7 @@ const breakdowns={
 const legText=l=>tdMarkets.has(l.stat)?l.stat+': '+(l.side==='Over'?'Yes':'No'):l.side+' '+l.line+' '+l.stat+(yardMarkets.has(l.stat)?' yds':'');
 const nfl=createTracker({prefix:'nfl-parlay-legs',title:'NFL Leg Tracker',suggested:'long/suggested-parlays.html',markets,prior:PRIOR,breakdowns,
   recent:{key:'last8',label:'L8'},legText,savedTickets:savedNflTickets,alternates:false,startLabel:'Kickoff',
-  forms:[['L5','last5'],['L8','last8'],['Season','season'],['Home','home'],['Away','away'],['Venue','venue']],
+  forms:[['L5','last5'],['L8','last8'],['Sample','season'],['Home','home'],['Away','away'],['Venue','venue']],
   empty:'Results will appear once the tracker captures priced NFL props before kickoff.',
   coverage:index=>(index.filters?`Default ticket: ${index.filters.legs} legs, one per game, ${index.filters.hit}% minimum last-8 hit rate, ${index.filters.sample}+ games played, ${index.filters.spread} max spread, ${index.filters.tdMax} TD leg at most. `:'')+
     'Every market is screened, including First TD, so each rule has a record. Each line and side counts once at its last pregame quote. Results come from the nflverse play-by-play, usually the morning after the game; snap counts mark players who did not play as void.',
@@ -38,6 +40,7 @@ const nfl=createTracker({prefix:'nfl-parlay-legs',title:'NFL Leg Tracker',sugges
     const c=l.context||{}, d=c.defense, w=c.weather;
     return `<p>${notes(['Role '+(c.role||'—'),d?'Defense '+d.rank.rank+'/'+d.rank.total+' vs role ('+d.label+')':'',
       'Projection '+round(l.projection),'L5 avg '+round(l.recentAvg),'Season avg '+round(l.avg),l.chance!=null?'Shrunk chance '+pct(l.chance):'',
+      c.comparableGames!=null?(c.formSource==='comparable-role'?'Used ':'Found ')+c.comparableGames+' comparable-role games':'',
       'Reads '+(l.readsFor??'—')+' for / '+(l.readsAgainst??'—')+' against'])}</p>
     <p>${notes(['Spread '+round(c.spread),c.script!=null?'Script '+signed(c.script):'','Total '+round(c.total),'Team total '+round(c.teamTotal),
       c.model?'Model win '+pct(c.model.p):'',c.proe!=null?'PROE '+signed(c.proe*100)+'%':'',c.pace!=null?'Pace '+round(c.pace)+' plays':'',

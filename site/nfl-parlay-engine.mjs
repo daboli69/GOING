@@ -42,7 +42,17 @@ export const shrunk=(s,prior=PRIOR,toward=.5)=>s?.n==null?null:(s.hits+2*prior*t
 export const badWeather=w=>!!w&&w.roof!=='dome'&&((w.wind??0)>=15||(w.rain??0)>=.1);
 
 export function assess(row,side,cfg,context){
-  const {quote,player,game,stat,form,reads}=row;
+  const {quote,player,game,stat}=row;
+  const comparable=row.replacement?.games||[];
+  const useComparable=comparable.length>=Math.max(4,cfg.sample);
+  const form=useComparable?{
+    season:comparable.map(g=>g.value),last8:comparable.slice(-8).map(g=>g.value),last5:comparable.slice(-5).map(g=>g.value),
+    venue:comparable.filter(g=>g.home===row.home).map(g=>g.value),
+    home:comparable.filter(g=>g.home).map(g=>g.value),away:comparable.filter(g=>!g.home).map(g=>g.value)
+  }:row.form;
+  const reads=useComparable?[mean(form.last5),mean(form.last8),mean(form.season),mean(form.venue),row.projection,row.replacement.opponentAverage]
+    .filter(x=>x!=null):row.reads;
+  const snaps=useComparable?mean(comparable,g=>g.snaps):row.snaps;
   const over=side==='Over', direction=over?1:-1, yards=yardMarkets.has(stat), volume=volumeMarkets.has(stat), td=tdMarkets.has(stat);
   const price=quote[over?'over':'under'], prob=implied(price);
   const leg={date:row.date,game:String(game.id),tip:game.iso,player:player.id,name:player.name,pos:player.pos,
@@ -123,9 +133,9 @@ export function assess(row,side,cfg,context){
   }
 
   // 7: usage. A part-time snap share removes yardage and volume Overs.
-  if(!td&&player.pos!=='QB'&&row.snaps!=null){
-    check('Snap share',over&&row.snaps<.5?'Snap share under 50%':null);
-    if(row.snaps>=.5)leg.reasons.push('Snaps '+percent(row.snaps)+' L3');
+  if(!td&&player.pos!=='QB'&&snaps!=null){
+    check('Snap share',over&&snaps<.5?'Snap share under 50%':null);
+    if(snaps>=.5)leg.reasons.push('Snaps '+percent(snaps)+(useComparable?' in comparable games':' L3'));
   }
 
   // 8: context.
@@ -180,7 +190,8 @@ export function assess(row,side,cfg,context){
   }
   if(row.absenceAdjustment)leg.reasons.push('Projection '+signed(row.absenceAdjustment)+' from teammate-out splits');
   if(row.workload?.usageShift)leg.reasons.push('Workload shift with '+row.workload.absences.join(', ')+' out');
-  if(row.workload?.usageShift)leg.flags.push('Hit rates reflect prior usage');
+  if(useComparable)leg.reasons.push('Form from '+comparable.length+' games without '+row.workload.absences.join(', '));
+  else if(row.workload?.usageShift)leg.flags.push('Limited comparable-role history');
   if(row.workload?.sleeper!=null)leg.reasons.push('RotoWire via Sleeper '+format(row.workload.sleeper));
   if(row.rest!=null){
     if(row.rest<=5){impact-=.1;leg.flags.push('Short week ('+row.rest+' days)');}
@@ -194,7 +205,8 @@ export function assess(row,side,cfg,context){
   leg.context={role:row.role,defense:d?{rank:d.rank,value:d.value,league:d.league,label:d.label}:null,spread:row.spread,script:row.script,total:row.total,
     teamTotal:row.teamTotal,model:row.model,weather:w||null,proe:row.proe,pace:row.pace,snaps:row.snaps,share:row.share,recentShare:row.recentShare,
     rzShare:row.rzShare,ryoe:row.ryoe,cbRoom:row.cbRoom,cbOut:row.cbOut,qbOut:row.qbOut,olOut:row.olOut,rest:row.rest,
-    absences:row.absences,absenceAdjustment:row.absenceAdjustment,status:row.status,inactivesPosted:row.inactivesPosted,workload:row.workload};
+    absences:row.absences,absenceAdjustment:row.absenceAdjustment,status:row.status,inactivesPosted:row.inactivesPosted,workload:row.workload,
+    comparableGames:row.replacement?comparable.length:null,formSource:useComparable?'comparable-role':'full-season'};
   leg.cut=Object.values(checks).find(Boolean)||null;
   if(!leg.cut){
     const value=clamp((edge||0)*5,0,1)+(gap==null?0:clamp(gap/Math.max(Math.abs(leg.line),1),0,1));

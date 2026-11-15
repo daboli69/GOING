@@ -535,7 +535,7 @@ async function tickNflInputs(force=false){
       else changed=true;
       S.nflAvailability=availability;
     }
-    if(draft&&changed)M.nfl.action('parlayRefreshDraft','');
+    if(draft&&(force||changed))M.nfl.action('parlayRefreshDraft','');
     if(draft||changed)render();
     if(force)toast(availability?.checkedAt===new Date(now).toISOString()?'Injury reports checked':'Live injury report unavailable');
   }catch(e){console.error(e);if(force&&token===req)toast('Could not check for updates');}

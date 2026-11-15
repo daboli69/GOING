@@ -7,7 +7,7 @@ import {bucket,isRush,offenseTd,bucketRates,impliedPoints,impliedTds,rushShare,a
 import {tdBoardPage,tdBoardAction} from './nfl-td-board.mjs';
 import {nflParlayPage,nflParlayAction} from './nfl-parlays.mjs';
 import {kickoff,nflInjuryContext,nflName} from './nfl-availability.mjs';
-import {nflOut as outNow,nflWorkload} from './nfl-workload.mjs';
+import {nflOut as outNow,nflReplacementGames,nflWorkload} from './nfl-workload.mjs';
 export {kickoff} from './nfl-availability.mjs';
 
 const names=Object.keys(nflTeams).sort((a,b)=>nflTeams[a][0].localeCompare(nflTeams[b][0]));
@@ -502,6 +502,11 @@ export function nflParlayData(quotes=S.odds){
           const dv=table?.value.get(opp);
           const defense=table&&dv&&table.ranks.get(opp)?{rank:table.ranks.get(opp),value:dv[1],league:table.league,label:table.label(dv),role,scale:table.scale}:null;
           const allowedPerPlayer=L.perGameTables[(kind==='td'?'Anytime TD':m)+'|'+role]?.perPlayer.get(opp)??null;
+          const replacement=estimate.usageShift?{
+            games:nflReplacementGames(p,estimate.absences,players,teamGames,id=>L.snapsIn(id,t)).map(({game,snaps})=>({
+              value:logs.find(x=>x.game===game)?.[k]||0, home:schedule.get(game)?.h===t,snaps
+            })),opponentAverage:allowedPerPlayer
+          }:null;
           const snapList=L.recentIds(t).map(id=>L.snapsIn(id,t).find(r=>nflName(r[0])===nflName(p.name))?.[2]).filter(x=>x!=null);
           const ryoe=['Rushing','Rush Attempts'].includes(m)?[L.ryoePlayer.get(p.id),L.ryoeDef[opp]].filter(x=>x!=null):[];
           roster.set(p.id,{id:p.id,name:p.name,team:t});
@@ -520,7 +525,7 @@ export function nflParlayData(quotes=S.odds){
             firstRate:s.gp?s.first.length/s.gp:null,ryoe:ryoe.length?mean(ryoe):null,
             cbRoom:L.cbRoom[opp],cbLeague:L.cbLeague,cbOut,qbOut:qbOut&&qbOut!==p.name?qbOut:null,olOut,rest,
             out:outNow(status),inactive:status==='Inactive',status:/questionable|doubtful/i.test(status||'')?status:null,
-            injuryReport:hasReport,inactivesPosted,absences,absenceAdjustment:estimate.splitApplied??0,workload:estimate});
+            injuryReport:hasReport,inactivesPosted,absences,absenceAdjustment:estimate.splitApplied??0,workload:estimate,replacement});
         }
       }
     }

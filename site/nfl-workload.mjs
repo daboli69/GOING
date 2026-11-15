@@ -58,6 +58,24 @@ export function mergeSleeperNfl(previous,next){
   return changed?{...next,players}:previous;
 }
 
+// Compare games where the same teammates had already played for this team and then sat.
+export function nflReplacementGames(player,absences,players,teamGames,snapsIn){
+  const mates=players.filter(p=>absences.includes(p.name));
+  if(!mates.length||mates.length!==absences.length)return [];
+  const first=mates.map(p=>teamGames.findIndex(id=>p.logs.some(log=>log.game===id)));
+  if(first.some(i=>i<0))return [];
+  const pastGames=teamGames.slice(Math.max(...first)+1);
+  const name=nflName(player.name), mateNames=new Set(mates.map(p=>nflName(p.name)));
+  return pastGames.flatMap(game=>{
+    const snaps=snapsIn(game);
+    const offense=snaps.filter(row=>row[2]>0);
+    if(offense.length<11||offense.some(row=>mateNames.has(nflName(row[0])))||
+      mates.some(p=>p.logs.some(log=>log.game===game)))return [];
+    const played=offense.find(row=>nflName(row[0])===name);
+    return played?[{game,snaps:played[2]}]:[];
+  });
+}
+
 export function nflWorkload(game,team,players,teamGames,report,sleeper,now=Date.now()){
   const statuses=new Map(report.map(r=>[nflName(r.name),r]));
   const status=p=>statuses.get(nflName(p.name));

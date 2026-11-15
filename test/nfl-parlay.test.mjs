@@ -4,7 +4,7 @@ import {assess,evaluate,defaults,shrunk,correlation,ticketRules,warnings,badWeat
 import {buildTicket,ticketMath} from '../site/parlay-core.mjs';
 import {kickoff,playerRole} from '../site/nfl.mjs';
 import {nflInjuryContext,refreshNflAvailability} from '../site/nfl-availability.mjs';
-import {mergeSleeperNfl,nflWorkload,parseSleeperNfl} from '../site/nfl-workload.mjs';
+import {mergeSleeperNfl,nflReplacementGames,nflWorkload,parseSleeperNfl} from '../site/nfl-workload.mjs';
 
 const now=Date.parse('2026-11-14T12:00:00Z');
 const rank=(r,total=32)=>({rank:r,end:r,total});
@@ -62,6 +62,41 @@ test('an injured lead back redistributes workload and older fantasy projections 
   assert.equal(mergeSleeperNfl(current,old),current);
   assert.equal(projections(asOf+1000),null);
   assert.equal(projections(asOf,11),null);
+});
+
+test('comparable games require a verified replacement appearance after the teammate had played for that team',()=>{
+  const games=['too-early','first-together','comparable','teammate-played','missing-coverage','did-not-play','stat-conflict'];
+  const starter={name:'Lead Receiver',logs:[{game:'first-together'},{game:'stat-conflict'}]};
+  const player={name:'Next Receiver'};
+  const offense=Array.from({length:11},(_,i)=>['Offensive player '+i,'WR',.8,0]);
+  const backup=[player.name,'WR',.82,0], lead=[starter.name,'WR',.75,0];
+  const snapsFor=game=>({
+    'too-early':[...offense,backup], 'first-together':[...offense,backup,lead],
+    comparable:[...offense,backup], 'teammate-played':[...offense,backup,lead],
+    'missing-coverage':[backup], 'did-not-play':offense, 'stat-conflict':[...offense,backup]
+  })[game];
+  assert.deepEqual(nflReplacementGames(player,[starter.name],[starter,player],games,snapsFor),[{game:'comparable',snaps:.82}]);
+});
+
+test('a live role change can add a leg when comparable form supports it and removes an inactive leg',()=>{
+  const backup=row({player:{id:'backup',name:'Next Receiver',team:'SF',pos:'WR'},
+    form:{season:[14,20,24,8],last8:[14,20,24,8],last5:[14,20,24,8],venue:[14,20,24],home:[8],away:[14,20,24]},
+    reads:[15,20,60],snaps:.27,workload:{usageShift:true,absences:['Test Receiver']}});
+  const comparable=[80,70,90,82].map((value,i)=>({value,home:i===0,snaps:.85}));
+  const rank=rows=>buildTicket(evaluate(rows,defaults,{now}).eligible,defaults,{rules:ticketRules(defaults)}).ticket.map(l=>l.name);
+  assert.deepEqual(rank([row(),backup]),['Test Receiver']);
+  assert.deepEqual(rank([row({out:true}),{...backup,replacement:{games:comparable}}]),['Next Receiver']);
+  const changed=assess({...backup,replacement:{games:comparable}},'Over',defaults,{now,taken:new Set()});
+  assert.equal(changed.context.formSource,'comparable-role');
+  assert.equal(changed.form.season.n,4);
+  assert.equal(changed.form.venue.n,3);
+  assert.match(changed.reasons.join(' '),/4 games without Test Receiver/);
+  const small=assess({...backup,replacement:{games:comparable.slice(0,3)}},'Over',defaults,{now,taken:new Set()});
+  assert.equal(small.cut,'Last 8 hit rate');
+  assert.equal(small.context.formSource,'full-season');
+  assert.ok(small.flags.includes('Limited comparable-role history'));
+  const expensive=assess({...backup,quote:{...backup.quote,over:-525},replacement:{games:comparable}},'Over',defaults,{now,taken:new Set()});
+  assert.equal(expensive.cut,'Shrunk hit rate below the price');
 });
 
 test('a receiving Over against a weak defense for his role qualifies, with reasons from each data source',()=>{
