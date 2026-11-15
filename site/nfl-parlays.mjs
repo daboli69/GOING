@@ -70,7 +70,7 @@ const nfl=createParlays({
     const games=S.games.filter(g=>availability?.games?.[g.id]&&Object.keys(availability.games[g.id]).length===2).length;
     const status=[report?'ESPN injury report '+report:null,checked?'Last checked '+checked:null,
       games?games+' games with inactives reported for both teams':null].filter(Boolean).join(' · ');
-    return tools(`<a class="pill" href="${href('long/parlay-tracker.html')}">NFL Leg Tracker</a>`+
+    return tools(`<a class="pill" href="${href('long/parlay-tracker.html')}">NFL Leg Tracker</a> <a class="pill" href="${href('long/same-game-parlays.html')}">Same-Game Parlays</a>`+
       btn('Check for updates','nflParlayCheck','')+`<span class="subtle">${esc(status||'Waiting for a timestamped injury report')}</span>`)+
       '<p class="subtle">The suggested draft updates as injury reports, game-day inactives, projections and published prices change. Generate to save a ticket to your history.</p>';
   },

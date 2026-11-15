@@ -46,6 +46,9 @@ const baseHints={'Odds range':'Widen the odds range.','Existing tickets':'Allow 
    nav()                    the slate navigation shown above the filters
    intro                    HTML under the page title (links)
    afterTicket(data,report,ticket)  optional market screening details
+   singleGame               select the game in the slate, instead of per-game and matchup-exclusion controls
+   build                    optional ticket builder
+   ticketSummary(ticket)    optional replacement for independent-leg math
    recent                   {key,label}: the recent-form record shown on the ticket
    legText(leg)             how a leg reads, e.g. "Over 6.5 Assists"
    noRows                   message when no priced props exist
@@ -57,15 +60,15 @@ const baseHints={'Odds range':'Widen the odds range.','Existing tickets':'Allow 
    chanceNote               how the adjusted chance is described
 */
 export function createParlays(opts){
-  const {settingsKey,ticketsKey,engine,weightNames}=opts;
+  const {settingsKey,ticketsKey,engine,weightNames,singleGame,build=buildTicket}=opts;
   const {defaults,weights,markets,evaluate}=engine;
-  const bounds={legs:[2,10],minOdds:[1.01,101],maxOdds:[1.01,101],...Object.fromEntries(opts.fields.map(f=>[f.key,[f.min,f.max]]))};
+  const bounds={legs:[2,singleGame?6:10],minOdds:[1.01,101],maxOdds:[1.01,101],...Object.fromEntries(opts.fields.map(f=>[f.key,[f.min,f.max]]))};
   const integers=new Set(['legs',...opts.fields.filter(f=>f.integer).map(f=>f.key)]);
   const hints={...baseHints,...opts.hints};
   const readTickets=()=>{const value=local(ticketsKey,[]);return Array.isArray(value)?value:[];};
   const savedTickets=()=>readTickets().filter(isTicket).map(ticket=>({...ticket,legs:ticket.legs.filter(isSavedLeg)}))
     .filter(ticket=>ticket.legs.length);
-  const booleans=['perGame','skipTickets',...(opts.checks||[]).map(c=>c.key)];
+  const booleans=[...(singleGame?[]:['perGame']),'skipTickets',...(opts.checks||[]).map(c=>c.key)];
   function readFilters(value){
     const source=isRecord(value)?value:{},cfg={...defaults};
     for(const [key,range] of Object.entries(bounds)){
@@ -101,7 +104,7 @@ export function createParlays(opts){
     const playerLabel=id=>data.roster.find(p=>p.id===id)?.name||id;
     const gameLabel=id=>{const g=data.games.find(x=>String(x.id)===id);return g?gameName(g):id;};
     return tools(
-      select('Exclude game','game','',[['','Choose a game'],...data.games.filter(g=>!cfg.games.includes(String(g.id))).map(g=>[String(g.id),gameName(g)])])+
+      (singleGame?'':select('Exclude game','game','',[['','Choose a game'],...data.games.filter(g=>!cfg.games.includes(String(g.id))).map(g=>[String(g.id),gameName(g)])]))+
       select('Exclude player','player','',[['','Choose a player'],...[...data.roster].filter(p=>!cfg.players.includes(p.id))
         .sort((a,b)=>a.name.localeCompare(b.name)).map(p=>[p.id,p.name+' · '+p.team])])+
       check('Exclude legs on my tickets','skipTickets',cfg.skipTickets)
@@ -110,8 +113,8 @@ export function createParlays(opts){
   }
 
   function controls(data,cfg){
-    return tools(number('Legs','legs',cfg.legs,2,10)+select('Sides','side',cfg.side,['Both','Over','Under'].map(side=>[side,side]))+
-        check('One leg per game','perGame',cfg.perGame))+
+    return tools(number('Legs','legs',cfg.legs,...bounds.legs)+select('Sides','side',cfg.side,['Both','Over','Under'].map(side=>[side,side]))+
+        (singleGame?'':check('One leg per game','perGame',cfg.perGame)))+
       tools(markets.map(stat=>btn(esc(stat),'parlayStat',stat,cfg.stats.includes(stat)?'on':'')).join(''))+
       tools(opts.fields.map(f=>number(f.label,f.key,cfg[f.key],f.min,f.max,f.step??1)).join(''))+
       (opts.checks?.length?tools(opts.checks.map(c=>check(c.label,c.key,cfg[c.key])).join('')):'')+
@@ -120,7 +123,7 @@ export function createParlays(opts){
       exclusions(data,cfg)+
       `<details data-parlay-weights ${S.f.parlayWeights?'open':''}><summary>Scoring weights</summary>${tools(Object.entries(weightNames).map(([key,label])=>
         number(label,'weight-'+key,cfg.weights[key],0,10,.5)).join(''))}</details>`+
-      tools(btn('Generate','parlayGenerate','','primary')+btn('Regenerate','parlayRegenerate')+
+      tools(btn(singleGame?'Generate & save':'Generate','parlayGenerate','','primary')+btn('Regenerate','parlayRegenerate')+
         btn('Reset filters','parlayReset','', 'outline'));
   }
 
@@ -156,7 +159,7 @@ export function createParlays(opts){
 
   function filterLabel(filters){
     return [filters.side,filters.stats.join(', '),...opts.summary(filters),'odds '+americanText(filters.minOdds)+' to '+americanText(filters.maxOdds),
-      filters.perGame?'one per game':'same-game allowed',filters.skipTickets?'overlap excluded':'overlap allowed',
+      singleGame?'one matchup':filters.perGame?'one per game':'same-game allowed',filters.skipTickets?'overlap excluded':'overlap allowed',
       filters.games.length+' game / '+filters.players.length+' player exclusions',
       ...Object.entries(weightNames).map(([key,name])=>name+' weight '+filters.weights[key])].join(' · ');
   }
@@ -202,7 +205,7 @@ export function createParlays(opts){
 
   function page(data){
     const cfg=config(), state=draft(), report=evaluate(data.rows,cfg,{taken:takenLegs(opts.liveDraft?state.savedId:undefined)});
-    const preview=buildTicket(report.eligible,cfg,{rules:ticketRules(cfg)}).ticket;
+    const preview=!opts.liveDraft||!state.initialized?build(report.eligible,cfg,{rules:ticketRules(cfg)}).ticket:[];
     if(opts.liveDraft&&!state.initialized){
       state.ticket=preview;
       state.initialized=true;
@@ -217,13 +220,13 @@ export function createParlays(opts){
       return {...leg,flags};
     });
     const intro=typeof opts.intro==='function'?opts.intro(data):opts.intro;
-    return `<h1>Suggested Parlays</h1>${intro||''}`+opts.nav()+
+    return `<h1>${esc(opts.title||'Suggested Parlays')}</h1>${intro||''}`+opts.nav()+
       box('Filters',controls(data,cfg))+
       box('Suggested ticket',(opts.liveDraft?`<p class="subtle">Last evaluated ${esc(timeLabel(state.evaluatedAt))} · ${report.eligible.length} eligible priced legs</p>`:'')+
         (state.message?`<p class="subtle" role="status">${esc(state.message)}</p>`:'')+
         shortage(data,cfg,report,opts.liveDraft?ticket.length:ticket.length||preview.length)+
-        (ticket.length?ticketTable(ticket,state.locked)+(ticket.length>=2?mathSummary(ticket):''):empty(opts.liveDraft?'No suggested legs match the current filters.':'Generate a ticket from the eligible legs.')))+
-      (opts.afterTicket?.(data,report,ticket)||'')+box('Ticket history',history());
+        (ticket.length?ticketTable(ticket,state.locked)+(ticket.length>=2?(opts.ticketSummary||mathSummary)(ticket):''):empty(opts.liveDraft?'No suggested legs match the current filters.':'Generate a ticket from the eligible legs.')))+
+      (opts.afterTicket?.(data,report,ticket)||'')+box(singleGame?'SGP ticket history':'Ticket history',history());
   }
 
   function saveTicket(ticket,cfg){
@@ -241,8 +244,8 @@ export function createParlays(opts){
     const {eligible,screened}=evaluate(data.rows,cfg,{taken:takenLegs(state.savedId)});
     const qualified=new Set(eligible.map(legKey));
     let locked=state.locked.filter(key=>qualified.has(key));
-    let next=buildTicket(eligible,cfg,{locked,rules:ticketRules(cfg)});
-    if(next.invalidLock){locked=[];next=buildTicket(eligible,cfg,{rules:ticketRules(cfg)});}
+    let next=build(eligible,cfg,{locked,rules:ticketRules(cfg)});
+    if(next.invalidLock){locked=[];next=build(eligible,cfg,{rules:ticketRules(cfg)});}
     const previous=new Set(state.ticket.map(legKey)), selected=new Set(next.ticket.map(legKey));
     const added=next.ticket.filter(leg=>!previous.has(legKey(leg))).map(leg=>leg.name);
     const removed=state.ticket.filter(leg=>!selected.has(legKey(leg))).map(leg=>{
@@ -305,7 +308,7 @@ export function createParlays(opts){
       const locked=act==='parlaySwap'?current.filter(key=>key!==value):state.locked;
       const avoid=new Set(act==='parlayRegenerate'?current:[]);
       const excluded=new Set(act==='parlaySwap'?[value]:[]);
-      const {ticket,invalidLock}=buildTicket(eligible,cfg,{locked,avoid,excluded,rules:ticketRules(cfg)});
+      const {ticket,invalidLock}=build(eligible,cfg,{locked,avoid,excluded,rules:ticketRules(cfg)});
       if(invalidLock){state.message='A retained leg no longer qualifies. Unlock it or regenerate with different filters.';return true;}
       if(act==='parlaySwap'&&ticket.length<state.ticket.length){state.message='No eligible replacement matches this ticket.';return true;}
       if(act==='parlaySwap'){

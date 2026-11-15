@@ -20,7 +20,7 @@ export const menus={
     Models:[['Ensemble Forecasts','long/','nfl-models']],
     Previews:[['Game Previews','long/game-previews.html','nfl-preview'],['TD Data','long/td-data.html','td'],['Opening Drive Tool','long/opening-drives.html','drives']],
     Props:[['Best Plays','long/best-plays.html','nfl-best'],['Receiving','long/player-props.html#receiving','nfl-props'],['Rushing','long/player-props.html#rushing','nfl-props'],['Passing','long/player-props.html#passing','nfl-props'],['TD Board','long/td-board.html','nfl-tdboard']],
-    Parlays:[['Suggested Parlays','long/suggested-parlays.html','nfl-parlays'],['NFL Leg Tracker','long/parlay-tracker.html','nfl-parlay-tracker']],
+    Parlays:[['Suggested Parlays','long/suggested-parlays.html','nfl-parlays'],['Same-Game Parlays','long/same-game-parlays.html','nfl-sgp'],['NFL Leg Tracker','long/parlay-tracker.html','nfl-parlay-tracker']],
     Promos:[['King of the Endzone','long/promo-tools.html','endzone']]
   },
   nba:{

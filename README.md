@@ -79,6 +79,8 @@ The injury-adjusted projection assigns 75% of meaningful vacated volume to avail
 
 Data for the engine comes from the nflverse play-by-play (with expected pass rate and win probability), snap counts, PFR coverage stats and Next Gen Stats, all stored in `nfl-extra-<season>.json`. Kickoff forecasts come from Open-Meteo (`scripts/weather.mjs`, written each hour to `live/weather-nfl.json`).
 
+**GOING LONG Same-Game Parlays.** Choose a matchup under Same-Game Parlays or open it from Game Previews. The generator screens that game's priced Overs and Unders using the NFL parlay inputs, including role defense, recent and season form, injuries and usage, weather, game script and the ensemble forecast when available. Similar-defense records use yards allowed, run or pass volume, target share and explosive-run or deep-target rate, with each profile built from games played before the relevant matchup. A short sample is labeled and does not count as separate matchup evidence. The builder prefers full qualifying tickets, allows at most one leg per player, and blocks directly opposed QB and receiver legs. The page displays individual quotes, and saved SGP tickets and their results use separate browser storage from Suggested Parlays and the main NFL Leg Tracker.
+
 **NFL Leg Tracker.** Each hourly run screens every priced NFL prop with the engine, keeps its last pregame quote, and records whether it was selected, eligible or rejected, and why (`scripts/track-nfl-parlays.mjs`). Legs are graded from the nflverse play-by-play, usually the morning after the game. Snap counts mark players who didn't play as void. The page (`long/parlay-tracker.html`) reports:
 - results by decision
 - each rule's passed, failed and "only this rule failed" records

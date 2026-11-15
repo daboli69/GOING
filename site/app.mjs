@@ -101,9 +101,10 @@ const basketInputs=()=>Promise.all([get(`${ESPN}/${sportPath.nba}/injuries`,null
   get(dataURL('tracker/first-basket-index.json'),{}).then(i=>Promise.all((i.months||[]).map(m=>get(dataURL('tracker/first-basket-'+m+'.json'),[])))).then(x=>x.flat()).catch(()=>[]),
   get(dataURL('tracker/first-basket-backtest.json'),null)])
   .then(([injuries,live,backtest])=>({injuries,fbLog:{live,backtest:backtest?.games||[]}}));
-const nflLiveViews=new Set(['nfl-parlays','nfl-tdboard','nfl-props','nfl-best','nfl-preview']);
-const nflProjectionViews=new Set(['nfl-parlays','nfl-props']);
-const nflModelViews=new Set(['nfl-parlays','nfl-tdboard']);
+const nflDraftViews=new Set(['nfl-parlays','nfl-sgp']);
+const nflLiveViews=new Set([...nflDraftViews,'nfl-tdboard','nfl-props','nfl-best','nfl-preview']);
+const nflProjectionViews=new Set([...nflDraftViews,'nfl-props']);
+const nflModelViews=new Set([...nflDraftViews,'nfl-tdboard']);
 const nflParlayInputs=(year,id)=>Promise.all([nflModelViews.has(id)?get(dataURL('models/nfl.json'),null):null,
   nflModelViews.has(id)?get(dataURL('nfl-extra-'+year+'.json'),null):null,
   nflModelViews.has(id)?get(dataURL('live/weather-nfl.json'),null):null,get(dataURL('live/nfl-availability.json'),null),
@@ -118,6 +119,7 @@ const savedGames={};
 function start(){
   S.route=route();S.sort=null;S.error=null;
   S.f=viewSetup(S.route,location.hash);S.game=null;S.games=[];
+  if(S.route.id==='nfl-sgp'||S.route.id==='nfl-preview')S.f.requestedNflGame=new URLSearchParams(location.search).get('game');
   if(S.route.id==='tracker'){
     const league=new URLSearchParams(location.search).get('sport')?.toLowerCase();
     if(isCollege(league)||league==='ufc')S.f.sport=league.toUpperCase();
@@ -209,13 +211,18 @@ async function load(){
     S.fbLog=models?.fbLog||null;S.tdLog=models?.tdLog||null;
     if(s==='nfl'){
       const sched=data.schedule?.filter(g=>+g.id.slice(0,4)===S.year)||[];
+      const linked=sched.find(g=>g.id===S.f.requestedNflGame);
+      if(linked)S.week=linked.week;
       S.week??=sched.find(g=>g.date>=today)?.week??sched.at(-1)?.week??1;
       S.games=sched.filter(g=>g.week===S.week).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
     }else if(dayGames)S.games=dayGames;
     else if(s==='nhl')S.games=[...new Map(Object.values(data.schedule||{}).flat().filter(g=>g.date===d).map(g=>[g.id,g])).values()].sort((a,b)=>a.iso.localeCompare(b.iso));
     else S.games=[];
-    const preferred=S.games.find(g=>g.id===savedGames[s]);
-    S.game=preferred||(s==='nba'&&['keys','basket'].includes(id)?S.games.at(-1):S.games[0])||null;
+    const preferred=S.games.find(g=>g.id===S.f.requestedNflGame)||S.games.find(g=>g.id===savedGames[s]);
+    S.f.requestedNflGame=null;
+    const upcoming=id==='nfl-sgp'?upcomingNflGames(S.games,Date.now()).find(g=>odds.some(q=>q.date===g.date&&q.a===g.a&&q.h===g.h)):null;
+    S.game=preferred||upcoming||(s==='nba'&&['keys','basket'].includes(id)?S.games.at(-1):S.games[0])||null;
+    rememberSgpGame();
     if(S.game){S.f.away=S.game.a;S.f.home=S.game.h;}
     if(id==='shotcharts'&&S.game){S.f.offense=S.game.a;S.f.defense=S.game.h;}
     if(isMulti(id)){
@@ -232,11 +239,18 @@ async function load(){
     tickScores();
   }catch(e){if(token!==req)return;S.error=failed('The public data could not load. Check your connection and try again.');console.error(e);render();}
 }
+function rememberSgpGame(){
+  if(S.route.id!=='nfl-sgp')return;
+  const url=new URL(location.href);
+  if(S.game)url.searchParams.set('game',S.game.id);else url.searchParams.delete('game');
+  if(url.href!==location.href)history.replaceState(history.state,'',url);
+}
 function chooseGame(g,scroll=false){
   if(!g)return;
   // GOING YARD: a game filters the page; tapping the same game again shows every game.
   if(S.route.sport==='mlb'){S.f.allGames=!S.f.allGames&&S.game?.id===g.id;S.game=S.f.allGames?null:g;render({scrollGame:scroll});return;}
   S.game=g;savedGames[S.route.sport]=g.id;
+  rememberSgpGame();
   S.lineStats={};
   S.f.away=g.a;S.f.home=g.h;
   if(S.route.id==='nhl-props'||S.route.id==='nba-props')S.f.allGames=false;
@@ -386,7 +400,7 @@ document.addEventListener('click',e=>{
   if(act==='info'){dialog('How to read this','<p class="subtle">'+esc(v)+'</p>');return;}
   if(act==='step'){changePeriod(+v);return;}
   if(act==='retry'){S.error=null;load();return;}
-  if(act==='nflParlayCheck'){if(S.loaded&&S.route.id==='nfl-parlays')tickNflInputs(true);return;}
+  if(act==='nflParlayCheck'){if(S.loaded&&nflDraftViews.has(S.route.id))tickNflInputs(true);return;}
   if(isModel(S.route.id)&&M.models?.modelAction(act,v)){render();return;}
   if(S.route.id==='tracker'&&M.tracker?.trackerAction(act,v)){render();return;}
   if(trackerOf(S.route.id)&&M[trackerOf(S.route.id)]?.parlayTrackerAction(act,v)){render();return;}
@@ -480,9 +494,9 @@ document.addEventListener('change',e=>{
   if(k==='hideThin'){S.f.hideThin=t.checked;render();return;}
   if(S.route.sport==='mlb'&&M.mlb){const r=M.mlb.input(t);if(r){if(r!=='keep')render();return;}}
   if(t.dataset.yardPrice&&M.mlb){M.mlb.setPrice(t.dataset.yardPrice,t.value);render();return;}
-  if((S.route.id==='nba-parlays'||S.route.id==='nfl-parlays')&&t.dataset.parlay){
+  if((S.route.id==='nba-parlays'||nflDraftViews.has(S.route.id))&&t.dataset.parlay){
     M[S.route.sport].action('parlayField',JSON.stringify([t.dataset.parlay,t.type==='checkbox'?t.checked:t.value]),t);
-    if(t.type!=='number')render();
+    if(t.type!=='number'||S.route.id==='nfl-sgp')render();
     return;
   }
   if(S.route.sport==='mlb'&&k&&M.mlb?.field(k,t.value)){render();return;}
@@ -496,7 +510,7 @@ window.addEventListener('popstate',()=>{dateHash=location.hash;start();});
 window.addEventListener('hashchange',()=>{if(dateHash!==location.hash){dateHash=location.hash;start();}});
 async function tickNflInputs(force=false){
   const token=req,now=Date.now(),state=S.f,id=S.route.id;
-  const draft=id==='nfl-parlays';
+  const draft=nflDraftViews.has(id);
   const isEditing=()=>document.activeElement?.matches('main input, main select, main textarea');
   if(state.nflParlayChecking||!force&&isEditing())return;
   const games=upcomingNflGames(S.games,now);
@@ -547,7 +561,7 @@ async function tickScores(){
   const s=S.route.sport,token=req;
   if(nflLiveViews.has(S.route.id)){
     await tickNflInputs();
-    if(token!==req||S.route.id==='nfl-parlays')return;
+    if(token!==req||nflDraftViews.has(S.route.id))return;
   }
   if(S.route.id==='home'){
     if(await tickHomeClocks()&&token===req)render();
