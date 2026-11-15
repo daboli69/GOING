@@ -1,9 +1,10 @@
 import {menus,routes,sections,BASE,href,viewDefaults,viewSetup} from './config.mjs';
-import {$,current as S,today,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus,sportWordmark} from './ui.mjs';
+import {$,current as S,today,dateKey,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus,sportWordmark} from './ui.mjs';
 import {ESPN,sportPath,scoreboard,compactInjuries} from './feeds.mjs';
 import {homeLoad,homePage,tickHomeClocks} from './home.mjs';
 import {isCollege} from './college-core.mjs';
 import {refreshScores} from './live-scores.mjs';
+import {refreshNflAvailability,upcomingNflGames} from './nfl-availability.mjs';
 
 // Each section's code loads the first time one of its pages opens, so a visit downloads only what it shows.
 // The build adds a modulepreload hint for the page's own section, so this costs no extra round trip.
@@ -98,11 +99,12 @@ const basketInputs=()=>Promise.all([get(`${ESPN}/${sportPath.nba}/injuries`,null
   get(dataURL('tracker/first-basket-backtest.json'),null)])
   .then(([injuries,live,backtest])=>({injuries,fbLog:{live,backtest:backtest?.games||[]}}));
 const nflParlayInputs=(year,tdLog=false)=>Promise.all([get(dataURL('models/nfl.json'),null),get(dataURL('nfl-extra-'+year+'.json'),null),
-  get(dataURL('live/weather-nfl.json'),null),get(`${ESPN}/${sportPath.nfl}/injuries`,null).then(j=>j?.injuries?.length?compactInjuries(j):null).catch(()=>null),
+  get(dataURL('live/weather-nfl.json'),null),tdLog?get(`${ESPN}/${sportPath.nfl}/injuries`,null).then(j=>j?.injuries?.length?compactInjuries(j):null):
+    get(dataURL('live/nfl-availability.json'),null),
   // TD Board calibration: the saved pregame boards and the backtest.
   tdLog?Promise.all([get(dataURL('tracker/td-board-index.json'),{}).then(i=>Promise.all((i.months||[]).map(m=>get(dataURL('tracker/td-board-'+m+'.json'),[])))).then(x=>x.flat()).catch(()=>[]),
     get(dataURL('tracker/td-board-backtest.json'),null).then(x=>x?.games||[])]).then(([live,backtest])=>({live,backtest})):null])
-  .then(([models,extra,weather,injuries,tdLog])=>({models,extra,weather,injuries,tdLog}));
+  .then(([models,extra,weather,report,tdLog])=>({models,extra,weather,tdLog,injuries:tdLog?report:report?.teams,availability:tdLog?null:report}));
 const injuriesFor=s=>get(dataURL('live/injuries-'+s+'.json'),null).then(x=>x??get(`${ESPN}/${sportPath[s]}/injuries`,{}).then(compactInjuries).catch(()=>({})));
 const oddsFor=(s,d)=>get(dataURL('live/odds-'+s+(s==='nfl'?'':'-'+d)+'.json'),[]);
 const savedGames={};
@@ -194,7 +196,8 @@ async function load(){
     // GOING LONG Suggested Parlays: model feed, snap and coverage data, kickoff forecasts, and the live injury report
     // (inactives post about 90 minutes before kickoff, often between hourly refreshes).
     S.models=models?.models||null;S.extra=models?.extra||null;S.weather=models?.weather||null;
-    if(models?.injuries)S.injuries=models.injuries;
+    S.nflAvailability=models?.availability||null;
+    if(Object.keys(models?.injuries||{}).length)S.injuries=models.injuries;
     S.fbLog=models?.fbLog||null;S.tdLog=models?.tdLog||null;
     if(s==='nfl'){
       const sched=data.schedule?.filter(g=>+g.id.slice(0,4)===S.year)||[];
@@ -375,6 +378,7 @@ document.addEventListener('click',e=>{
   if(act==='info'){dialog('How to read this','<p class="subtle">'+esc(v)+'</p>');return;}
   if(act==='step'){changePeriod(+v);return;}
   if(act==='retry'){S.error=null;load();return;}
+  if(act==='nflParlayCheck'){if(S.loaded&&S.route.id==='nfl-parlays')tickNflParlay(true);return;}
   if(isModel(S.route.id)&&M.models?.modelAction(act,v)){render();return;}
   if(S.route.id==='tracker'&&M.tracker?.trackerAction(act,v)){render();return;}
   if(trackerOf(S.route.id)&&M[trackerOf(S.route.id)]?.parlayTrackerAction(act,v)){render();return;}
@@ -482,10 +486,50 @@ document.addEventListener('going:render',()=>render());
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menu){menu=null;header();}});
 window.addEventListener('popstate',()=>{dateHash=location.hash;start();});
 window.addEventListener('hashchange',()=>{if(dateHash!==location.hash){dateHash=location.hash;start();}});
+async function tickNflParlay(force=false){
+  const token=req,now=Date.now(),state=S.f;
+  if(state.nflParlayChecking||!force&&document.activeElement?.matches('[data-parlay]'))return;
+  const games=upcomingNflGames(S.games,now);
+  const remaining=games.map(g=>g.id).join('|'),kickoffChanged=state.nflParlayRemaining!==remaining;
+  state.nflParlayRemaining=remaining;
+  if(!force&&(!games.length||state.nflParlayNext>now)){
+    if(kickoffChanged&&M.nfl.action('parlayRefreshDraft',''))render();
+    return;
+  }
+  state.nflParlayChecking=true;
+  state.nflParlayNext=now+(games.some(g=>g.date===dateKey(new Date(now)))?3:10)*60000;
+  try{
+    const [availability,odds]=await Promise.all([
+      refreshNflAvailability(games,{...S.nflAvailability,teams:S.injuries},{now}),
+      fetch(dataURL('live/odds-nfl.json'),{cache:'no-cache',signal:AbortSignal.timeout(7000)})
+        .then(r=>r.ok?r.json():null).catch(()=>null)
+    ]);
+    if(token!==req)return;
+    if(!force&&document.activeElement?.matches('[data-parlay]')){
+      state.nflParlayNext=0;
+      state.nflParlayRemaining=null;
+      return;
+    }
+    let changed=kickoffChanged;
+    if(Array.isArray(odds)&&JSON.stringify(odds)!==JSON.stringify(S.odds)){S.odds=odds;changed=true;}
+    if(availability){
+      if(JSON.stringify(availability.teams)===JSON.stringify(S.injuries))availability.teams=S.injuries;
+      else{S.injuries=availability.teams;changed=true;}
+      if(JSON.stringify(availability.games||{})===JSON.stringify(S.nflAvailability?.games||{}))availability.games=S.nflAvailability?.games;
+      else changed=true;
+      S.nflAvailability=availability;
+    }
+    if(changed)M.nfl.action('parlayRefreshDraft','');
+    render();
+    if(force)toast(availability?.checkedAt===new Date(now).toISOString()?'Injury reports checked':'Live injury report unavailable');
+  }catch(e){console.error(e);if(force&&token===req)toast('Could not check for updates');}
+  finally{state.nflParlayChecking=false;}
+}
 // Update scores and the landing page clocks while the tab is visible.
 async function tickScores(){
   if(document.visibilityState!=='visible'||!S.loaded||S.error||!S.route)return;
   const s=S.route.sport,token=req;
+  if(S.route.id==='nfl-parlays'){await tickNflParlay();return;}
   if(S.route.id==='home'){
     if(await tickHomeClocks()&&token===req)render();
     return;

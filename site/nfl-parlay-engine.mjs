@@ -67,10 +67,10 @@ export function assess(row,side,cfg,context){
     check('Weather',cfg.weather&&over&&badWeather(w)?'Wind or rain':null);
     if(badWeather(w))leg.flags.push('Forecast '+[w.wind!=null?w.wind+' mph wind':'',w.rain?w.rain+' in rain':''].filter(Boolean).join(', '));
   }
-  check('Availability',row.out?'Player listed out':null);
+  check('Availability',row.out?(row.inactive?'Confirmed inactive':'Player listed out'):null);
   if(row.status){
-    leg.flags.push(row.status+': re-check after inactives');
-    if(Number.isFinite(start)&&start-context.now<=90*60000)leg.flags.push('Inactives are out now');
+    leg.flags.push(row.status+(row.inactivesPosted?' · check final status':': re-check after inactives'));
+    if(!row.inactivesPosted&&Number.isFinite(start)&&start-context.now<=90*60000)leg.flags.push('Game-day inactives pending');
   }
   if(!row.injuryReport)leg.flags.push('Injury report unavailable');
   const captured=Date.parse(leg.capturedAt);
@@ -178,6 +178,7 @@ export function assess(row,side,cfg,context){
     leg.reasons.push(absent.name+' out'+(absent.delta==null?'':' · '+signed(absent.delta)+' in '+absent.n+' games without'));
     if(absent.delta!=null)impact+=clamp(direction*absent.delta/Math.max(row.avg||1,1),-.3,.3);
   }
+  if(row.absenceAdjustment)leg.reasons.push('Projection '+signed(row.absenceAdjustment)+' from teammate-out splits');
   if(row.rest!=null){
     if(row.rest<=5){impact-=.1;leg.flags.push('Short week ('+row.rest+' days)');}
     else if(row.rest>=13){impact+=.1;leg.reasons.push('Off a bye');}
@@ -189,7 +190,8 @@ export function assess(row,side,cfg,context){
   leg.checks=checks;
   leg.context={role:row.role,defense:d?{rank:d.rank,value:d.value,league:d.league,label:d.label}:null,spread:row.spread,script:row.script,total:row.total,
     teamTotal:row.teamTotal,model:row.model,weather:w||null,proe:row.proe,pace:row.pace,snaps:row.snaps,share:row.share,recentShare:row.recentShare,
-    rzShare:row.rzShare,ryoe:row.ryoe,cbRoom:row.cbRoom,cbOut:row.cbOut,qbOut:row.qbOut,olOut:row.olOut,rest:row.rest,absences:row.absences,status:row.status};
+    rzShare:row.rzShare,ryoe:row.ryoe,cbRoom:row.cbRoom,cbOut:row.cbOut,qbOut:row.qbOut,olOut:row.olOut,rest:row.rest,
+    absences:row.absences,absenceAdjustment:row.absenceAdjustment,status:row.status,inactivesPosted:row.inactivesPosted};
   leg.cut=Object.values(checks).find(Boolean)||null;
   if(!leg.cut){
     const value=clamp((edge||0)*5,0,1)+(gap==null?0:clamp(gap/Math.max(Math.abs(leg.line),1),0,1));

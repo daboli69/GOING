@@ -22,15 +22,17 @@ for(const file of await readdir(out))if(/^nfl-parlay-legs-\d{4}-\d\d\.json$/.tes
 }
 
 const year=+today.slice(0,4)-(today.slice(5,7)<'09');
-const [schedule,archive,extra,weather,injuries,odds,models]=await Promise.all([read('nfl-schedule.json'),read(`nfl-${year}.json`),
-  read(`nfl-extra-${year}.json`),read('live/weather-nfl.json'),read('live/injuries-nfl.json'),read('live/odds-nfl.json'),read('models/nfl.json')]);
+const [schedule,archive,extra,weather,injuries,odds,models,availability]=await Promise.all([read('nfl-schedule.json'),read(`nfl-${year}.json`),
+  read(`nfl-extra-${year}.json`),read('live/weather-nfl.json'),read('live/injuries-nfl.json'),read('live/odds-nfl.json'),read('models/nfl.json'),
+  read('live/nfl-availability.json')]);
 const season=(schedule||[]).filter(g=>+g.id.slice(0,4)===year);
 const next=season.filter(g=>g.date>=today&&g.sa==null).sort((a,b)=>a.date.localeCompare(b.date))[0];
 const coverage={};
 if(next&&archive){
   const games=season.filter(g=>g.week===next.week);
   Object.assign(S,{route:routes.find(r=>r.id==='nfl-parlays'),year,week:next.week,games,data:{...archive,schedule},extra,weather,
-    injuries:injuries||{},odds:odds||[],models,f:{}});
+    injuries:availability?.teams&&Object.keys(availability.teams).length?availability.teams:injuries||{},
+    nflAvailability:availability,odds:odds||[],models,f:{}});
   const legs=captureLegs(nflParlayData().rows,now);
   coverage['Week '+next.week]={games:games.length,prices:odds?.length??null,legs:legs.length,archive:true};
   for(const leg of legs){observeLeg(store,leg);changed.add(month(leg));}

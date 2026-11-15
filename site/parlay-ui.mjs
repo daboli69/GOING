@@ -171,8 +171,12 @@ export function createParlays(opts){
   }
 
   function page(data){
-    const cfg=config(), state=draft(), report=evaluate(data.rows,cfg,{taken:takenLegs()});
+    const cfg=config(), state=draft(), report=evaluate(data.rows,cfg,{taken:takenLegs(opts.liveDraft?state.savedId:undefined)});
     const preview=buildTicket(report.eligible,cfg,{rules:ticketRules(cfg)}).ticket;
+    if(opts.liveDraft&&!state.initialized){
+      state.ticket=preview;
+      state.initialized=true;
+    }
     const current=new Map(report.eligible.map(leg=>[legKey(leg),leg]));
     const overlaps=takenLegs(state.savedId);
     const ticket=state.ticket.map(leg=>{
@@ -181,7 +185,8 @@ export function createParlays(opts){
       if(Date.now()-Date.parse(leg.capturedAt)>90*60000&&!flags.includes('Stale quote'))flags.push('Stale quote');
       return {...leg,flags};
     });
-    return `<h1>Suggested Parlays</h1>${opts.intro||''}`+opts.nav()+
+    const intro=typeof opts.intro==='function'?opts.intro():opts.intro;
+    return `<h1>Suggested Parlays</h1>${intro||''}`+opts.nav()+
       box('Filters',controls(data,cfg))+
       box('Suggested ticket',(state.message?`<p class="subtle" role="status">${esc(state.message)}</p>`:'')+
         shortage(data,cfg,report,ticket.length||preview.length)+
@@ -203,6 +208,27 @@ export function createParlays(opts){
   function action(act,value,data,target){
     const state=draft(), cfg=config();
     if(target)preserveDetails(target);
+    if(act==='parlayRefreshDraft'&&opts.liveDraft){
+      const {eligible,screened}=evaluate(data.rows,cfg,{taken:takenLegs(state.savedId)});
+      const qualified=new Set(eligible.map(legKey));
+      let locked=state.locked.filter(key=>qualified.has(key));
+      let next=buildTicket(eligible,cfg,{locked,rules:ticketRules(cfg)});
+      if(next.invalidLock){locked=[];next=buildTicket(eligible,cfg,{rules:ticketRules(cfg)});}
+      const changed=JSON.stringify(next.ticket)!==JSON.stringify(state.ticket);
+      if(changed){
+        S.f.parlayWeights=!!document.querySelector('details[data-parlay-weights]')?.open;
+        S.f.parlayHistory=document.querySelector('details[data-parlay-ticket][open]')?.dataset.parlayTicket;
+        const removed=state.ticket.filter(leg=>!qualified.has(legKey(leg))).map(leg=>{
+          const checks=screened.find(x=>legKey(x)===legKey(leg))?.checks;
+          return leg.name+' ('+(checks?.Availability||checks?.Kickoff||'no longer qualifies on this line and side')+')';
+        });
+        state.ticket=next.ticket;
+        state.locked=locked;
+        state.message=removed.length?`Draft updated. Removed ${[...new Set(removed)].join(', ')}.`:
+          'Draft reranked using the latest data.';
+      }
+      return changed;
+    }
     if(act==='parlayField'){
       const [key,val]=JSON.parse(value);
       if(key.startsWith('result:')){
@@ -227,13 +253,13 @@ export function createParlays(opts){
     else if(act==='parlayIncludeGame')cfg.games=toggle(cfg.games,value);
     else if(act==='parlayIncludePlayer')cfg.players=toggle(cfg.players,value);
     else if(act==='parlayReset'){
-      keep(settingsKey,defaults);state.ticket=[];state.locked=[];state.message='';return true;
+      keep(settingsKey,defaults);state.ticket=[];state.locked=[];state.message='';state.savedId=null;state.initialized=false;return true;
     }else if(act==='parlayLock'){
       if(state.ticket.some(leg=>legKey(leg)===value))state.locked=toggle(state.locked,value);
       return true;
     }else if(['parlayGenerate','parlayRegenerate','parlaySwap'].includes(act)){
       if(cfg.minOdds>cfg.maxOdds){state.message='Minimum odds exceed maximum odds.';return true;}
-      const taken=takenLegs();
+      const taken=takenLegs(opts.liveDraft?state.savedId:undefined);
       // A user can retain their current legs during a swap or lock. New legs still obey ticket exclusion.
       const current=state.ticket.map(legKey);
       for(const key of current)if(state.locked.includes(key)||act==='parlaySwap'&&key!==value)taken.delete(key);

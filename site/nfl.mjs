@@ -1,11 +1,13 @@
 import { nflTeams } from './config.mjs';
 import {total,mean,round,pct,div,rate,heat,american,implied,signed,seasonLimit,poissonTail} from './math.mjs';
 import {current as S,esc,box,grid,card,metric,logo,color,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,notes,person,market,basePlay,propOdds,gameDay,final,local,dialog,badge,playCheck,propQuotes,keep} from './ui.mjs';
-import {allowedRanks,format as fmt} from './parlay-core.mjs';
+import {allowedRanks,clamp,format as fmt} from './parlay-core.mjs';
 import {markets as parlayMarkets,tdMarkets,badWeather} from './nfl-parlay-engine.mjs';
 import {bucket,isRush,offenseTd,bucketRates,impliedPoints,impliedTds,rushShare,anytime,firstTdChance,shrink,log5,tdRegression,tdSettings} from './nfl-td.mjs';
 import {tdBoardPage,tdBoardAction} from './nfl-td-board.mjs';
 import {nflParlayPage,nflParlayAction} from './nfl-parlays.mjs';
+import {kickoff,nflInjuryContext,nflName} from './nfl-availability.mjs';
+export {kickoff} from './nfl-availability.mjs';
 
 const names=Object.keys(nflTeams).sort((a,b)=>nflTeams[a][0].localeCompare(nflTeams[b][0]));
 let statsMemo={archive:null,week:null,value:new Map()};
@@ -292,21 +294,12 @@ function endzone(){
     tools(btn(S.f.more?'Show less':'Show all','flip','more'))+box('Winners',table(['Date','Matchup','Player','Longest TD'],history.slice(0,40).map(([g,p])=>[esc(g.date),versus(g),person(getPlayer(p[9],p[8]),false),tdDist(p)+' yd']),{sort:'endzonehistory'}));
 }
 // ---- Suggested Parlays: one row per priced player prop, with every input nfl-parlay-engine.mjs reads. ----
-const nflName=x=>String(x||'').normalize('NFKD').replace(/[^\p{L}\p{N}]/gu,'').toLowerCase().replace(/(jr|sr|ii|iii|iv|v)$/,'');
 // Schedule rows give an Eastern date and clock; turn them into an exact kickoff instant.
-export function kickoff(date,time){
-  if(!date||!/^\d{1,2}:\d{2}$/.test(time||''))return null;
-  const [y,m,d]=date.split('-').map(Number),[hh,mm]=time.split(':').map(Number),guess=Date.UTC(y,m-1,d,hh,mm);
-  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
-    .formatToParts(new Date(guess)).map(x=>[x.type,x.value]));
-  const local=Date.UTC(+parts.year,+parts.month-1,+parts.day,+parts.hour%24,+parts.minute);
-  return new Date(guess-(local-guess)).toISOString();
-}
 export const marketValue={Receiving:'recY',Receptions:'rec',Rushing:'rushY','Rush Attempts':'rush',Passing:'passY','Pass Attempts':'pass',
   Completions:'comp','Anytime TD':'td','First TD':'first'};
 const marketGroup=m=>tdMarkets.has(m)?'td':['Receiving','Receptions'].includes(m)?'catch':['Rushing','Rush Attempts'].includes(m)?'rush':'pass';
 const OL=new Set(['T','G','C','OL','OT','OG']);
-const outNow=x=>/^(out|injured reserve|suspen|physically unable|pup|non-football)/i.test(x||'');
+const outNow=x=>/^(inactive|out|injured reserve|suspen|physically unable|pup|non-football)/i.test(x||'');
 const doubtful=x=>/^doubtful/i.test(x||'');
 // Roles, the NFL version of player types. Slot is estimated from where a receiver is targeted (middle of the field)
 // and how deep; alignment and man/zone coverage are not in the public data.
@@ -418,7 +411,7 @@ function league(){
   return value;
 }
 export function nflParlayData(quotes=S.odds){
-  const key=[S.data,S.extra,S.week,S.year,quotes,S.injuries,S.games,S.models,S.weather];
+  const key=[S.data,S.extra,S.week,S.year,quotes,S.injuries,S.nflAvailability?.games,S.games,S.models,S.weather];
   if(parlayMemo.dataKey&&parlayMemo.dataKey.length===key.length&&parlayMemo.dataKey.every((x,i)=>x===key[i]))return parlayMemo.data;
   const L=league(), schedule=new Map(allGames().map(g=>[g.id,g])), rows=[], roster=new Map();
   const forecasts=new Map((S.models?.games||[]).map(x=>[x.game_id,x.forecast?.champion]));
@@ -432,7 +425,7 @@ export function nflParlayData(quotes=S.odds){
       const model=forecasts.get(g.id), modelP=model?.p_home==null?null:home?model.p_home:1-model.p_home;
       const modelMargin=model?.margin_home==null?null:home?model.margin_home:-model.margin_home;
       const script=teamSpread==null&&modelMargin==null?null:mean([teamSpread==null?null:-teamSpread,modelMargin].filter(x=>x!=null));
-      const report=S.injuries[teamName(t)]||[], oppReport=S.injuries[teamName(opp)]||[];
+      const {report,oppReport,inactivesPosted,hasReport}=nflInjuryContext(S.nflAvailability,S.injuries,g,t,opp,teamName);
       const statusOf=name=>report.find(x=>nflName(x.name)===nflName(name))?.status;
       const listedOut=(list,name)=>list.some(x=>nflName(x.name)===nflName(name)&&(outNow(x.status)||doubtful(x.status)));
       const usage=p=>mean(p.logs,x=>x.targets+x.rush);
@@ -465,7 +458,17 @@ export function nflParlayData(quotes=S.odds){
             Passing:sum('pass')?recent('pass')*sum('passY')/sum('pass'):null,
             'Pass Attempts':info.passAtt??null,
             Completions:sum('pass')?recent('pass')*sum('comp')/sum('pass'):null}[m]??null;
-          const projection=tdMarkets.has(m)||recentAvg==null?null:usageProj==null?recentAvg:(recentAvg+usageProj)/2;
+          const baseProjection=tdMarkets.has(m)||recentAvg==null?null:usageProj==null?recentAvg:(recentAvg+usageProj)/2;
+          const absences=missing.filter(x=>x.name!==p.name).map(({name,played})=>{
+            const withMate=logs.filter(r=>played.has(r.game)).map(r=>r[k]||0);
+            const without=logs.filter(r=>!played.has(r.game)).map(r=>r[k]||0);
+            const delta=without.length>=2&&withMate.length>=2?mean(without)-mean(withMate):null;
+            return {name,n:without.length,delta};
+          });
+          // Let observed usage without a teammate move the baseline, with shrinkage for sparse splits.
+          const limit=Math.abs(baseProjection??0)*.2;
+          const absenceAdjustment=clamp(total(absences,x=>x.delta==null?0:x.delta*x.n/(x.n+5)),-limit,limit);
+          const projection=baseProjection==null?null:baseProjection+absenceAdjustment;
           const shareKey=['Receiving','Receptions'].includes(m)?'targets':['Rushing','Rush Attempts'].includes(m)?'rush':null;
           const teamCount=shareKey==='targets'?targets:carries;
           const share=list=>{if(!shareKey||!list.length)return null;const all=total(list,x=>teamCount.get(x.game)||0);return all?total(list,x=>x[shareKey])/all:null;};
@@ -490,11 +493,8 @@ export function nflParlayData(quotes=S.odds){
             rzShare:(()=>{const all=total(logs,x=>redZone.get(x.game)||0);return all?sum('rz')/all:null;})(),
             firstRate:s.gp?s.first.length/s.gp:null,ryoe:ryoe.length?mean(ryoe):null,
             cbRoom:L.cbRoom[opp],cbLeague:L.cbLeague,cbOut,qbOut:qbOut&&qbOut!==p.name?qbOut:null,olOut,rest,
-            out:outNow(status),status:/questionable|doubtful/i.test(status||'')?status:null,injuryReport:Object.hasOwn(S.injuries,teamName(t)),
-            absences:missing.filter(x=>x.name!==p.name).map(({name,played})=>{
-              const without=logs.filter(r=>!played.has(r.game)).map(r=>r[k]||0);
-              return {name,n:without.length,delta:without.length>=2&&avg!=null?mean(without)-avg:null};
-            })});
+            out:outNow(status),inactive:status==='Inactive',status:/questionable|doubtful/i.test(status||'')?status:null,
+            injuryReport:hasReport,inactivesPosted,absences,absenceAdjustment});
         }
       }
     }
