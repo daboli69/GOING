@@ -73,7 +73,7 @@ The opening possessions come from the play-by-play (`scripts/normalize.py` keeps
 9. **Build.** One leg per game with a mix of stats. An optional toggle allows correlated same-game stacks, such as a QB Over with his receiver's Over. Opposite sides on the same passing game get a negative-correlation warning.
 10. **Price.** Hit rates shrink harder toward 50% than in GOING UP (8 wins and 8 losses added). Touchdown props shrink toward their price instead, and touchdown legs are capped at one by default. Kicking and longest-play props aren't offered.
 
-Questionable players are flagged to re-check after inactives, which post about 90 minutes before kickoff. The page reads ESPN's live injury report when it opens. Every leg shows its quote time and can be locked.
+Suggested Parlays checks ESPN injuries and the latest published prices while the tab is visible, about every three minutes on game day and every ten minutes otherwise. It also reads ESPN's game-specific inactive entries near kickoff. The suggested draft reranks when inputs change and removes legs that stop qualifying, including locked legs with unavailable players. Teammate-out splits can move a projection when enough historical games are available. Saved tickets keep their original quotes and reasons. The hourly NFL Leg Tracker uses the same availability rules.
 
 Data for the engine comes from the nflverse play-by-play (with expected pass rate and win probability), snap counts, PFR coverage stats and Next Gen Stats, all stored in `nfl-extra-<season>.json`. Kickoff forecasts come from Open-Meteo (`scripts/weather.mjs`, written each hour to `live/weather-nfl.json`).
 

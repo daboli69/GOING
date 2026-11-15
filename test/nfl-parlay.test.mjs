@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {assess,evaluate,defaults,shrunk,correlation,ticketRules,warnings,badWeather} from '../site/nfl-parlay-engine.mjs';
 import {buildTicket,ticketMath} from '../site/parlay-core.mjs';
 import {kickoff,playerRole} from '../site/nfl.mjs';
+import {nflInjuryContext,refreshNflAvailability} from '../site/nfl-availability.mjs';
 
 const now=Date.parse('2026-11-14T12:00:00Z');
 const rank=(r,total=32)=>({rank:r,end:r,total});
@@ -17,6 +18,26 @@ const row=(over={})=>({date:'2026-11-15',stat:'Receiving',opp:'DAL',home:false,a
   proe:.03,pace:64,leaguePace:62,share:.24,recentShare:.28,shareLabel:'Target share',snaps:.88,rzShare:.2,firstRate:.4,ryoe:null,
   cbRoom:8.4,cbLeague:7.2,cbOut:[],qbOut:null,olOut:[],rest:7,out:false,status:null,injuryReport:true,absences:[],...over});
 const run=(o,side='Over',cfg=defaults)=>assess(row(o),side,cfg,{now,taken:new Set()});
+
+test('game-day inactives override an earlier questionable report and stay scoped to that matchup',async()=>{
+  const checkTime=Date.parse('2026-11-15T16:40Z');
+  const game={id:'week10',a:'SF',h:'DAL',espn:'123',date:'2026-11-15',time:'13:00'};
+  const dated='2026-11-15T16:35Z',name='Test Receiver';
+  const league={timestamp:dated,injuries:[{displayName:'SF',injuries:[{athlete:{displayName:name},status:'Questionable'}]}]};
+  const gamecast={header:{competitions:[{id:'123'}]},injuries:[{team:{abbreviation:'SF'},injuries:[
+    {athlete:{displayName:name},date:dated,status:'Out',details:{fantasyStatus:{abbreviation:'INACTIVE'}}},
+    {athlete:{displayName:'Last Week'},date:'2026-11-08T16:35Z',status:'Out',details:{fantasyStatus:{abbreviation:'INACTIVE'}}}
+  ]}]};
+  const availability=await refreshNflAvailability([game],null,{now:checkTime,
+    read:async url=>url.endsWith('/injuries')?league:gamecast});
+  const context=fixture=>nflInjuryContext(availability,availability.teams,fixture,'SF','DAL',x=>x);
+  assert.equal(context(game).report[0].status,'Inactive');
+  assert.equal(context(game).report.length,1);
+  assert.equal(context({...game,id:'week11'}).report[0].status,'Questionable');
+  assert.equal(run({out:true,inactive:true}).cut,'Confirmed inactive');
+  const unavailable=await refreshNflAvailability([game],availability,{now:checkTime+60000,read:async()=>null});
+  assert.equal(unavailable,availability);
+});
 
 test('a receiving Over against a weak defense for his role qualifies, with reasons from each data source',()=>{
   const leg=run();
@@ -47,7 +68,7 @@ test('a hit rate that conflicts with the role edge removes the leg even with a l
 test('questionable players are flagged to re-check after inactives, and flagged harder inside 90 minutes',()=>{
   const leg=assess(row({status:'Questionable'}),'Over',defaults,{now:Date.parse('2026-11-15T20:30:00Z'),taken:new Set()});
   assert.ok(leg.flags.includes('Questionable: re-check after inactives'));
-  assert.ok(leg.flags.includes('Inactives are out now'));
+  assert.ok(leg.flags.includes('Game-day inactives pending'));
 });
 
 test('context lowers passing-game scores when the QB or offensive line is out',()=>{

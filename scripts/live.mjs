@@ -8,6 +8,7 @@ import { lineupUrl,parseLineups } from './lineups.mjs';
 import { publicQuotes } from './market-data.mjs';
 import { recentLines } from './lines-data.mjs';
 import { nflWeather } from './weather.mjs';
+import { refreshNflAvailability } from '../site/nfl-availability.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const data=join(root,'site','data'), out=join(data,'live'), tmp=out+'.next';
@@ -40,8 +41,10 @@ await Promise.all(days.map(async d=>{
 }));
 
 // Injuries
+let nflInjuryPayload=null;
 await Promise.all(Object.keys(sportPath).map(async s=>{
   const j=await json(`${ESPN}/${sportPath[s]}/injuries`);
+  if(s==='nfl')nflInjuryPayload=j;
   if(j)await save(`injuries-${s}.json`,compactInjuries(j));else note.push('injuries '+s);
 }));
 
@@ -55,6 +58,11 @@ for(const s of ['nba','nhl'])for(const d of [today,add(today,1)]){
   if(s==='nba')await save(`nba-alternate-lines-${d}.json`,alternates);
 }
 const schedule=await read('nfl-schedule.json')||[];
+const previousAvailability=await read('live/nfl-availability.json');
+const availability=await refreshNflAvailability(schedule,previousAvailability,{
+  read:async url=>url.endsWith('/injuries')?nflInjuryPayload:json(url,6500)
+});
+if(availability)await save('nfl-availability.json',availability);
 const nextWeek=schedule.filter(g=>g.date>=today&&g.sa==null).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
 const nflGames=nextWeek?schedule.filter(g=>g.week===nextWeek.week&&g.id.slice(0,4)===nextWeek.id.slice(0,4)&&g.sa==null):[];
 await save('odds-nfl.json',await publicQuotes('nfl',nflGames).catch(()=>[]));
