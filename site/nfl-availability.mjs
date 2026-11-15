@@ -3,7 +3,7 @@ import {sportPath,compactInjuries} from './feeds.mjs';
 // ESPN's web host allows these requests from the published site.
 const root='https://site.web.api.espn.com/apis/site/v2/sports/'+sportPath.nfl;
 const minute=60000,day=1440*minute;
-const teamCode=code=>({LAR:'LA',WSH:'WAS'}[code]||code);
+export const nflTeamCode=code=>({LAR:'LA',WSH:'WAS',JAC:'JAX'}[code]||code);
 const instant=ms=>new Date(ms).toISOString();
 const eastern=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hourCycle:'h23',
   year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -27,7 +27,7 @@ function gameInactives(game,payload,now){
   if(!header)return null;
   const start=Date.parse(kickoff(game.date,game.time)),teams={};
   for(const entry of payload.injuries||[]){
-    const code=teamCode(entry.team?.abbreviation);
+    const code=nflTeamCode(entry.team?.abbreviation);
     if(code!==game.a&&code!==game.h)continue;
     const rows=(entry.injuries||[]).flatMap(i=>{
       const published=Date.parse(i.date);

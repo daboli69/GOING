@@ -7,12 +7,14 @@ import {bucket,isRush,offenseTd,bucketRates,impliedPoints,impliedTds,rushShare,a
 import {tdBoardPage,tdBoardAction} from './nfl-td-board.mjs';
 import {nflParlayPage,nflParlayAction} from './nfl-parlays.mjs';
 import {kickoff,nflInjuryContext,nflName} from './nfl-availability.mjs';
+import {nflOut as outNow,nflWorkload} from './nfl-workload.mjs';
 export {kickoff} from './nfl-availability.mjs';
 
 const names=Object.keys(nflTeams).sort((a,b)=>nflTeams[a][0].localeCompare(nflTeams[b][0]));
 let statsMemo={archive:null,week:null,value:new Map()};
 const matchup=()=>[S.f.away||S.game?.a||'WAS',S.f.home||S.game?.h||'NYG'];
 const allGames=()=>S.data.schedule||[];
+const gameInjuries=(g,t)=>nflInjuryContext(S.nflAvailability,S.injuries,g,t,g.a===t?g.h:g.a,teamName).report;
 const position=p=>p==='FB'?'RB':p;
 const skills=['QB','RB','WR','TE'];
 const pool=(t,lim='Season')=>seasonLimit(allGames().filter(g=>+g.id.slice(0,4)===S.year&&g.week<S.week&&(g.a===t||g.h===t)&&S.data.events?.[g.id]).sort((a,b)=>a.week-b.week),lim);
@@ -204,7 +206,8 @@ function nflPreview(){
     return top+header+box('Build Your Model',`<p class="subtle">Set the weights used for this matchup. The projection uses season scoring, points allowed, recent margin, and home field.</p>`+grid(2,Object.entries(weights).map(([k,val])=>card(esc(k),`<label class="field"><input type="range" min="0" max="100" value="${val}" data-weight="${esc(k)}" aria-label="${esc(k)}"> <output>${val}</output></label>`)))+`<p>${metric('Projected home margin',signed(score,1),teamName(h))}</p>`)+statsBox+picks+notes();
   }
   if(v==='Summary')return top+header+box('Game Summary',tools(btn('Save image','export','NFL Game Preview','primary'))+grid(3,[metric('Spread',esc(o.spread)),metric('Total',esc(o.total)),metric('Moneyline',esc(o.ml))]))+statsBox+notes();
-  return top+header+box('Injuries','<p class="subtle">From the most recent ESPN report on file.</p>'+grid(2,[card(a,injuryList(a)),card(h,injuryList(h))]))+
+  return top+header+box('Injuries','<p class="subtle">Latest ESPN injury report and reported game-day inactives.</p>'+
+    grid(2,[a,h].map(t=>card(t,injuryList(t,gameInjuries(g,t).filter(r=>outNow(r.status)||/questionable|doubtful/i.test(r.status||'')))))))+
     box('Odds',grid(3,[metric('Spread',esc(o.spread)),metric('Total',esc(o.total)),metric('Moneyline',esc(o.ml))]))+
     box('Recent Games',grid(2,[teamBanner(a)+recent(a),teamBanner(h)+recent(h)]))+statsBox+picks+notes();
 }
@@ -235,19 +238,33 @@ function pickTracker(g,o){
 }
 const props={Receiving:{value:'recY',usage:'targets',columns:['Player','Pos','Tgt/g','Rec/g','Yds/g','ADOT','YAC','Tgt%','20+','10–19','0–9','SCN','Line']},Rushing:{value:'rushY',usage:'rush',columns:['Player','Pos','Att/g','Yds/g','Y/A','20+','RZ Att','Left','Middle','Right','Line']},Passing:{value:'passY',usage:'pass',columns:['Player','Pos','Att/g','Comp/g','Comp%','Yds/g','Y/A','Left','Middle','Right','Line']}};
 const property=(p,m)=>m==='Anytime TD'?'td':m==='First TD'?'first':props[m]?.value;
+function volumeProjection(logs,market){
+  const {value,usage}=props[market],last=logs.slice(-5);
+  const opportunity=total(logs,l=>l[usage]);
+  return opportunity?mean(last,l=>l[usage])*total(logs,l=>l[value])/opportunity:null;
+}
 function nflProps(){
   const [a,h]=matchup(),v=S.f.view||'Receiving',m=v==='Summary'?'Receiving':v,def=props[m];
   const top=slate()+chooseTeams()+tools(toggles(['Receiving','Rushing','Passing','Summary'],'view'));
   const tableOf=t=>{
-    const rows=footballPlayers(t).filter(p=>total(p.logs,g=>g[def.usage])>0&&(m!=='Passing'||p.pos==='QB')).sort((a,b)=>total(b.logs,g=>g[def.value])-total(a.logs,g=>g[def.value]));
+    const players=footballPlayers(t),game=S.games.find(g=>g.a===t||g.h===t);
+    const context=game?nflWorkload(game,t,players,pool(t).map(g=>g.id),gameInjuries(game,t),S.nflProjections):null;
+    const rows=players.filter(p=>total(p.logs,g=>g[def.usage])>0&&(m!=='Passing'||p.pos==='QB')).sort((a,b)=>total(b.logs,g=>g[def.value])-total(a.logs,g=>g[def.value]));
     const teamTargets=total(rows,p=>total(p.logs,r=>r.targets));
-    return teamBanner(t)+table(def.columns,rows.map(p=>{
+    return teamBanner(t)+table([...def.columns.slice(0,-1),'Projection',def.columns.at(-1)],rows.map(p=>{
       const l=p.logs,av=k=>round(mean(l,x=>x[k]),1), sum=k=>total(l,x=>x[k]),zone=(field,k)=>total(l,x=>x[field][k]);
       let vals=[];
       if(m==='Receiving')vals=[av('targets'),av('rec'),av('recY'),round(div(sum('air'),sum('targets')),1),av('yac'),pct(div(sum('targets'),teamTargets)),...l.reduce((a,x)=>a.map((z,k)=>z+x.depth[k]),[0,0,0,0])];
       else if(m==='Rushing')vals=[av('rush'),av('rushY'),round(div(sum('rushY'),sum('rush')),1),sum('l20'),sum('rzRush'),...['left','middle','right'].map(k=>zone('lanes',k))];
       else vals=[av('pass'),av('comp'),pct(div(sum('comp'),sum('pass'))),av('passY'),round(div(sum('passY'),sum('pass')),1),...['left','middle','right'].map(k=>zone('passZones',k))];
-      const o=propOdds(p,m);return [person(p),esc(p.pos),...vals,market(o?.line==null?'—':o.line,basePlay(p,m,undefined,{line:o?.line,odds:o?.over,side:'Over',average:mean(l,x=>x[def.value])}))];
+      const o=propOdds(p,m),recent=mean(l.slice(-5),x=>x[def.value]),volume=volumeProjection(l,m);
+      const baseline=recent==null?null:volume==null?recent:(recent+volume)/2;
+      const estimate=context?.projection(p,m,baseline);
+      const label=estimate?.out?esc(context.status(p)?.status||'Out'):
+        estimate?.value==null?'—':cell(round(estimate.value,1),estimate.usageShift?'good heat':'',
+          [estimate.absences?.length?'Teammates out: '+estimate.absences.join(', '):'',estimate.sleeper!=null?'RotoWire via Sleeper: '+round(estimate.sleeper,1):''].filter(Boolean).join(' · '));
+      return [person(p),esc(p.pos),...vals,label,estimate?.out?'—':market(o?.line==null?'—':o.line,
+        basePlay(p,m,undefined,{line:o?.line,odds:o?.over,side:'Over',average:mean(l,x=>x[def.value]),projection:estimate?.value}))];
     }),{sort:'nflprops-'+t,wrap:'box'});
   };
   if(v==='Summary')return top+box('Player Props Summary',tools(btn('Save image','export','Player Props Summary','primary'))+grid(2,[tableOf(a),tableOf(h)]))+notes();
@@ -259,15 +276,20 @@ function bestNfl(){
   const m=S.f.view||'Receiving',pkey=property(null,m);
   const prices=[];
   for(const g of S.games.filter(g=>!S.f.gameFilter||S.f.gameFilter==='All games'||g.id===S.f.gameFilter)){
-    for(const t of [g.a,g.h])for(const p of footballPlayers(t)){
-      const o=propOdds(p,m);if(!o||o.line==null)continue;
-      const marketChance=implied(o.over);
-      if(marketChance==null||!p.logs.length)continue;
-      const raw=rate(p.logs,x=>x[pkey]>o.line),weight=p.logs.length/(p.logs.length+6),over=marketChance+(raw-marketChance)*weight;
-      const edge=over-marketChance,rating=edge>=.12?'Strong':edge>=.06?'Lean':'Check';
-      if(edge<.025)continue;
-      if(S.f.rating&&S.f.rating!=='All Ratings'&&S.f.rating!==rating)continue;
-      prices.push({p,o,g,over,edge,rating,raw});
+    if(!(Date.parse(kickoff(g.date,g.time))>Date.now())||final(g))continue;
+    for(const t of [g.a,g.h]){
+      const unavailable=new Set(gameInjuries(g,t).filter(r=>outNow(r.status)).map(r=>nflName(r.name)));
+      for(const p of footballPlayers(t)){
+        if(unavailable.has(nflName(p.name)))continue;
+        const o=propOdds(p,m);if(!o||o.line==null)continue;
+        const marketChance=implied(o.over);
+        if(marketChance==null||!p.logs.length)continue;
+        const raw=rate(p.logs,x=>x[pkey]>o.line),weight=p.logs.length/(p.logs.length+6),over=marketChance+(raw-marketChance)*weight;
+        const edge=over-marketChance,rating=edge>=.12?'Strong':edge>=.06?'Lean':'Check';
+        if(edge<.025)continue;
+        if(S.f.rating&&S.f.rating!=='All Ratings'&&S.f.rating!==rating)continue;
+        prices.push({p,o,g,over,edge,rating,raw});
+      }
     }
   }
   return `<h1>Best Plays · Week ${S.week||'—'} ${info('These are empirical hit rates, compared with any imported market prices.')}</h1>`+tools(btn('YTD Model Performance','performance','NFL'))+
@@ -299,7 +321,6 @@ export const marketValue={Receiving:'recY',Receptions:'rec',Rushing:'rushY','Rus
   Completions:'comp','Anytime TD':'td','First TD':'first'};
 const marketGroup=m=>tdMarkets.has(m)?'td':['Receiving','Receptions'].includes(m)?'catch':['Rushing','Rush Attempts'].includes(m)?'rush':'pass';
 const OL=new Set(['T','G','C','OL','OT','OG']);
-const outNow=x=>/^(inactive|out|injured reserve|suspen|physically unable|pup|non-football)/i.test(x||'');
 const doubtful=x=>/^doubtful/i.test(x||'');
 // Roles, the NFL version of player types. Slot is estimated from where a receiver is targeted (middle of the field)
 // and how deep; alignment and man/zone coverage are not in the public data.
@@ -411,9 +432,10 @@ function league(){
   return value;
 }
 export function nflParlayData(quotes=S.odds){
-  const key=[S.data,S.extra,S.week,S.year,quotes,S.injuries,S.nflAvailability?.games,S.games,S.models,S.weather];
+  const key=[S.data,S.extra,S.week,S.year,quotes,S.injuries,S.nflAvailability?.games,S.nflProjections,S.games,S.models,S.weather];
   if(parlayMemo.dataKey&&parlayMemo.dataKey.length===key.length&&parlayMemo.dataKey.every((x,i)=>x===key[i]))return parlayMemo.data;
-  const L=league(), schedule=new Map(allGames().map(g=>[g.id,g])), rows=[], roster=new Map();
+  const L=league(), schedule=new Map(allGames().map(g=>[g.id,g])), rows=[], changes=[], roster=new Map();
+  const now=S.nflAsOf??Date.now();
   const forecasts=new Map((S.models?.games||[]).map(x=>[x.game_id,x.forecast?.champion]));
   for(const g of S.games){
     const iso=kickoff(g.date,g.time), game={...g,iso};
@@ -426,7 +448,8 @@ export function nflParlayData(quotes=S.odds){
       const modelMargin=model?.margin_home==null?null:home?model.margin_home:-model.margin_home;
       const script=teamSpread==null&&modelMargin==null?null:mean([teamSpread==null?null:-teamSpread,modelMargin].filter(x=>x!=null));
       const {report,oppReport,inactivesPosted,hasReport}=nflInjuryContext(S.nflAvailability,S.injuries,g,t,opp,teamName);
-      const statusOf=name=>report.find(x=>nflName(x.name)===nflName(name))?.status;
+      const workload=nflWorkload(g,t,players,teamGames,report,S.nflProjections,now);
+      const statusOf=p=>workload.status(p)?.status;
       const listedOut=(list,name)=>list.some(x=>nflName(x.name)===nflName(name)&&(outNow(x.status)||doubtful(x.status)));
       const usage=p=>mean(p.logs,x=>x.targets+x.rush);
       const missing=report.filter(x=>outNow(x.status)).flatMap(x=>{
@@ -435,7 +458,7 @@ export function nflParlayData(quotes=S.odds){
         return [{name:mate.name,played:new Set(mate.logs.map(r=>r.game))}];
       });
       const lastGame=teamGames.at(-1), qb=players.filter(p=>p.pos==='QB').map(p=>[p,p.logs.find(x=>x.game===lastGame)?.pass||0]).sort((a,b)=>b[1]-a[1])[0]?.[0];
-      const qbOut=qb&&outNow(statusOf(qb.name))?qb.name:null;
+      const qbOut=qb&&outNow(statusOf(qb))?qb.name:null;
       const olOut=L.olStarters[t].filter(n=>listedOut(report,n));
       const cbOut=L.cbStarters[opp].filter(n=>listedOut(oppReport,n));
       const teamTotals=k=>new Map(teamGames.map(id=>[id,total(players,p=>p.logs.find(r=>r.game===id)?.[k]||0)]));
@@ -443,21 +466,19 @@ export function nflParlayData(quotes=S.odds){
       const rest=info.last?Math.round((Date.parse(g.date)-Date.parse(info.last))/86400000):null;
       const s=stats(t);
       for(const p of players){
-        const status=statusOf(p.name), role=L.roles.get(p.id);
+        const status=statusOf(p), role=L.roles.get(p.id);
         for(const m of parlayMarkets){
           const matches=propQuotes(p,m,quotes);
-          if(!matches.length)continue;
+          if(!matches.length&&!['Receiving','Receptions','Rushing','Rush Attempts','Passing'].includes(m))continue;
           const k=marketValue[m], logs=p.logs, values=logs.map(x=>x[k]||0), avg=mean(values), last5=logs.slice(-5);
           const venueValues=logs.filter(x=>(schedule.get(x.game)?.h===t)===home).map(x=>x[k]||0);
           const sum=f=>total(logs,x=>x[f]||0), recent=f=>mean(last5,x=>x[f]||0);
           const recentAvg=mean(values.slice(-5));
-          const usageProj={Receiving:sum('targets')?recent('targets')*sum('recY')/sum('targets'):null,
+          const usageProj=props[m]?volumeProjection(logs,m):({
             Receptions:sum('targets')?recent('targets')*sum('rec')/sum('targets'):null,
-            Rushing:sum('rush')?recent('rush')*sum('rushY')/sum('rush'):null,
             'Rush Attempts':info.carries&&sum('rush')?info.carries*total(last5,x=>x.rush)/Math.max(1,total(last5,x=>carries.get(x.game)||0)):null,
-            Passing:sum('pass')?recent('pass')*sum('passY')/sum('pass'):null,
             'Pass Attempts':info.passAtt??null,
-            Completions:sum('pass')?recent('pass')*sum('comp')/sum('pass'):null}[m]??null;
+            Completions:sum('pass')?recent('pass')*sum('comp')/sum('pass'):null}[m]??null);
           const baseProjection=tdMarkets.has(m)||recentAvg==null?null:usageProj==null?recentAvg:(recentAvg+usageProj)/2;
           const absences=missing.filter(x=>x.name!==p.name).map(({name,played})=>{
             const withMate=logs.filter(r=>played.has(r.game)).map(r=>r[k]||0);
@@ -468,7 +489,12 @@ export function nflParlayData(quotes=S.odds){
           // Let observed usage without a teammate move the baseline, with shrinkage for sparse splits.
           const limit=Math.abs(baseProjection??0)*.2;
           const absenceAdjustment=clamp(total(absences,x=>x.delta==null?0:x.delta*x.n/(x.n+5)),-limit,limit);
-          const projection=baseProjection==null?null:baseProjection+absenceAdjustment;
+          const estimate=workload.projection(p,m,baseProjection,absenceAdjustment);
+          const projection=estimate.value;
+          if(estimate.absences?.length&&projection!=null&&estimate.baseline!=null&&Math.abs(projection-estimate.baseline)>=0.5){
+            changes.push({player:p,game,stat:m,...estimate});
+          }
+          if(!matches.length)continue;
           const shareKey=['Receiving','Receptions'].includes(m)?'targets':['Rushing','Rush Attempts'].includes(m)?'rush':null;
           const teamCount=shareKey==='targets'?targets:carries;
           const share=list=>{if(!shareKey||!list.length)return null;const all=total(list,x=>teamCount.get(x.game)||0);return all?total(list,x=>x[shareKey])/all:null;};
@@ -494,12 +520,12 @@ export function nflParlayData(quotes=S.odds){
             firstRate:s.gp?s.first.length/s.gp:null,ryoe:ryoe.length?mean(ryoe):null,
             cbRoom:L.cbRoom[opp],cbLeague:L.cbLeague,cbOut,qbOut:qbOut&&qbOut!==p.name?qbOut:null,olOut,rest,
             out:outNow(status),inactive:status==='Inactive',status:/questionable|doubtful/i.test(status||'')?status:null,
-            injuryReport:hasReport,inactivesPosted,absences,absenceAdjustment});
+            injuryReport:hasReport,inactivesPosted,absences,absenceAdjustment:estimate.splitApplied??0,workload:estimate});
         }
       }
     }
   }
-  const data={rows,roster:[...roster.values()],games:S.games};
+  const data={rows,changes,roster:[...roster.values()],games:S.games};
   parlayMemo.dataKey=key;parlayMemo.data=data;
   return data;
 }
@@ -510,7 +536,7 @@ export const tdPrices=()=>local('td-prices:'+tdPeriod(),{});
 export const tdScratched=()=>local('td-out:'+tdPeriod(),[]);
 export function tdPrice(key,value){const all=tdPrices();if(String(value).trim())all[key]=String(value).trim();else delete all[key];keep('td-prices:'+tdPeriod(),all);}
 export function tdBoardData(){
-  const key=[S.data,S.extra,S.week,S.year,S.odds,S.injuries,S.games,S.models,S.weather,JSON.stringify(tdScratched()),S.f?.tdDst,JSON.stringify(Object.entries(S.f||{}).filter(([k])=>k.startsWith('tdOpen:')))];
+  const key=[S.data,S.extra,S.week,S.year,S.odds,S.injuries,S.nflAvailability?.games,S.games,S.models,S.weather,JSON.stringify(tdScratched()),S.f?.tdDst,JSON.stringify(Object.entries(S.f||{}).filter(([k])=>k.startsWith('tdOpen:')))];
   if(tdMemo.key&&tdMemo.key.every((x,i)=>x===key[i]))return tdMemo.data;
   const season=allGames().filter(g=>+g.id.slice(0,4)===S.year&&g.week<S.week&&S.data.events?.[g.id]).sort((a,b)=>a.date.localeCompare(b.date));
   const rates=bucketRates(season.flatMap(g=>S.data.events[g.id]));
@@ -579,7 +605,7 @@ export function tdBoardData(){
       // Red-zone TD rate allowed against league, square-rooted and capped: the total already prices most of the matchup.
       const rzAllowed=shrink(oi.aRz[0],oi.aRz[1],8,lgRz), rzFactor=Math.max(.9,Math.min(1.1,(rzAllowed/lgRz)**.5));
       const teamTd=impliedTds(implied)*rzFactor, rs=rushShare(info.rushTd,info.passTd,lgRushShare,script,bad);
-      const report=S.injuries[teamName(t)]||[], statusOf=name=>report.find(x=>nflName(x.name)===nflName(name))?.status;
+      const report=gameInjuries(g,t),statusOf=name=>report.find(x=>nflName(x.name)===nflName(name))?.status;
       const recent=new Set(info.games.slice(-3)), last4=info.games.slice(-4);
       const cands=Object.values(P).filter(pl=>pl.team===t&&Object.keys(pl.games).some(id=>recent.has(id))&&!scratched.includes(pl.id)&&!outNow(statusOf(getPlayer(pl.id).name)));
       const perGame=(pl,ids,k)=>{const l=ids.filter(id=>pl.games[id]);return l.length?l.reduce((a,id)=>a+pl.games[id][k],0)/l.length:0;};

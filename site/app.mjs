@@ -5,6 +5,7 @@ import {homeLoad,homePage,tickHomeClocks} from './home.mjs';
 import {isCollege} from './college-core.mjs';
 import {refreshScores} from './live-scores.mjs';
 import {refreshNflAvailability,upcomingNflGames} from './nfl-availability.mjs';
+import {fetchSleeperNfl,mergeSleeperNfl} from './nfl-workload.mjs';
 
 // Each section's code loads the first time one of its pages opens, so a visit downloads only what it shows.
 // The build adds a modulepreload hint for the page's own section, so this costs no extra round trip.
@@ -55,6 +56,8 @@ function header(){
 function render(options={}){
   if(!S.route)return;
   const main=$('#main'),row=main.querySelector('.matchup-row'),scroll=row?.scrollLeft||0;
+  const injuryDetails=main.querySelector('details[data-nfl-injuries]');
+  if(injuryDetails&&S.route.id==='nfl-parlays')S.f.nflInjuriesOpen=injuryDetails.open;
   const active=document.activeElement,focus=active?.dataset?.field==='search'?[active.selectionStart,active.selectionEnd]:null;
   if(S.error)main.innerHTML=box('',empty(S.error)+tools(btn('Try again','retry','')));
   else if(!S.loaded)main.innerHTML=box('',empty(S.route.id==='home'?'Loading today’s slates…':'Loading the slate…'));
@@ -98,13 +101,17 @@ const basketInputs=()=>Promise.all([get(`${ESPN}/${sportPath.nba}/injuries`,null
   get(dataURL('tracker/first-basket-index.json'),{}).then(i=>Promise.all((i.months||[]).map(m=>get(dataURL('tracker/first-basket-'+m+'.json'),[])))).then(x=>x.flat()).catch(()=>[]),
   get(dataURL('tracker/first-basket-backtest.json'),null)])
   .then(([injuries,live,backtest])=>({injuries,fbLog:{live,backtest:backtest?.games||[]}}));
-const nflParlayInputs=(year,tdLog=false)=>Promise.all([get(dataURL('models/nfl.json'),null),get(dataURL('nfl-extra-'+year+'.json'),null),
-  get(dataURL('live/weather-nfl.json'),null),tdLog?get(`${ESPN}/${sportPath.nfl}/injuries`,null).then(j=>j?.injuries?.length?compactInjuries(j):null):
-    get(dataURL('live/nfl-availability.json'),null),
+const nflLiveViews=new Set(['nfl-parlays','nfl-tdboard','nfl-props','nfl-best','nfl-preview']);
+const nflProjectionViews=new Set(['nfl-parlays','nfl-props']);
+const nflModelViews=new Set(['nfl-parlays','nfl-tdboard']);
+const nflParlayInputs=(year,id)=>Promise.all([nflModelViews.has(id)?get(dataURL('models/nfl.json'),null):null,
+  nflModelViews.has(id)?get(dataURL('nfl-extra-'+year+'.json'),null):null,
+  nflModelViews.has(id)?get(dataURL('live/weather-nfl.json'),null):null,get(dataURL('live/nfl-availability.json'),null),
+  nflProjectionViews.has(id)?get(dataURL('live/nfl-projections.json'),null):null,
   // TD Board calibration: the saved pregame boards and the backtest.
-  tdLog?Promise.all([get(dataURL('tracker/td-board-index.json'),{}).then(i=>Promise.all((i.months||[]).map(m=>get(dataURL('tracker/td-board-'+m+'.json'),[])))).then(x=>x.flat()).catch(()=>[]),
+  id==='nfl-tdboard'?Promise.all([get(dataURL('tracker/td-board-index.json'),{}).then(i=>Promise.all((i.months||[]).map(m=>get(dataURL('tracker/td-board-'+m+'.json'),[])))).then(x=>x.flat()).catch(()=>[]),
     get(dataURL('tracker/td-board-backtest.json'),null).then(x=>x?.games||[])]).then(([live,backtest])=>({live,backtest})):null])
-  .then(([models,extra,weather,report,tdLog])=>({models,extra,weather,tdLog,injuries:tdLog?report:report?.teams,availability:tdLog?null:report}));
+  .then(([models,extra,weather,availability,projections,tdLog])=>({models,extra,weather,tdLog,injuries:availability?.teams,availability,projections}));
 const injuriesFor=s=>get(dataURL('live/injuries-'+s+'.json'),null).then(x=>x??get(`${ESPN}/${sportPath[s]}/injuries`,{}).then(compactInjuries).catch(()=>({})));
 const oddsFor=(s,d)=>get(dataURL('live/odds-'+s+(s==='nfl'?'':'-'+d)+'.json'),[]);
 const savedGames={};
@@ -189,7 +196,7 @@ async function load(){
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
       injuriesFor(s),oddsFor(s,d),
       s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{},
-      id==='nfl-parlays'||id==='nfl-tdboard'?nflParlayInputs(year,id==='nfl-tdboard'):id==='basket'?basketInputs():null]);
+      nflLiveViews.has(id)?nflParlayInputs(year,id):id==='basket'?basketInputs():null]);
     if(token!==req)return;
     if(s==='nba')S.hoops=year;if(s==='nhl')S.ice=year;
     S.data=data;S.odds=odds;S.injuries=injuries;S.lineups=lineups;
@@ -197,6 +204,7 @@ async function load(){
     // (inactives post about 90 minutes before kickoff, often between hourly refreshes).
     S.models=models?.models||null;S.extra=models?.extra||null;S.weather=models?.weather||null;
     S.nflAvailability=models?.availability||null;
+    S.nflProjections=models?.projections||null;
     if(Object.keys(models?.injuries||{}).length)S.injuries=models.injuries;
     S.fbLog=models?.fbLog||null;S.tdLog=models?.tdLog||null;
     if(s==='nfl'){
@@ -378,7 +386,7 @@ document.addEventListener('click',e=>{
   if(act==='info'){dialog('How to read this','<p class="subtle">'+esc(v)+'</p>');return;}
   if(act==='step'){changePeriod(+v);return;}
   if(act==='retry'){S.error=null;load();return;}
-  if(act==='nflParlayCheck'){if(S.loaded&&S.route.id==='nfl-parlays')tickNflParlay(true);return;}
+  if(act==='nflParlayCheck'){if(S.loaded&&S.route.id==='nfl-parlays')tickNflInputs(true);return;}
   if(isModel(S.route.id)&&M.models?.modelAction(act,v)){render();return;}
   if(S.route.id==='tracker'&&M.tracker?.trackerAction(act,v)){render();return;}
   if(trackerOf(S.route.id)&&M[trackerOf(S.route.id)]?.parlayTrackerAction(act,v)){render();return;}
@@ -486,31 +494,39 @@ document.addEventListener('going:render',()=>render());
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menu){menu=null;header();}});
 window.addEventListener('popstate',()=>{dateHash=location.hash;start();});
 window.addEventListener('hashchange',()=>{if(dateHash!==location.hash){dateHash=location.hash;start();}});
-async function tickNflParlay(force=false){
-  const token=req,now=Date.now(),state=S.f;
-  if(state.nflParlayChecking||!force&&document.activeElement?.matches('[data-parlay]'))return;
+async function tickNflInputs(force=false){
+  const token=req,now=Date.now(),state=S.f,id=S.route.id;
+  const draft=id==='nfl-parlays';
+  const isEditing=()=>document.activeElement?.matches('main input, main select, main textarea');
+  if(state.nflParlayChecking||!force&&isEditing())return;
   const games=upcomingNflGames(S.games,now);
   const remaining=games.map(g=>g.id).join('|'),kickoffChanged=state.nflParlayRemaining!==remaining;
   state.nflParlayRemaining=remaining;
   if(!force&&(!games.length||state.nflParlayNext>now)){
-    if(kickoffChanged&&M.nfl.action('parlayRefreshDraft',''))render();
+    if(draft&&kickoffChanged&&M.nfl.action('parlayRefreshDraft',''))render();
     return;
   }
   state.nflParlayChecking=true;
   state.nflParlayNext=now+(games.some(g=>g.date===dateKey(new Date(now)))?3:10)*60000;
   try{
-    const [availability,odds]=await Promise.all([
+    const fetchProjections=nflProjectionViews.has(id)&&games.length&&(force||!state.nflProjectionNext||state.nflProjectionNext<=now);
+    if(fetchProjections)state.nflProjectionNext=now+8*60000;
+    const [availability,odds,projections]=await Promise.all([
       refreshNflAvailability(games,{...S.nflAvailability,teams:S.injuries},{now}),
       fetch(dataURL('live/odds-nfl.json'),{cache:'no-cache',signal:AbortSignal.timeout(7000)})
-        .then(r=>r.ok?r.json():null).catch(()=>null)
+        .then(r=>r.ok?r.json():null).catch(()=>null),
+      fetchProjections?fetchSleeperNfl(S.year,S.week):null
     ]);
     if(token!==req)return;
-    if(!force&&document.activeElement?.matches('[data-parlay]')){
+    if(!force&&isEditing()){
       state.nflParlayNext=0;
       state.nflParlayRemaining=null;
+      if(fetchProjections)state.nflProjectionNext=0;
       return;
     }
     let changed=kickoffChanged;
+    const latestProjections=mergeSleeperNfl(S.nflProjections,projections);
+    if(latestProjections!==S.nflProjections){S.nflProjections=latestProjections;changed=true;}
     if(Array.isArray(odds)&&JSON.stringify(odds)!==JSON.stringify(S.odds)){S.odds=odds;changed=true;}
     if(availability){
       if(JSON.stringify(availability.teams)===JSON.stringify(S.injuries))availability.teams=S.injuries;
@@ -519,8 +535,8 @@ async function tickNflParlay(force=false){
       else changed=true;
       S.nflAvailability=availability;
     }
-    if(changed)M.nfl.action('parlayRefreshDraft','');
-    render();
+    if(draft&&changed)M.nfl.action('parlayRefreshDraft','');
+    if(draft||changed)render();
     if(force)toast(availability?.checkedAt===new Date(now).toISOString()?'Injury reports checked':'Live injury report unavailable');
   }catch(e){console.error(e);if(force&&token===req)toast('Could not check for updates');}
   finally{state.nflParlayChecking=false;}
@@ -529,7 +545,10 @@ async function tickNflParlay(force=false){
 async function tickScores(){
   if(document.visibilityState!=='visible'||!S.loaded||S.error||!S.route)return;
   const s=S.route.sport,token=req;
-  if(S.route.id==='nfl-parlays'){await tickNflParlay();return;}
+  if(nflLiveViews.has(S.route.id)){
+    await tickNflInputs();
+    if(token!==req||S.route.id==='nfl-parlays')return;
+  }
   if(S.route.id==='home'){
     if(await tickHomeClocks()&&token===req)render();
     return;

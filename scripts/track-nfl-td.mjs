@@ -15,15 +15,17 @@ await mkdir(out,{recursive:true});
 const store=new Map(), changed=new Set(), month=x=>x.date.slice(0,7);
 for(const file of await readdir(out))if(/^td-board-\d{4}-\d\d\.json$/.test(file))for(const x of JSON.parse(await readFile(join(out,file),'utf8')))store.set(x.game,x);
 const year=+today.slice(0,4)-(today.slice(5,7)<'09');
-const [schedule,archive,extra,weather,injuries,odds,models]=await Promise.all([read('nfl-schedule.json'),read(`nfl-${year}.json`),
-  read(`nfl-extra-${year}.json`),read('live/weather-nfl.json'),read('live/injuries-nfl.json'),read('live/odds-nfl.json'),read('models/nfl.json')]);
+const [schedule,archive,extra,weather,injuries,odds,models,availability]=await Promise.all([read('nfl-schedule.json'),read(`nfl-${year}.json`),
+  read(`nfl-extra-${year}.json`),read('live/weather-nfl.json'),read('live/injuries-nfl.json'),read('live/odds-nfl.json'),read('models/nfl.json'),
+  read('live/nfl-availability.json')]);
 const season=(schedule||[]).filter(g=>+g.id.slice(0,4)===year);
 const snapshot=x=>({game:x.g.id,date:x.g.date,week:x.g.week,tip:x.g.iso,a:x.g.a,h:x.g.h,
   players:x.rows.map(r=>[r.id,r.p.name,r.team,r.role,+r.anytime.toFixed(4),+r.first.toFixed(4),+r.lambda.toFixed(3)])});
 // Who scored: every offensive TD scorer in the game, and the first TD's scorer (any kind, as Kalshi settles).
 const grade=(x,ev)=>{x.tds=[...new Set(ev.map(offenseTd).filter(Boolean))];x.first=ev.find(p=>p[8])?.[9]||null;x.graded=new Date(now).toISOString();return x;};
 const setup=(week,games,live)=>Object.assign(S,{route:routes.find(r=>r.id==='nfl-tdboard'),year,week,games,data:{...archive,schedule},extra,
-  weather:live?weather:null,injuries:live?injuries||{}:{},odds:live?odds||[]:[],models:live?models:null,f:{...viewDefaults['nfl-tdboard']}});
+  weather:live?weather:null,injuries:live&&Object.keys(availability?.teams||{}).length?availability.teams:live?injuries||{}:{},
+  nflAvailability:live?availability:null,odds:live?odds||[]:[],models:live?models:null,f:{...viewDefaults['nfl-tdboard']}});
 let saved=0,graded=0;
 const next=season.filter(g=>g.date>=today&&g.sa==null).sort((a,b)=>a.date.localeCompare(b.date))[0];
 if(next&&archive){

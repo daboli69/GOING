@@ -212,7 +212,7 @@ export function createParlays(opts){
       if(Date.now()-Date.parse(leg.capturedAt)>90*60000&&!flags.includes('Stale quote'))flags.push('Stale quote');
       return {...leg,flags};
     });
-    const intro=typeof opts.intro==='function'?opts.intro():opts.intro;
+    const intro=typeof opts.intro==='function'?opts.intro(data):opts.intro;
     return `<h1>Suggested Parlays</h1>${intro||''}`+opts.nav()+
       box('Filters',controls(data,cfg))+
       box('Suggested ticket',(state.message?`<p class="subtle" role="status">${esc(state.message)}</p>`:'')+
