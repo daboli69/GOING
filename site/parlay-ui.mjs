@@ -24,9 +24,14 @@ const number=(label,key,value,min,max,step=1)=>field(label,key,'number',`min="${
 const select=(label,key,value,options)=>`<label class="field">${esc(label)} <select data-parlay="${key}">${options.map(([v,t])=>
   `<option value="${esc(v)}" ${v===value?'selected':''}>${esc(t)}</option>`).join('')}</select></label>`;
 const numbers=(value,[min,max],fallback)=>{
-  if(value===''||!Number.isFinite(Number(value)))return fallback;
+  if((typeof value!=='number'&&typeof value!=='string')||String(value).trim()===''||!Number.isFinite(Number(value)))return fallback;
   return Math.min(max,Math.max(min,Number(value)));
 };
+const isRecord=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
+const isTicket=value=>isRecord(value)&&typeof value.id==='string'&&Array.isArray(value.legs);
+const isSavedLeg=leg=>isRecord(leg)&&typeof leg.name==='string'&&typeof leg.stat==='string'&&
+  ['Over','Under'].includes(leg.side)&&Number.isFinite(leg.line);
+const savedResult=leg=>outcomes.includes(leg.result)?leg.result:'Pending';
 const baseHints={'Odds range':'Widen the odds range.','Existing tickets':'Allow legs already on your tickets.',
   'Excluded matchup':'Restore an excluded game.','Excluded player':'Restore an excluded player.'};
 
@@ -56,9 +61,26 @@ export function createParlays(opts){
   const bounds={legs:[2,10],minOdds:[1.01,101],maxOdds:[1.01,101],...Object.fromEntries(opts.fields.map(f=>[f.key,[f.min,f.max]]))};
   const integers=new Set(['legs',...opts.fields.filter(f=>f.integer).map(f=>f.key)]);
   const hints={...baseHints,...opts.hints};
-  const savedTickets=()=>{const value=local(ticketsKey,[]);return Array.isArray(value)?value:[];};
-  const saved=savedTickets;
-  const config=()=>{const value=local(settingsKey,{});return {...defaults,...value,weights:{...weights,...value.weights}};};
+  const readTickets=()=>{const value=local(ticketsKey,[]);return Array.isArray(value)?value:[];};
+  const savedTickets=()=>readTickets().filter(isTicket).map(ticket=>({...ticket,legs:ticket.legs.filter(isSavedLeg)}))
+    .filter(ticket=>ticket.legs.length);
+  const booleans=['perGame','skipTickets',...(opts.checks||[]).map(c=>c.key)];
+  function readFilters(value){
+    const source=isRecord(value)?value:{},cfg={...defaults};
+    for(const [key,range] of Object.entries(bounds)){
+      const numeric=numbers(source[key],range,defaults[key]);
+      cfg[key]=integers.has(key)?Math.round(numeric):numeric;
+    }
+    for(const key of booleans)if(typeof source[key]==='boolean')cfg[key]=source[key];
+    if(['Both','Over','Under'].includes(source.side))cfg.side=source.side;
+    if(Array.isArray(source.stats))cfg.stats=source.stats.filter(stat=>markets.includes(stat));
+    for(const key of ['games','players'])if(Array.isArray(source[key])){
+      cfg[key]=source[key].filter(id=>typeof id==='string'||Number.isFinite(id)).map(String);
+    }
+    cfg.weights=Object.fromEntries(Object.entries(weights).map(([key,value])=>[key,numbers(source.weights?.[key],[0,10],value)]));
+    return cfg;
+  }
+  const config=()=>readFilters(local(settingsKey,{}));
   const draft=()=>{
     const period=opts.period();
     if(S.f.parlay?.period!==period)S.f.parlay={period,locked:[],ticket:[],message:''};
@@ -69,11 +91,10 @@ export function createParlays(opts){
     S.f.parlayWeights=!!document.querySelector('details[data-parlay-weights]')?.open;
     if(panel?.dataset.parlayTicket)S.f.parlayHistory=panel.dataset.parlayTicket;
   };
-  const takenLegs=except=>new Set(saved().filter(ticket=>ticket.id!==except)
+  const takenLegs=except=>new Set(savedTickets().filter(ticket=>ticket.id!==except)
     .flatMap(ticket=>ticket.legs.filter(leg=>leg.result!=='Void').map(legKey)));
   const legText=opts.legText||(leg=>leg.side+' '+leg.line+' '+leg.stat);
   const ticketRules=cfg=>opts.rules?opts.rules(cfg):{};
-  const booleans=['perGame','skipTickets',...(opts.checks||[]).map(c=>c.key)];
 
   function exclusions(data,cfg){
     const playerLabel=id=>data.roster.find(p=>p.id===id)?.name||id;
@@ -124,7 +145,7 @@ export function createParlays(opts){
   }
 
   function resultSummary(legs){
-    const results=legs.map(l=>l.result);
+    const results=legs.map(savedResult);
     if(results.includes('Miss'))return 'Miss';
     if(results.includes('Pending'))return 'Pending';
     return results.includes('Hit')?'Hit':'Void';
@@ -138,23 +159,29 @@ export function createParlays(opts){
   }
 
   function history(){
-    const tickets=saved();
+    const tickets=readTickets();
     if(!tickets.length)return empty('Generated tickets are saved here in this browser.');
     const results=new Map();
-    const rows=tickets.map(t=>{
-      const filters={...defaults,...t.filters,weights:{...weights,...t.filters?.weights}};
-      const result=resultSummary(t.legs), label=filterLabel(filters);
-      const key=JSON.stringify(t.filters);
+    let missing=0;
+    const rows=tickets.flatMap(t=>{
+      if(!isTicket(t)){missing++;return [];}
+      const entries=t.legs.map((leg,index)=>({leg,index})).filter(({leg})=>isSavedLeg(leg));
+      if(!entries.length){missing++;return [];}
+      const legs=entries.map(({leg})=>leg);
+      const filters=readFilters(t.filters),incomplete=legs.length!==t.legs.length;
+      const result=incomplete?'Incomplete':resultSummary(legs),label=filterLabel(filters);
+      const key=JSON.stringify(filters);
       if(!results.has(key))results.set(key,{label,requested:filters.legs,Hit:0,Miss:0});
       if(result==='Hit'||result==='Miss')results.get(key)[result]++;
-      const body=table(['Leg','Quote','Result'],t.legs.map((leg,i)=>[esc(leg.name+' · '+legText(leg)),
-        esc(oddsText(leg.price)+' · '+leg.provider),select('Result for '+leg.name,'result:'+t.id+':'+i,leg.result,outcomes.map(x=>[x,x]))]),{wrap:'box'});
-      const counts=outcomes.map(result=>[result,t.legs.filter(leg=>leg.result===result).length]).filter(([,n])=>n);
-      return `<details data-parlay-ticket="${esc(t.id)}" ${S.f.parlayHistory===t.id?'open':''}><summary>${esc(t.date)} · ${t.legs.length}/${filters.legs} legs · ${result} · ${esc(timeLabel(t.createdAt))}</summary>
+      const body=table(['Leg','Quote','Result'],entries.map(({leg,index})=>[esc(leg.name+' · '+legText(leg)),
+        esc(oddsText(leg.price)+' · '+leg.provider),select('Result for '+leg.name,'result:'+t.id+':'+index,savedResult(leg),outcomes.map(x=>[x,x]))]),{wrap:'box'});
+      const counts=outcomes.map(result=>[result,legs.filter(leg=>savedResult(leg)===result).length]).filter(([,n])=>n);
+      return `<details data-parlay-ticket="${esc(t.id)}" ${S.f.parlayHistory===t.id?'open':''}><summary>${esc(t.date)} · ${legs.length}/${filters.legs} legs · ${result} · ${esc(timeLabel(t.createdAt))}</summary>
         <p class="subtle">${esc(label)} · ${esc(counts.map(([result,n])=>n+' '+result.toLowerCase()).join(', '))}</p>${body}</details>`;
     });
     const graded=[...results.values()].filter(x=>x.Hit+x.Miss>0);
-    return (graded.length?table(['Saved filters','Requested legs','Hit','Miss'],graded.map(x=>[esc(x.label),x.requested,x.Hit,x.Miss]),{wrap:'box'}):'')+rows.join('');
+    return (graded.length?table(['Saved filters','Requested legs','Hit','Miss'],graded.map(x=>[esc(x.label),x.requested,x.Hit,x.Miss]),{wrap:'box'}):'')+
+      rows.join('')+(missing?empty(missing===1?'One saved ticket is unreadable.':missing+' saved tickets are unreadable.'):'');
   }
 
   function shortage(data,cfg,report,count){
@@ -195,9 +222,9 @@ export function createParlays(opts){
   }
 
   function saveTicket(ticket,cfg){
-    const all=saved();
+    const all=readTickets();
     const key=legs=>legs.map(leg=>legKey(leg)+'|'+leg.price).sort().join(';');
-    const previous=all.find(old=>key(old.legs)===key(ticket)&&JSON.stringify(old.filters)===JSON.stringify(cfg));
+    const previous=all.find(old=>isTicket(old)&&old.legs.every(isSavedLeg)&&key(old.legs)===key(ticket)&&JSON.stringify(readFilters(old.filters))===JSON.stringify(cfg));
     if(previous)return previous.id;
     const entry={id:crypto.randomUUID(),date:opts.periodLabel(),createdAt:new Date().toISOString(),filters:cfg,
       legs:ticket.map(leg=>({...leg,result:'Pending'}))};
@@ -232,8 +259,8 @@ export function createParlays(opts){
     if(act==='parlayField'){
       const [key,val]=JSON.parse(value);
       if(key.startsWith('result:')){
-        const [,id,index]=key.split(':'), all=saved(), ticket=all.find(t=>t.id===id);
-        if(ticket?.legs[index]&&outcomes.includes(val)){ticket.legs[index].result=val;keep(ticketsKey,all);S.f.parlayHistory=id;}
+        const [,id,index]=key.split(':'), all=readTickets(), ticket=all.find(t=>isTicket(t)&&t.id===id);
+        if(isSavedLeg(ticket?.legs[index])&&outcomes.includes(val)){ticket.legs[index].result=val;keep(ticketsKey,all);S.f.parlayHistory=id;}
         return true;
       }
       if(key.startsWith('weight-')){const k=key.slice(7);if(Object.hasOwn(weights,k))cfg.weights[k]=numbers(val,[0,10],weights[k]);S.f.parlayWeights=true;}
