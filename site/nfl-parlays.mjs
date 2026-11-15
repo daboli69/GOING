@@ -5,14 +5,35 @@ import {nflInjuryContext} from './nfl-availability.mjs';
 import {nflOut} from './nfl-workload.mjs';
 import {defaults,evaluate,markets,weights,yardMarkets,tdMarkets,ticketRules,warnings,PRIOR} from './nfl-parlay-engine.mjs';
 import {createParlays} from './parlay-ui.mjs';
+import {legKey} from './parlay-core.mjs';
 
-function workloadChanges(data){
+function workloadChanges(data,report,ticket){
   if(!data.changes.length)return '';
+  const key=(player,game,stat)=>[player,game,stat].join('|');
+  const priced=new Set(data.rows.map(r=>key(r.player.id,r.game.id,r.stat)));
+  const reviewed=new Map(), selected=new Set(ticket.map(legKey));
+  for(const leg of report.screened){
+    const id=key(leg.player,leg.game,leg.stat);
+    if(!reviewed.has(id))reviewed.set(id,[]);
+    reviewed.get(id).push(leg);
+  }
+  const screening=r=>{
+    const id=key(r.player.id,r.game.id,r.stat);
+    const legs=reviewed.get(id);
+    if(!legs)return priced.has(id)?'Outside selected sides or stat filters':'No published price';
+    return legs.map(leg=>{
+      const price=Number(leg.price)>0?'+'+Number(leg.price):leg.price;
+      const cuts=Object.values(leg.checks).filter(Boolean);
+      const reasons=[...new Set([...cuts.slice(0,2),leg.checks.Value||cuts[2]].filter(Boolean))];
+      const decision=selected.has(legKey(leg))?'On draft':!leg.cut?'Eligible · outside draft':reasons.join(' · ');
+      return `<div><strong>${esc(leg.side+' '+leg.line+' ('+price+')')}</strong><br>${esc(decision)}</div>`;
+    }).join('');
+  };
   const rows=[...data.changes].sort((a,b)=>Math.abs(b.value-b.baseline)/Math.max(b.baseline,1)-Math.abs(a.value-a.baseline)/Math.max(a.baseline,1));
-  return box('Injury-adjusted projections',table(['Player','Game','Stat','Baseline','Adjusted','RotoWire via Sleeper','Teammates out'],
+  return box('Injury-adjusted projections',table(['Player','Game','Stat','Baseline','Adjusted','RotoWire via Sleeper','Teammates out','Price and screening'],
     rows.map(r=>[esc(r.player.name+' · '+r.player.team),esc(r.game.a+' @ '+r.game.h),esc(r.stat),round(r.baseline,1),
-      round(r.value,1),r.sleeper==null?'—':round(r.sleeper,1),esc(r.absences.join(', '))]),{sort:'nfl-workload',wrap:'box'}),
-    'Available players can pick up part of the vacated work at their position. GOING estimates the split from recent usage and blends in current RotoWire projections from Sleeper when available. These projections can appear without a market line.','nfl-workload');
+      round(r.value,1),r.sleeper==null?'—':round(r.sleeper,1),esc(r.absences.join(', ')),screening(r)]),{sort:'nfl-workload',wrap:'box'}),
+    'A workload change can move the projection across a line. The price and screening column shows whether that leg qualifies. With at least four comparable games, the engine can use form from games without the same teammates.','nfl-workload');
 }
 
 function injuryReport(){
@@ -35,12 +56,13 @@ const nfl=createParlays({
     {key:'spread',label:'Max. spread',min:0,max:30,step:.5},{key:'total',label:'Min. total',min:0,max:70,step:.5},
     {key:'tdMax',label:'Max. TD legs',min:0,max:3,integer:true}],
   checks:[{key:'stacks',label:'Allow correlated same-game stacks (QB with his receiver)'},{key:'weather',label:'Cut passing-game Overs in 15+ mph wind or rain'}],
-  rules:ticketRules,warnings,prior:PRIOR,chanceNote:'Season rates with 8 wins and 8 losses added',
+  rules:ticketRules,warnings,prior:PRIOR,chanceNote:'Applicable hit rates with 8 wins and 8 losses added',
   summary:f=>[f.hit+'% min. last-8 hit rate',f.sample+'+ games played',f.spread+' max spread',f.total+' min. total',
     (f.tdMax??1)+' max TD legs',f.stacks?'correlated stacks allowed':'',f.weather===false?'weather cut off':''].filter(Boolean),
   period:()=>S.year+'-'+S.week,periodLabel:()=>S.year+' Week '+S.week,
   nav:()=>slate({navOnly:true}),
-  intro:data=>{
+  afterTicket:(data,report,ticket)=>workloadChanges(data,report,ticket)+injuryReport(),
+  intro:()=>{
     const availability=S.nflAvailability;
     const format=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
     const stamp=iso=>Number.isFinite(Date.parse(iso))?format.format(new Date(iso)):null;
@@ -50,8 +72,7 @@ const nfl=createParlays({
       games?games+' games with inactives reported for both teams':null].filter(Boolean).join(' · ');
     return tools(`<a class="pill" href="${href('long/parlay-tracker.html')}">NFL Leg Tracker</a>`+
       btn('Check for updates','nflParlayCheck','')+`<span class="subtle">${esc(status||'Waiting for a timestamped injury report')}</span>`)+
-      '<p class="subtle">The suggested draft updates as injury reports, game-day inactives, projections and published prices change. Generate to save a ticket to your history.</p>'+
-      workloadChanges(data)+injuryReport();
+      '<p class="subtle">The suggested draft updates as injury reports, game-day inactives, projections and published prices change. Generate to save a ticket to your history.</p>';
   },
   recent:{key:'last8',label:'L8'},
   legText:leg=>tdMarkets.has(leg.stat)?leg.stat+': '+(leg.side==='Over'?'Yes':'No'):leg.side+' '+leg.line+' '+leg.stat+(yardMarkets.has(leg.stat)?' yds':''),
