@@ -1,4 +1,4 @@
-import { nflTeams } from './config.mjs';
+import {href,nflTeams} from './config.mjs';
 import {total,mean,round,pct,div,rate,heat,american,implied,signed,seasonLimit,poissonTail} from './math.mjs';
 import {current as S,esc,box,grid,card,metric,logo,color,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,notes,person,market,basePlay,propOdds,gameDay,final,local,dialog,badge,playCheck,propQuotes,keep} from './ui.mjs';
 import {allowedRanks,clamp,format as fmt} from './parlay-core.mjs';
@@ -6,6 +6,8 @@ import {markets as parlayMarkets,tdMarkets,badWeather} from './nfl-parlay-engine
 import {bucket,isRush,offenseTd,bucketRates,impliedPoints,impliedTds,rushShare,anytime,firstTdChance,shrink,log5,tdRegression,tdSettings} from './nfl-td.mjs';
 import {tdBoardPage,tdBoardAction} from './nfl-td-board.mjs';
 import {nflParlayPage,nflParlayAction} from './nfl-parlays.mjs';
+import {nflSgpPage,nflSgpAction} from './nfl-sgp.mjs';
+import {defenseProfiles,similarDefenseGames} from './nfl-sgp-engine.mjs';
 import {kickoff,nflInjuryContext,nflName} from './nfl-availability.mjs';
 import {nflOut as outNow,nflReplacementGames,nflWorkload} from './nfl-workload.mjs';
 export {kickoff} from './nfl-availability.mjs';
@@ -196,7 +198,8 @@ function nflPreview(){
   const top=slate()+hero(g);
   if(!g)return top;
   const v=S.f.view||'Full Preview';
-  const header=tools(btn('‹','gameStep',-1,'sq')+`<span class="period-label">Game ${S.games.indexOf(g)+1} of ${S.games.length}</span>`+btn('›','gameStep',1,'sq'),'center')+tools(toggles(['Full Preview','Build Your Model','Summary'],'view'));
+  const header=tools(btn('‹','gameStep',-1,'sq')+`<span class="period-label">Game ${S.games.indexOf(g)+1} of ${S.games.length}</span>`+btn('›','gameStep',1,'sq'),'center')+
+    tools(toggles(['Full Preview','Build Your Model','Summary'],'view')+`<a class="pill" href="${href('long/same-game-parlays.html?game='+encodeURIComponent(g.id))}">Build a Same-Game Parlay</a>`);
   const o=gameLines(g),weights=local('nfl-model',{Offense:35,Defense:35,'Recent form':20,'Home field':10});
   const statsBox=box('General Stats & Scheme',tools(toggles(['Raw Stats','vs Opponents'],'scheme'))+grid(2,[schemeTable(a,h,S.f.scheme==='vs Opponents'),schemeTable(h,a,S.f.scheme==='vs Opponents')]),'Success rate is the share of plays with positive expected points added. Opponent adjustment compares each team with the opponents it faced.');
   const picks=pickTracker(g,o);
@@ -534,6 +537,27 @@ export function nflParlayData(quotes=S.odds){
   parlayMemo.dataKey=key;parlayMemo.data=data;
   return data;
 }
+let sgpArchive,sgpProfiles,sgpMemo={};
+export function nflSameGameData(){
+  const game=S.game;
+  if(!game)return {rows:[],roster:[],games:[]};
+  const data=nflParlayData();
+  if(sgpMemo.game===game&&sgpMemo.data===data)return sgpMemo.value;
+  if(sgpArchive!==S.data){
+    sgpArchive=S.data;
+    sgpProfiles=defenseProfiles(allGames().filter(g=>g.id.startsWith(S.year+'_')),S.data.events||{},S.data.players||{});
+  }
+  const comparisons=new Map();
+  const rows=data.rows.filter(r=>r.game.id===game.id).map(row=>{
+    const key=row.player.id+'|'+row.stat;
+    if(!comparisons.has(key))comparisons.set(key,similarDefenseGames(sgpProfiles,row,marketValue[row.stat]));
+    return {...row,sgpComparisons:comparisons.get(key)};
+  });
+  const roster=[...new Map(rows.map(r=>[r.player.id,r.player])).values()];
+  const value={rows,roster,games:[game]};
+  sgpMemo={game,data,value};
+  return value;
+}
 // ---- TD Board: expected touchdowns from opportunity (nfl-td.mjs holds the model). ----
 let tdMemo={};
 const tdPeriod=()=>S.year+'-'+S.week;
@@ -671,11 +695,12 @@ export function nflAction(act,v,target){
     const [a,h]=matchup();dialog(v,grid(2,[a,h].map(t=>card(team(t),table(['Week','Opponent','Results','Plays','Yards'],opening(t,false,S.f.window,S.f.view).map(x=>[x.g.week,team(x.o),esc(x.drives.join(', ')),x.plays,x.yards]))))),true);return true;
   }
   if(S.route.id==='nfl-parlays'&&act.startsWith('parlay'))return nflParlayAction(act,v,nflParlayData(),target);
+  if(S.route.id==='nfl-sgp'&&act.startsWith('parlay'))return nflSgpAction(act,v,nflSameGameData(),target);
   if(S.route.id==='nfl-tdboard'&&act.startsWith('td'))return tdBoardAction(act,v,tdBoardData());
   if(act==='pickplayers'){const [a,h]=matchup();dialog('Pick players',grid(2,[tdPlayers(a),tdPlayers(h)]),true);return true;}
   return false;
 }
-export function nflPage(){return ({'nfl-tdboard':()=>tdBoardPage(tdBoardData()),'nfl-parlays':()=>nflParlayPage(nflParlayData()),td:tdPage,drives:drivesPage,'nfl-preview':nflPreview,'nfl-props':nflProps,'nfl-best':bestNfl,endzone})[S.route.id]();}
+export function nflPage(){return ({'nfl-tdboard':()=>tdBoardPage(tdBoardData()),'nfl-parlays':()=>nflParlayPage(nflParlayData()),'nfl-sgp':()=>nflSgpPage(nflSameGameData()),td:tdPage,drives:drivesPage,'nfl-preview':nflPreview,'nfl-props':nflProps,'nfl-best':bestNfl,endzone})[S.route.id]();}
 export function nflResult(p){
   const g=allGames().find(x=>x.id===p.game);
   if(!g||!final(g))return null;

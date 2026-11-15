@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {assess,evaluate,defaults,shrunk,correlation,ticketRules,warnings,badWeather} from '../site/nfl-parlay-engine.mjs';
-import {buildTicket,ticketMath} from '../site/parlay-core.mjs';
+import {buildTicket,ticketMath,legKey} from '../site/parlay-core.mjs';
+import {buildSameGame,defenseProfiles,evaluateSameGame,sgpDefaults,similarDefenseGames} from '../site/nfl-sgp-engine.mjs';
 import {kickoff,playerRole} from '../site/nfl.mjs';
 import {nflInjuryContext,refreshNflAvailability} from '../site/nfl-availability.mjs';
 import {mergeSleeperNfl,nflReplacementGames,nflWorkload,parseSleeperNfl} from '../site/nfl-workload.mjs';
@@ -221,4 +222,63 @@ test('touchdown props shrink toward their price, not toward 50%',()=>{
   const leg=assess(td,'Over',{...defaults,hit:0},{now,taken:new Set()});
   assert.ok(leg.chance<.15,'0 for 5 stays below the 15% price');
   assert.equal(leg.checks.Value,'Shrunk hit rate below the price');
+});
+
+test('same-game screening supports an Under against a strong defense and withholds stale or unavailable legs',()=>{
+  const low=[30,32,45,39,40,35,42,46];
+  const under=row({projection:43,
+    form:{season:low,last8:low,last5:low.slice(-5),venue:low.slice(-4),home:low.slice(0,4),away:low.slice(-4)},
+    reads:[42,40,43],defense:{...row().defense,rank:rank(3),value:.04},
+    sgpComparisons:[{value:38},{value:36},{value:44}]});
+  const fresh=evaluateSameGame([under],sgpDefaults,{now});
+  assert.deepEqual(fresh.eligible.map(leg=>leg.side),['Under']);
+  assert.equal(fresh.eligible[0].sgp.comparable.hits,3);
+  assert.match(fresh.eligible[0].reasons.join(' · '),/3\/3 vs similar defenses/);
+  const stale={...under,quote:{...under.quote,capturedAt:'2026-11-14T09:00:00Z'}};
+  assert.equal(evaluateSameGame([stale],sgpDefaults,{now}).eligible.length,0);
+  assert.equal(evaluateSameGame([{...under,out:true}],sgpDefaults,{now}).eligible.length,0);
+  assert.equal(evaluateSameGame([under],{...sgpDefaults,side:'Over'},{now}).eligible.length,0);
+});
+
+test('comparable-defense support opens its own pool without changing the main parlay screen',()=>{
+  const candidate=row({defense:{...row().defense,rank:rank(16)},
+    sgpComparisons:[{value:76},{value:82},{value:70}]});
+  const cfg={...sgpDefaults,side:'Over'};
+  assert.equal(evaluate([candidate],cfg,{now}).eligible.length,0);
+  assert.equal(evaluateSameGame([candidate],cfg,{now}).eligible.length,1);
+  candidate.sgpComparisons=[{value:10},{value:32},{value:50}];
+  assert.equal(evaluateSameGame([candidate],cfg,{now}).screened[0].cut,'Similar-defense results conflict');
+});
+
+test('similar-defense profiles never use the comparison game or a future game to characterize the opponent',()=>{
+  const game=(id,d,a,h)=>({id,date:'2026-10-'+d,a,h});
+  const schedule=[game('a1','01','CLE','NYG'),game('a2','02','CIN','NYG'),game('a3','03','MIN','NYG'),
+    game('b1','04','SEA','DAL'),game('b2','05','CHI','DAL'),game('b3','06','BUF','DAL'),
+    game('older','11','SF','NYG'),game('future','22','GB','NYG')];
+  const events=Object.fromEntries(schedule.map(g=>[g.id,Array.from({length:20},()=>{
+    const p=[g.a,'run',g.id==='older'||g.id==='future'?50:4];
+    p[12]='back';
+    return p;
+  })]));
+  const profiles=defenseProfiles(schedule,events,{});
+  const input={date:'2026-10-21',opp:'DAL',stat:'Rushing',player:{team:'SF',pos:'RB',logs:[{game:'older',rushY:53}]}};
+  assert.deepEqual(similarDefenseGames(profiles,input,'rushY'),[{opponent:'NYG',date:'2026-10-11',value:53,distance:0}]);
+  assert.equal(profiles.before('NYG','2026-10-03','rush'),null);
+  assert.notDeepEqual(profiles.before('NYG','2026-10-23','rush'),profiles.before('DAL','2026-10-23','rush'));
+});
+
+test('same-game tickets keep their game, use distinct players and avoid opposed passing legs',()=>{
+  const leg=(player,stat,side,score,game='SF_DAL')=>({date:'2026-11-15',game,team:'SF',player,stat,side,score,line:30});
+  const qb=leg('QB','Passing','Over',9), receiver=leg('WR','Receiving','Under',8);
+  const duplicate=leg('WR','Receptions','Under',7), rb=leg('RB','Rushing','Over',6);
+  const te=leg('TE','Receiving','Over',5), other=leg('other','Passing','Over',9,'PIT_BAL');
+  const cfg={...sgpDefaults,legs:3};
+  const options=[qb,receiver,duplicate,rb,te,other];
+  const {ticket}=buildSameGame(options,cfg);
+  assert.equal(ticket.length,3);
+  assert.deepEqual(new Set(ticket.map(l=>l.game)),new Set(['SF_DAL']));
+  assert.equal(new Set(ticket.map(l=>l.player)).size,3);
+  const locked=buildSameGame(options,cfg,{locked:[legKey(qb)]});
+  assert.deepEqual(locked.ticket.map(l=>l.player),['QB','RB','TE']);
+  assert.equal(buildSameGame(options,cfg,{locked:[legKey(qb),legKey(receiver)]}).invalidLock,true);
 });

@@ -208,10 +208,11 @@ export function assess(row,side,cfg,context){
     absences:row.absences,absenceAdjustment:row.absenceAdjustment,status:row.status,inactivesPosted:row.inactivesPosted,workload:row.workload,
     comparableGames:row.replacement?comparable.length:null,formSource:useComparable?'comparable-role':'full-season'};
   leg.cut=Object.values(checks).find(Boolean)||null;
-  if(!leg.cut){
+  if(!leg.cut||context.angles){
     const value=clamp((edge||0)*5,0,1)+(gap==null?0:clamp(gap/Math.max(Math.abs(leg.line),1),0,1));
-    leg.score=cfg.weights.form*mean([last8.rate,shrunk(season),venue.n>=3?venue.rate:null].filter(x=>x!=null))+cfg.weights.matchup*matchup+
-      cfg.weights.line*value+cfg.weights.context*impact;
+    const formScore=mean([last8.rate,shrunk(season),venue.n>=3?venue.rate:null].filter(x=>x!=null));
+    if(context.angles)leg.angles={form:formScore,value,matchup,impact,gap};
+    if(!leg.cut)leg.score=cfg.weights.form*formScore+cfg.weights.matchup*matchup+cfg.weights.line*value+cfg.weights.context*impact;
   }
   return leg;
 }
