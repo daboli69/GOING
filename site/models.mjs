@@ -1,6 +1,6 @@
 // Ensemble model views for GOING LONG (NFL lab feed) and GOING UP (NBA Game Center export).
 // Both feeds are published from the local labs by publishers/publish_models.py; nothing here is computed from betting prices.
-import {current as S,esc,box,grid,metric,logo,team,teamName,teamBanner,table,cell,info,empty,slate,hero,badge,get,dataURL,dateKey,dateLabel,today,round,pct,tools} from './ui.mjs';
+import {current as S,esc,box,grid,metric,logo,team,teamName,teamBanner,table,cell,info,empty,slate,hero,badge,dateKey,dateLabel,round,pct,tools} from './ui.mjs';
 import {signed,heat} from './math.mjs';
 
 const ago=iso=>{
@@ -12,9 +12,13 @@ const when=iso=>iso?new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York'
 const winPct=(p,t)=>`${logo(t)} ${esc(t)} ${pct(p)}`;
 const favored=(p,home,away)=>p>=.5?[home,p]:[away,1-p];
 const verdict=(pick,winner)=>winner==null?cell('—','none'):pick===winner?cell('Right','good heat'):cell('Wrong','bad heat');
+const published=iso=>`Published <time data-model-published datetime="${esc(iso)}" title="${esc(when(iso))}">${ago(iso)}</time>`;
+export function updateModelClock(){
+  const time=document.querySelector('[data-model-published]');
+  if(time)time.textContent=ago(time.dateTime);
+}
 
-export async function modelLoad(s){
-  const feed=await get(dataURL('models/'+s+'.json'));
+export function setModelFeed(s,feed,gameId){
   S.model=feed;S.data={};S.injuries={};S.odds=[];
   if(s==='nfl'){
     const weeks=[...new Set(feed.games.map(g=>g.season*100+g.week))].sort((a,b)=>a-b);
@@ -23,11 +27,12 @@ export async function modelLoad(s){
     if(!weeks.includes(S.mweek))S.mweek=weeks.at(-1);
     nflGames();
   }else{
-    const dates=Object.keys(feed.days||{}).sort();
+    const dates=Object.keys(feed.days||{}).sort(),today=dateKey();
     S.mdates=dates;
     const pick=dates.includes(S.mday)?S.mday:dates.includes(today)?today:dates.find(d=>d>=today)||dates.at(-1);
     S.mday=pick;nbaGames();
   }
+  S.game=S.games.find(g=>g.id===gameId)||S.game;
 }
 export function modelStep(n){
   if(S.route.sport==='nfl'){const w=S.mweeks[S.mweeks.indexOf(S.mweek)+n];if(w==null)return false;S.mweek=w;nflGames();}
@@ -56,7 +61,7 @@ function nflGames(){
 function nflPage(){
   const f=S.model,list=S.games;
   const head=`<h1>Ensemble Forecasts ${info('The champion is the lab’s frozen ensemble of six models (logistic regression, XGBoost, decision tree, random forest and two neural networks). They read the same inputs, so 6-0 agreement is not six independent confirmations.')}</h1>`+
-    `<p class="subtle">Published ${ago(f.generated_at)} · champion ${esc(f.source?.champion_version||'')}</p>`;
+    `<p class="subtle">${published(f.generated_at)} · champion ${esc(f.source?.champion_version||'')}</p>`;
   if(!list.length)return head+box('',empty('No forecasts are published for this week yet.'));
   const rows=list.map(x=>{
     const g=x.raw,fc=g.forecast||{},c=fc.champion||{},p=c.p_home;
@@ -129,7 +134,7 @@ function nbaGames(){
 function nbaPage(){
   const f=S.model,m=f.meta||{},tr=m.track_record||{};
   const head=`<h1>Ensemble Forecasts ${info('Six statistical models trained on past games. The headline win chance is their frozen combination. The models use no betting prices and current injuries do not change the original forecast.')}</h1>`+
-    `<p class="subtle">Published ${ago(f.generated_at)} · ${esc(m.evaluation_status||'')}</p>`;
+    `<p class="subtle">${published(f.generated_at)} · ${esc(m.evaluation_status||'')}</p>`;
   const record=grid(3,[metric('Graded games',esc(tr.games??'—')),metric('Picked the winner',tr.accuracy==null?'—':pct(tr.accuracy,1),'',tr.accuracy==null?'':heat(tr.accuracy,.6,.03).replace(' heat','')),
     metric('Average margin miss',tr.margin_miss?.points==null?'—':round(tr.margin_miss.points,1)+' pts')]);
   const picker=S.mdates.length?tools(`<label class="field upper">Saved day <select data-field="mday" aria-label="Saved forecast day">${[...S.mdates].reverse().map(d=>`<option value="${d}" ${d===S.mday?'selected':''}>${esc(dateLabel(d,true))}</option>`).join('')}</select></label>`):'';
