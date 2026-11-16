@@ -35,15 +35,23 @@ export function chooseQuotes(rows,byLine=false){
   return [...top.values()].map(({volume,yes,no,...x})=>x);
 }
 async function readMarkets(u,read){
-  try{
-    let r=await read(u,{signal:AbortSignal.timeout(4500)});
-    if(r.status===429||r.status>=500){
-      const delay=1000*(Number(r.headers.get('retry-after'))||.7);
-      if(delay<=2500){await new Promise(resolve=>setTimeout(resolve,delay));r=await read(u,{signal:AbortSignal.timeout(4500)});}
-    }
-    const j=r.ok?await r.json():null;
-    return Array.isArray(j?.markets)?j:null;
-  }catch{return null;}
+  for(let i=0;i<2;i++){
+    let delay=400;
+    try{
+      const r=await read(u,{signal:AbortSignal.timeout(4500)});
+      if(r.ok){
+        const data=await r.json();
+        if(Array.isArray(data?.markets))return data;
+      }else if(r.status!==429&&r.status<500){
+        return null;
+      }else{
+        delay=1000*(Number(r.headers.get('retry-after'))||.7);
+        if(delay>2500)return null;
+      }
+    }catch{}
+    if(i===0)await new Promise(resolve=>setTimeout(resolve,delay));
+  }
+  return null;
 }
 
 export async function publicQuotes(s,games,{onAlternates,onFailure,read=fetch}={}){

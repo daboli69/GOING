@@ -1,4 +1,5 @@
 name: Refresh and deploy
+run-name: ${{ inputs.trigger == 'watchdog' && 'GOING freshness recovery' || 'Refresh and deploy' }}
 
 # Every 15 minutes: slates, injuries, public prices and NHL lineups. GitHub can delay or drop a scheduled run.
 # The first run after 7am Eastern every morning (DST-proof), and the first after 17:00 UTC, also rebuilds the
@@ -16,6 +17,10 @@ on:
         type: choice
         options: [live, full, models]
         default: live
+      trigger:
+        description: Origin of the refresh request
+        type: string
+        default: manual
 
 permissions:
   contents: write   # the pick tracker commits its record to the `tracker` branch
@@ -45,10 +50,6 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-
-      # A push that breaks the parsers or model math never reaches the site. Tests that need data skip here.
-      - name: Run tests
-        run: npm test
 
       - name: Restore season archives
         id: archive
@@ -80,6 +81,10 @@ jobs:
       - name: Rebuild season archives
         if: steps.mode.outputs.mode == 'full'
         run: node scripts/refresh.mjs ${{ steps.mode.outputs.deep }} || echo "::warning::Archive refresh had errors; deploying the data that did load."
+
+      # Run the regression suite with the same archived data the site will publish.
+      - name: Run tests
+        run: npm test
 
       - name: Save season archives
         if: steps.mode.outputs.mode == 'full'
@@ -158,10 +163,19 @@ jobs:
       - name: Add model feeds
         run: |
           mkdir -p site/data/models
-          if git fetch --depth 1 origin model-feeds 2>/dev/null; then
-            for f in nfl nba summary; do git show FETCH_HEAD:models/$f.json > site/data/models/$f.json 2>/dev/null || rm -f site/data/models/$f.json; done
+          stage=$(mktemp -d)
+          if git fetch --depth 1 origin model-feeds 2>/dev/null &&
+             git show FETCH_HEAD:models/nfl.json > "$stage/nfl.json" &&
+             git show FETCH_HEAD:models/nba.json > "$stage/nba.json" &&
+             git show FETCH_HEAD:models/summary.json > "$stage/summary.json"; then
+            cp "$stage"/*.json site/data/models/
+          elif curl --silent --show-error --fail --max-time 10 --retry 1 https://goingplaybook.com/data/models/nfl.json -o "$stage/nfl.json" &&
+               curl --silent --show-error --fail --max-time 10 --retry 1 https://goingplaybook.com/data/models/nba.json -o "$stage/nba.json" &&
+               curl --silent --show-error --fail --max-time 10 --retry 1 https://goingplaybook.com/data/models/summary.json -o "$stage/summary.json"; then
+            cp "$stage"/*.json site/data/models/
+            echo "::warning::Using the last published model feeds."
           else
-            echo "::notice::No model-feeds branch yet. Run publishers/publish_models.bat --push on the lab PC."
+            echo "::notice::No model feed could be restored."
           fi
 
       # Pick tracker: the permanent record lives on the `tracker` branch, never in the cache.
@@ -213,6 +227,9 @@ jobs:
         env:
           GOING_BASE: ${{ steps.pages.outputs.base_path }}/
           GOING_SITE: ${{ steps.pages.outputs.base_url }}
+
+      - name: Verify the Pages artifact
+        run: node scripts/verify-build.mjs
 
       - uses: actions/upload-pages-artifact@v5
         with:

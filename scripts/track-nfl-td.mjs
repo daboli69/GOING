@@ -8,6 +8,7 @@ import {routes,viewDefaults} from '../site/config.mjs';
 import {tdBoardData} from '../site/nfl.mjs';
 import {offenseTd} from '../site/nfl-td.mjs';
 import {loadNflFinals,gradeTdBoard} from './nfl-finals.mjs';
+import {confirmedBacklog} from './health.mjs';
 
 const data=fileURLToPath(new URL('../site/data/',import.meta.url)), out=join(data,'tracker');
 const now=Date.parse(process.env.TRACK_NOW||'')||Date.now(), today=dateKey(new Date(now));
@@ -67,5 +68,6 @@ if(archive){
 const months=new Map();
 for(const x of store.values()){const l=months.get(month(x))||[];l.push(x);months.set(month(x),l);}
 for(const key of changed)await writeFile(join(out,`td-board-${key}.json`),JSON.stringify(months.get(key).sort((a,b)=>a.tip.localeCompare(b.tip))));
-await writeFile(join(out,'td-board-index.json'),JSON.stringify({updated:new Date(now).toISOString(),months:[...months.keys()].sort(),count:store.size}));
+const gradingBacklog=confirmedBacklog([...store.values()].filter(x=>!x.graded),x=>boxes.has(x.game)||byGame.get(x.game)?.sa!=null,now);
+await writeFile(join(out,'td-board-index.json'),JSON.stringify({updated:new Date(now).toISOString(),months:[...months.keys()].sort(),count:store.size,gradingBacklog}));
 console.log(`TD Board log: ${store.size} games, ${saved} saved before kickoff, ${graded} newly graded.`);

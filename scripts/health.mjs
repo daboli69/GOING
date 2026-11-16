@@ -10,9 +10,21 @@ const read=p=>readFile(join(data,p),'utf8').then(JSON.parse).catch(()=>null);
 const hours=iso=>iso?(Date.now()-Date.parse(iso))/3600000:Infinity;
 const age=h=>!Number.isFinite(h)?'never':h<2?Math.round(h*60)+' min':h<48?Math.round(h)+' h':Math.round(h/24)+' days';
 
-// How old each feed may get before it counts as a problem. Hourly feeds get a few missed runs of slack.
+// Count only unresolved records from confirmed finals. Give each source time to publish stats.
+export function confirmedBacklog(rows,confirmed,now=Date.now()){
+  const old=rows.filter(row=>{
+    const age=now-Date.parse(row.start||row.tip);
+    return confirmed(row)&&age>=8*3600000&&age<7*86400000;
+  });
+  return {count:old.length,games:new Set(old.map(row=>row.game)).size};
+}
+
+// An advancing tracker timestamp does not prove that finished games are being graded.
 export function healthProblems({live,archive,college,tracker,parlays,nflParlays,firstBasket,tdBoard},now=Date.now()){
-  const h=iso=>iso?(now-Date.parse(iso))/3600000:Infinity, problems=[];
+  const h=iso=>{
+    const elapsed=now-Date.parse(iso);
+    return Number.isFinite(elapsed)&&elapsed>=-120000?Math.max(0,elapsed)/3600000:Infinity;
+  }, problems=[];
   const stale=(name,iso,limit)=>{const x=h(iso);if(!(x<=limit))problems.push({key:name,text:`${name}: ${Number.isFinite(x)?'last updated '+age(x)+' ago':'no update found'} (limit ${limit} h)`});};
   stale('Live slates, injuries and prices',live?.updated,3);
   for(const m of live?.missing||[])problems.push({key:'live:'+m,text:`Live snapshot is missing ${m}`});
@@ -23,6 +35,11 @@ export function healthProblems({live,archive,college,tracker,parlays,nflParlays,
   if(nflParlays!==undefined)stale('NFL parlay leg tracker',nflParlays?.updated,3);
   if(firstBasket!==undefined)stale('First basket log',firstBasket?.updated,3);
   if(tdBoard!==undefined)stale('TD Board log',tdBoard?.updated,3);
+  for(const [label,index,minimum] of [['Pick tracker',tracker,5],['NFL parlay leg tracker',nflParlays,5],['TD Board log',tdBoard,1]]){
+    const backlog=index?.gradingBacklog;
+    if(backlog?.count>=minimum)problems.push({key:'grading:'+label,
+      text:label+': '+backlog.count+' unresolved records across '+backlog.games+' confirmed final games started at least eight hours ago'});
+  }
   return problems;
 }
 
