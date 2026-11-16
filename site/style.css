@@ -67,6 +67,11 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 @media(max-width:550px){.site-header{gap:5px}.brand{margin-right:auto}.nav{width:100%;order:3;justify-content:space-around;flex-wrap:wrap;border-radius:14px}.navbutton{padding:6px 7px;font-size:13px}.navitem:nth-last-child(-n+2) .navmenu{left:auto;right:0}.navmenu{z-index:10;min-width:155px}.grid.two,.grid.three,.courtgrid{grid-template-columns:minmax(0,1fr)}.panel{padding:12px;margin-bottom:12px}.matchhero h1{font-size:20px}.matchhero h1 img{width:27px;height:27px}.selectrow{gap:6px}.selectrow select{min-width:0;max-width:43vw}.viewtab{font-size:14px}.slate{padding:9px 10px}.tablewrap{max-width:100%}.door-facts dd{font-size:19px}}
 @media(pointer:coarse){.pill,.subnav a,.navbutton,.navmenu a{min-height:44px;display:inline-flex;align-items:center}.navmenu a{display:flex}.sq,.icon{min-width:44px;min-height:44px}}
 .matchup-summary-value{display:inline-flex;align-items:baseline;gap:.3em;white-space:nowrap}
+.parlay-pool{margin:0;padding-inline-start:1.4rem}
+.parlay-pool li{margin:0 0 8px;padding:8px 10px;border:1px solid var(--edge);border-radius:8px;background:var(--cell);overflow-wrap:anywhere}
+.parlay-pool-row{display:flex;justify-content:space-between;gap:8px}
+.parlay-pool-row>strong{white-space:nowrap;font-variant-numeric:tabular-nums}
+.parlay-pool li p{margin:4px 0 0}
 .standout-card>h3,.standout-context{display:flex;align-items:center;gap:8px}
 .standout-team{display:inline-grid;grid-template-columns:22px 2.4em;flex:none;align-items:center;gap:5px;
   font:700 13px/1 var(--heading);letter-spacing:.04em;white-space:nowrap;color:var(--fg)}
