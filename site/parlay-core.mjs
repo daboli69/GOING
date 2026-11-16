@@ -60,10 +60,10 @@ export function buildTicket(eligible,cfg,{locked=[],avoid=new Set(),excluded=new
 }
 
 // prior: wins and losses added to each leg's season record before multiplying (GOING UP 5, GOING LONG 8).
-export function ticketMath(ticket,prior=5){
+export function ticketMath(ticket,prior=5,chance=()=>null){
   const combine=fn=>ticket.reduce((p,leg)=>p*fn(leg),1);
   const quoted=combine(leg=>implied(leg.price));
   const naive=combine(leg=>leg.form.season.rate);
-  const adjusted=combine(leg=>(leg.form.season.hits+prior)/(leg.form.season.n+2*prior));
+  const adjusted=combine(leg=>chance(leg)??(leg.form.season.hits+prior)/(leg.form.season.n+2*prior));
   return {quoted,naive,adjusted,decimal:1/quoted,sameGame:new Set(ticket.map(leg=>leg.game)).size<ticket.length};
 }

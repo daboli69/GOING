@@ -40,7 +40,7 @@ Each section uses its own accent color and the same dashboard typography, boards
 - **Regression Watch:** each starter's team-first scores are compared with what his share of early attempts predicts. Well below, with lots of first shots, means positive regression is due; well above means negative regression (a fade candidate). A flag needs a gap of at least 1.5 scores and one standard deviation.
 - **Round robin:** the top priced suggestions by edge, several per game allowed. Combinations holding two players from the same game are skipped and counted, since only one can score first.
 - **Starters:** projected from each team's last game and the live injury report. Scratch anyone ruled out when lineups post and the board re-runs.
-- **Log:** each hourly run saves the board before tip and grades it from the archive's first scorer (`scripts/track-nba-first-basket.mjs`). A backtest replays each past night with only earlier data. Both feed the Calibration Log, which stays rough until 100+ game-nights.
+- **Log:** each refresh run saves the board before tip and grades it from the archive's first scorer (`scripts/track-nba-first-basket.mjs`). A backtest replays each past night with only earlier data. Both feed the Calibration Log, which stays rough until 100+ game-nights.
 
 The opening possessions come from the play-by-play (`scripts/normalize.py` keeps each game's first 16 as team, points, shooters, free-throw shooter and scorer, and tags early shots with their possession number).
 
@@ -51,7 +51,7 @@ The opening possessions come from the play-by-play (`scripts/normalize.py` keeps
 - **Probabilities:** anytime is P = 1 − e^(−expected TDs). First TD is P(team scores the first TD) × P(he scores it | team does). The team side comes from who receives the opening kickoff (each team's history, shrunk to 50%, or set per game), opening-drive and per-drive TD rates against the defense, and a share left for defense and special-teams TDs, which Kalshi counts. The player side weighs his expected TDs and his share of the team's opening-drive touches.
 - **Prices:** typed sportsbook prices have the hold removed. Kalshi asks are exchange prices used as they stand (two-sided quotes normalized), and a first-TD field is normalized per game. Gaps over 12 points are flagged to confirm the player's role.
 - **Toggles:** market, position, odds range, minimum edge, minimum red-zone and snap share, spread and total limits, weather (any, no wind or rain, dome only), excluding questionable players, due for a TD, whether D/ST TDs count, legs, one per game, and a QB-with-receiver stack.
-- **Output:** picks come with written reasons, a TD Regression Watch (actual against expected TDs), a model check, and a calibration log. Each hourly run saves the board before kickoff and grades it from the play-by-play, and a backtest replays earlier weeks (`scripts/track-nfl-td.mjs`).
+- **Output:** picks come with written reasons, a TD Regression Watch (actual against expected TDs), a model check, and a calibration log. Each refresh run saves the board before kickoff and grades it from the play-by-play, and a backtest replays earlier weeks (`scripts/track-nfl-td.mjs`).
 
 **GOING LONG Suggested Parlays.** The NBA generator's approach, adapted to football in ten steps (`site/nfl-parlay-engine.mjs`). It covers receiving, rushing and passing yards, receptions, rush and pass attempts, completions, anytime TD and first TD.
 
@@ -73,15 +73,15 @@ The opening possessions come from the play-by-play (`scripts/normalize.py` keeps
 9. **Build.** One leg per game with a mix of stats. An optional toggle allows correlated same-game stacks, such as a QB Over with his receiver's Over. Opposite sides on the same passing game get a negative-correlation warning.
 10. **Price.** Hit rates shrink harder toward 50% than in GOING UP (8 wins and 8 losses added). Touchdown props shrink toward their price instead, and touchdown legs are capped at one by default. Kicking and longest-play props aren't offered.
 
-Suggested Parlays checks ESPN injuries and the latest published prices while the tab is visible, about every three minutes on game day and every ten minutes otherwise. It also reads ESPN's game-specific inactive entries near kickoff. The suggested draft reranks when inputs or filters change and when you check manually. It removes legs that stop qualifying, including locked legs with unavailable players. The injury-adjusted projection table shows the available lines and screening decisions. For a workload change with enough verified prior games without the same teammates, the engine uses those games for hit rates, reads and snap share. The hourly NFL Leg Tracker captures which sample the engine used.
+Suggested Parlays checks ESPN injuries and the latest published prices while the tab is visible, about every three minutes on game day and every ten minutes otherwise. It also reads ESPN's game-specific inactive entries near kickoff. The suggested draft reranks when inputs or filters change and when you check manually. It removes legs that stop qualifying, including locked legs with unavailable players. The injury-adjusted projection table shows the available lines and screening decisions. For a workload change with enough verified prior games without the same teammates, the engine uses those games for hit rates, reads and snap share. The NFL Leg Tracker captures which sample the engine used.
 
 The injury-adjusted projection assigns 75% of meaningful vacated volume to available players at the same position. It uses the last five team games and expected opportunities to estimate each replacement's share, then applies historical efficiency for yards or receptions. Supported raw-stat projections from RotoWire via Sleeper are an additional input, weighted at 25% normally and 65% in a detected replacement situation if the projection is newer than the relevant injury report. Missing or older external estimates leave the local workload estimate available. The page shows the historical baseline, adjusted estimate and source estimate side by side. Hit rates still describe observed results. The TD Board uses current availability with its touchdown opportunity model.
 
-Data for the engine comes from the nflverse play-by-play (with expected pass rate and win probability), snap counts, PFR coverage stats and Next Gen Stats, all stored in `nfl-extra-<season>.json`. Kickoff forecasts come from Open-Meteo (`scripts/weather.mjs`, written each hour to `live/weather-nfl.json`).
+Data for the engine comes from the nflverse play-by-play (with expected pass rate and win probability), snap counts, PFR coverage stats and Next Gen Stats, all stored in `nfl-extra-<season>.json`. Kickoff forecasts come from Open-Meteo (`scripts/weather.mjs`, written on refresh to `live/weather-nfl.json`).
 
 **GOING LONG Same-Game Parlays.** Choose a matchup under Same-Game Parlays or open it from Game Previews. The generator screens that game's priced Overs and Unders using the NFL parlay inputs, including role defense, recent and season form, injuries and usage, weather, game script and the ensemble forecast when available. Similar-defense records use yards allowed, run or pass volume, target share and explosive-run or deep-target rate, with each profile built from games played before the relevant matchup. A short sample is labeled and does not count as separate matchup evidence. The builder prefers full qualifying tickets, allows at most one leg per player, and blocks directly opposed QB and receiver legs. The page displays individual quotes, and saved SGP tickets and their results use separate browser storage from Suggested Parlays and the main NFL Leg Tracker.
 
-**NFL Leg Tracker.** Each hourly run screens every priced NFL prop with the engine, keeps its last pregame quote, and records whether it was selected, eligible or rejected, and why (`scripts/track-nfl-parlays.mjs`). Legs are graded from the nflverse play-by-play, usually the morning after the game. Snap counts mark players who didn't play as void. The page (`long/parlay-tracker.html`) reports:
+**NFL Leg Tracker.** Each refresh run screens every priced NFL prop with the engine, keeps its last pregame quote, and records whether it was selected, eligible or rejected, and why (`scripts/track-nfl-parlays.mjs`). Yardage and volume markets can settle from ESPN’s final box score as soon as the next refresh. Touchdown markets and verified non-participants use nflverse play-by-play and snap counts when available. The page (`long/parlay-tracker.html`) reports:
 - results by decision
 - each rule's passed, failed and "only this rule failed" records
 - breakdowns by role, defense third, projection gap, game script, weather, snap share and injuries
@@ -101,7 +101,7 @@ Two sources feed the site, and neither commits data to `main`.
 publishers\publish_models.bat
 ```
 
-**Hourly backstop (your PC).** GitHub's hourly schedule can start late or skip runs. `publishers/refresh_site.py` starts a refresh when no run has started in the last 40 minutes, so it never doubles up. Run this once to make it an hourly Windows scheduled task (at :20, while the PC is on and you are signed in):
+**Hourly backstop (your PC).** GitHub checks for updates every 15 minutes and can delay or skip scheduled runs. A failed Pages deploy gets one retry. Previous live snapshots back up failed sources, with their original quote times. `publishers/refresh_site.py` starts a refresh if no run is active and none succeeded in the last 40 minutes. Run this once to make it an hourly Windows scheduled task (at :20, while the PC is on and you are signed in):
 
 ```bat
 publishers\install_refresh_task.bat
@@ -115,7 +115,7 @@ Lab locations default to `Documents\ChatGPT\GOING\research\nfl-ensemble-lab` and
 
 ## GOING YARD
 
-GOING YARD shows the Going Yard model from [hr-board](https://github.com/daboli69/hr-board). hr-board keeps its own ETL and schedule (Statcast, MLB StatsAPI, FanGraphs) and publishes `board.json`, `history.json`, `backtest.json` and `odds.json` to its GitHub Pages site. Every hourly GOING run copies those files with `scripts/yard.mjs`, drops the raw per-pitch tables the pages don't use (6 MB down to about 2 MB), and pre-computes the season record. Nothing in the model changes.
+GOING YARD shows the Going Yard model from [hr-board](https://github.com/daboli69/hr-board). hr-board keeps its own ETL and schedule (Statcast, MLB StatsAPI, FanGraphs) and publishes `board.json`, `history.json`, `backtest.json` and `odds.json` to its GitHub Pages site. Every GOING refresh copies those files with `scripts/yard.mjs`, drops the raw per-pitch tables the pages don't use (6 MB down to about 2 MB), and pre-computes the season record. Nothing in the model changes.
 
 Several views (Top Picks, Daily Card, Signal Convergence, Team vs Pitch Mix, Split Overlaps, Edge Finder, Price Research, Alt Line Finder, Parlay Builder, Parlay Scanner, Ladder Challenge, HR Calendar, HR Patterns) run hr-board's own in-browser math. `site/yard-engine.mjs` is generated from hr-board's page by `npm run yard-engine`, which parses that page and copies the functions those views call, and everything they depend on, word for word. It leaves out anything that draws hr-board's own page. Rerun it after changing that math in hr-board. These views load the full board, history and backtest.
 
@@ -125,7 +125,7 @@ When the live board has no games (offseason or an off day), the section shows th
 
 ## College dashboards
 
-The hourly Pages workflow refreshes the college sections with `npm run college`. [hoopR](https://github.com/sportsdataverse/hoopR-mbb-data) and [wehoop](https://github.com/sportsdataverse/wehoop-wbb-data) provide basketball team and player box scores. ESPN supplies schedules and scores, plus available FBS game lines. [cfbfastR](https://github.com/sportsdataverse/cfbfastR-cfb-data/blob/main/DATASETS.md) provides FBS pregame EPA, success rates and pace. All use publicly available data and require no credentials. The pages show when the schedule, prices or box scores were checked. Missing quotes and stats appear as dashes.
+The Pages refresh workflow refreshes the college sections with `npm run college`. [hoopR](https://github.com/sportsdataverse/hoopR-mbb-data) and [wehoop](https://github.com/sportsdataverse/wehoop-wbb-data) provide basketball team and player box scores. ESPN supplies schedules and scores, plus available FBS game lines. [cfbfastR](https://github.com/sportsdataverse/cfbfastR-cfb-data/blob/main/DATASETS.md) provides FBS pregame EPA, success rates and pace. All use publicly available data and require no credentials. The pages show when the schedule, prices or box scores were checked. Missing quotes and stats appear as dashes.
 
 CBB and CWB provide basketball matchup and player research without betting markets. FBS markets cover full-game moneylines, spreads and totals. The college winner baseline starts with equal Elo ratings each season, updates with completed games, and applies a home-field or home-court adjustment to forecasts at non-neutral sites. Projected scores blend team points scored and opponent points allowed, with both averages pulled toward the league scoring average. Forecasts require three completed games per team. The winner percentages are uncalibrated, and the projected scores and winner ratings can disagree.
 
@@ -139,7 +139,7 @@ npm start
 
 ## GOING FIGHTS
 
-The hourly Pages workflow publishes [ESPN UFC](https://www.espn.com/mma/) cards, results, fighter profiles and available moneylines and round totals. The fight card lists outcomes for recent events and shows scheduled bouts for upcoming cards. Tale of the Tape compares fighter attributes, career stats and the last five bouts in the archive. The feed excludes Contender Series and Road to UFC cards.
+The Pages refresh workflow publishes [ESPN UFC](https://www.espn.com/mma/) cards, results, fighter profiles and available moneylines and round totals. The fight card lists outcomes for recent events and shows scheduled bouts for upcoming cards. Tale of the Tape compares fighter attributes, career stats and the last five bouts in the archive. The feed excludes Contender Series and Road to UFC cards.
 
 Ensemble Forecasts combines four regularized logistic models. Rating and form use Elo, recent results relative to opponent strength, experience, layoffs, and prior meetings. The striking model compares strike volume, accuracy, absorption and knockdowns. The grappling model compares takedowns against opponent defense, control and submission attempts. The similar-opponent model measures prior results against fighters with similar striking pace, takedown volume, clinch and ground striking share, and submission attempts. Small samples are shrunk and unpublished components carry no weight.
 
@@ -151,7 +151,7 @@ For a local preview, run `npm run fights`, `node scripts/track.mjs`, and `npm st
 
 ## Pick Tracker
 
-The Tracker page (`tracker.html`) grades every pick the site makes. Each hourly run (`scripts/track.mjs`) renders the props pages, Best Plays and TD Data with the dashboard's own code. It records every priced line those pages show, plus every model pick (the combined forecast and each individual model). Picks are captured only while their game hasn't started, and the last capture before the start is the one that counts. A line pulled before the game is dropped.
+The Tracker page (`tracker.html`) grades every pick the site makes. Each refresh run (`scripts/track.mjs`) renders the props pages, Best Plays and TD Data with the dashboard's own code. It records every priced line those pages show, plus every model pick (the combined forecast and each individual model). Picks are captured only while their game hasn't started, and the last capture before the start is the one that counts. A line pulled before the game is dropped once the feed reports a complete refresh.
 
 After the game, the pick is graded with the same result functions My Plays uses. Units assume a 1-unit stake at the captured price. A pick with no result after four days (the player didn't play) is voided. Each pick also records whether the tool's own numbers favored that side (edge, projection or average against the line), so the page can show leans only. The page reports hit rate against the break-even rate of those prices, units, ROI, Brier score and calibration, and a head to head of the ensemble models. You can filter by sport, market, date range and tool.
 
@@ -177,7 +177,7 @@ npm start
 
 ## In the browser
 
-- **Live scores.** While a page is open and visible, games that are under way or about to start get their score and status from ESPN's public scoreboard once a minute (`site/live-scores.mjs`). This covers the NBA, NHL, NFL and college slates. The hourly snapshot fills in everything else.
+- **Live scores.** While a page is open and visible, games that are under way or about to start get their score and status from ESPN's public scoreboard once a minute (`site/live-scores.mjs`). This covers the NBA, NHL, NFL and college slates. The published snapshot fills in everything else.
 - **Offline.** `site/sw.js` saves each page, its code and its data as you open them. Offline, those pages still open with the data last seen on that device. The build stamps the worker with the code version, so a deploy replaces the saved code.
 - **Loading.** Each section's code loads only when one of its pages opens, and every page preloads its own section. Team logos and NFL and NBA player photos are requested at the size shown. The fonts are self-hosted (`site/fonts`, SIL Open Font License).
 - **Backups.** My Plays has Back up and Restore. A backup file holds everything GOING saved in that browser. Restoring adds the file's plays to the ones already there and fills in settings only where the browser has none.
@@ -185,7 +185,7 @@ npm start
 ## Layout
 
 - `site/`: the static app. `app.mjs` routes, `home.mjs` is the landing page, `models.mjs` shows the ensemble forecasts, and `nfl.mjs`, `nba.mjs` and `nhl.mjs` are the dashboards. `live-scores.mjs` updates games in progress, and `sw.js` is the offline worker.
-- `scripts/`: data refresh, hourly snapshot, feed health check, build and local server.
+- `scripts/`: data refresh, live snapshot, feed health check, build and local server.
 - `publishers/`: model export and push to `model-feeds`, and the hourly refresh backstop.
 
 Research only. Forecasts and prices are not betting advice, and the public price quotes are not sportsbook consensus.

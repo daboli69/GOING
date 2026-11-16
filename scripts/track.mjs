@@ -15,6 +15,8 @@ import { nhlPage, nhlResult } from '../site/nhl.mjs';
 import { outcome, leanOf, impliedProb, mlbStat } from '../site/track-core.mjs';
 import { collegeSports, isCollege, collegePicks, collegeSettlement } from '../site/college-core.mjs';
 import { fightPick, fightSettlement } from '../site/fights-core.mjs';
+import { kickoff } from '../site/nfl-availability.mjs';
+import { loadNflFinals,nflBoxGrade } from './nfl-finals.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const data=join(root,'site','data'), out=join(data,'tracker');
@@ -25,12 +27,6 @@ const today=dayKey(new Date(now));
 const add=(d,n)=>new Date(Date.parse(d+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
 const read=name=>readFile(join(data,name),'utf8').then(JSON.parse).catch(()=>null);
 const seasonFor=(s,d)=>{const y=+d.slice(0,4),m=d.slice(5,7);return s==='nba'?y+(m>='10'):y-(m<(s==='nfl'?'09':'10'));};
-// Eastern wall-clock time to UTC, accounting for daylight saving on that date.
-function etToIso(date,time='13:00'){
-  const guess=Date.parse(`${date}T${time}:00Z`);
-  const shown=new Date(new Date(guess).toLocaleString('en-US',{timeZone:'America/New_York'})+' UTC').getTime();
-  return new Date(guess+(guess-shown)).toISOString();
-}
 const unescape=s=>s.replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
 const harvest=html=>[...html.matchAll(/data-play="([^"]*)"/g)].map(m=>{try{return JSON.parse(unescape(m[1]));}catch{return null;}}).filter(Boolean);
 
@@ -55,6 +51,9 @@ const before=store.size;
 
 /* ---------- capture ---------- */
 const seen=new Set(), scope=new Set();
+const manifest=await read('live/manifest.json');
+const complete=s=>manifest&&now-Date.parse(manifest.updated)<2*3600_000&&
+  !(manifest.missing||[]).some(name=>name.startsWith('prices '+s)||name.startsWith('slate '+s)||name.startsWith('injuries '+s));
 const pages={nfl:nflPage,nba:nbaPage,nhl:nhlPage};
 function upsert(rec){
   const old=store.get(rec.k);
@@ -85,7 +84,7 @@ async function setDay(s,d){
   Object.assign(S,{day:d,today,data:arch,odds:odds||[],injuries:injuries||{},lineups:lineups||{},games:slate,game:slate[0]});
   if(s==='nba')S.hoops=year;else S.ice=year;
   const games=new Map(slate.filter(g=>['FUT','PRE'].includes(g.status)&&Date.parse(g.iso)>now).map(g=>[String(g.id),{...g,start:g.iso}]));
-  for(const id of games.keys())scope.add(s+'|'+id);
+  if(complete(s)&&odds?.length)for(const id of games.keys())scope.add(s+'|'+id);
   return games;
 }
 for(const d of [today,add(today,1)]){
@@ -101,9 +100,12 @@ for(const d of [today,add(today,1)]){
   const year=next?+next.id.slice(0,4):null, arch=year&&await archive('nfl',year);
   if(arch){
     const week=schedule.filter(g=>+g.id.slice(0,4)===year&&g.week===next.week).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
-    Object.assign(S,{year,week:next.week,day:today,today,data:arch,odds:await read('live/odds-nfl.json')||[],injuries:await read('live/injuries-nfl.json')||{},games:week});
-    const games=new Map(week.map(g=>[String(g.id),{...g,start:etToIso(g.date,g.time)}]).filter(([,g])=>Date.parse(g.start)>now));
-    for(const id of games.keys())scope.add('nfl|'+id);
+    const [odds,report,injuries,projections]=await Promise.all(['live/odds-nfl.json','live/nfl-availability.json',
+      'live/injuries-nfl.json','live/nfl-projections.json'].map(read));
+    Object.assign(S,{year,week:next.week,day:today,today,data:arch,odds:odds||[],injuries:report?.teams||injuries||{},games:week,
+      nflAvailability:report,nflProjections:projections});
+    const games=new Map(week.map(g=>[String(g.id),{...g,start:kickoff(g.date,g.time)}]).filter(([,g])=>Date.parse(g.start)>now));
+    if(complete('nfl')&&odds?.length)for(const id of games.keys())scope.add('nfl|'+id);
     S.game=week[0];
     for(const view of ['Receiving','Rushing','Passing','Anytime TD','First TD'])for(const p of render('nfl','nfl-best',null,{view}))record('nfl','nfl-best',p,games);
     for(const g of week){
@@ -122,7 +124,6 @@ function modelPick(sport,tool,key,{game,date,a,h,start,pHome,odds}){
   const side=pHome>=.5?h:a,prob=pHome>=.5?pHome:1-pHome;
   upsert({k:['model',sport,game,key].join('|'),sport,kind:'model',date,game:String(game),a,h,start,id:key,player:null,team:side,
     market:'Winner',side,line:null,odds:odds?.[side]??null,provider:odds?.[side]!=null?'Market at forecast':null,proj:null,avg:null,tools:{[tool]:{prob,edge:null,rating:null,lean:true}}});
-  scope.add(sport+'|'+game);
 }
 const nflFeed=await read('models/nfl.json');
 for(const g of nflFeed?.games||[]){
@@ -221,7 +222,12 @@ for(const card of fightBoard?.cards||[]){
 const finals=new Map();
 const fin=(s,id,a,h)=>{if(a!=null&&h!=null)finals.set(s+'|'+id,{a:+a,h:+h});};
 for(const g of nflFeed?.games||[])if(g.final_score)fin('nfl',g.game_id,g.final_score.away,g.final_score.home);
-for(const g of await read('nfl-schedule.json')||[])fin('nfl',g.id,g.sa,g.sh);
+const nflSchedule=await read('nfl-schedule.json')||[];
+for(const g of nflSchedule)fin('nfl',g.id,g.sa,g.sh);
+const needed=new Set([...store.values()].filter(p=>p.sport==='nfl'&&!p.result&&
+  now-Date.parse(p.start)>=2.5*3600_000&&now-Date.parse(p.start)<=6*86400_000).map(p=>p.game));
+const nflBoxes=await loadNflFinals(nflSchedule,needed);
+for(const [id,box] of nflBoxes)fin('nfl',id,box.a,box.h);
 for(const rows of Object.values(nbaFeed?.days||{}))for(const r of rows)if(r.completed)fin('nba',r.gid,r.away_score,r.home_score);
 for(const f of await readdir(join(data,'live')).catch(()=>[])){
   const m=f.match(/^slate-(nba|nhl)-/);if(!m)continue;
@@ -252,6 +258,8 @@ for(const p of store.values()){
     value=mlbStat(await boxscore(p.game),p.id,p.market);
     if(value!=null){p.value=value;p.result=outcome(+value,p.line,p.side);}
   }else{
+    const fromBox=p.sport==='nfl'?nflBoxGrade(nflBoxes.get(p.game),p,now):null;
+    if(fromBox){Object.assign(p,fromBox);graded++;continue;}
     const arch=await archive(p.sport,seasonFor(p.sport,p.date));
     if(arch){S.data=arch;S.route={sport:p.sport};try{value=results[p.sport]({...p,game:p.game});}catch{value=null;}}
     if(value!=null){p.value=value;p.result=outcome(+value,p.line,p.side);}

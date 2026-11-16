@@ -4,10 +4,10 @@
 import {ESPN,sportPath,scoreboard} from './feeds.mjs';
 import {collegeSports} from './college-core.mjs';
 import {dateKey} from './ui.mjs';
+import {kickoff,nflTeamCode} from './nfl-availability.mjs';
 
 const MIN=60000;
-// NFL schedule rows carry an Eastern date and clock time instead of a timestamp; an hour off around DST is fine here.
-export const startOf=g=>Date.parse(g.iso||g.start||'')||(g.date&&g.time?Date.parse(g.date+'T'+g.time+':00-05:00'):NaN);
+export const startOf=g=>Date.parse(g.iso||g.start||'')||Date.parse(kickoff(g.date,g.time));
 export const isDone=g=>['FINAL','OFF','final','canceled'].includes(g.status)||(g.status==null&&g.sa!=null&&g.sh!=null);
 // Games worth asking about: not finished, starting within 10 minutes, and started less than 8 hours ago.
 export const dueGames=(games,now=Date.now())=>games.filter(g=>{const t=startOf(g);return !isDone(g)&&t<=now+10*MIN&&t>=now-8*60*MIN;});
@@ -22,7 +22,7 @@ const getJson=url=>fetch(url,{cache:'no-store'}).then(r=>r.ok?r.json():null).cat
 export function applyPro(games,rows){
   let changed=false;
   for(const g of games){
-    const r=rows.find(x=>x.id===g.espn||x.id===g.id)||rows.find(x=>x.a===g.a&&x.h===g.h);
+    const r=rows.find(x=>x.id===g.espn||x.id===g.id)||rows.find(x=>nflTeamCode(x.a)===nflTeamCode(g.a)&&nflTeamCode(x.h)===nflTeamCode(g.h));
     if(!r||!['LIVE','FINAL'].includes(r.status)||r.sa==null||r.sh==null)continue;
     if(g.status!==r.status||g.sa!==r.sa||g.sh!==r.sh){Object.assign(g,{status:r.status,sa:r.sa,sh:r.sh});changed=true;}
   }
@@ -51,7 +51,8 @@ export async function refreshScores(s,games){
   let changed=false;
   for(const day of days){
     const j=await getJson(urlFor(s,day));if(!j)continue;
-    changed=(collegeSports[s]?applyCollege(due,j):applyPro(due,scoreboard(j,s)))||changed;
+    const slate=due.filter(g=>dateKey(new Date(startOf(g)))===day);
+    changed=(collegeSports[s]?applyCollege(slate,j):applyPro(slate,scoreboard(j,s)))||changed;
   }
   return changed;
 }

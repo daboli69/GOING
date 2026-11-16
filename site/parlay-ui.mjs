@@ -139,7 +139,7 @@ export function createParlays(opts){
   }
 
   function mathSummary(ticket){
-    const m=ticketMath(ticket,opts.prior);
+    const m=ticketMath(ticket,opts.prior,opts.chance);
     const warnings=opts.warnings?opts.warnings(ticket):[];
     const formNote=ticket.some(leg=>leg.context?.formSource==='comparable-role')?'Applicable history for each leg':'Season rates multiplied';
     return grid(4,[metric('Combined line odds',esc(american(m.quoted)), 'Gross return $'+round(10*m.decimal,2)+' per $10'),

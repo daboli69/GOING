@@ -83,11 +83,8 @@ function screen(row,side,cfg,context){
   const projectionBacks=leg.angles.gap>=Math.max(.5,Math.abs(leg.line)*.08)&&leg.form.last8.rate>=.6;
   const neutral=defense?.total>=3&&!favorable(defense,!over);
   const matchupPass=rankBacks||comparableBacks||neutral&&projectionBacks;
-  const quoteTime=Date.parse(leg.capturedAt);
   leg.checks['Defense vs role']=matchupPass?null:'Matchup evidence insufficient';
   leg.checks['Similar defenses']=comparable.n>=3&&comparable.rate<=.33?'Similar-defense results conflict':null;
-  leg.checks['Quote freshness']=Number.isFinite(quoteTime)&&quoteTime<=context.now&&context.now-quoteTime<=120*60000
-    ?null:'Quote older than two hours or untimestamped';
   leg.cut=Object.values(leg.checks).find(Boolean)||null;
   leg.sgp={comparable,games};
   if(comparable.n){

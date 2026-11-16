@@ -7,10 +7,13 @@ export function parseLineups(html,date){
   }
   const text=article?.articleBody||'';
   if(!text)return {};
-  if(date&&!(article.dateModified||article.datePublished||'').startsWith(date))return {};
+  const eastern=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'});
+  const articleDates=[article.dateModified,article.datePublished].map(x=>Date.parse(x)).filter(Number.isFinite);
+  if(!articleDates.some(d=>eastern.format(d)===date))return {};
   const day=new Intl.DateTimeFormat('en-US',{weekday:'long',timeZone:'UTC'}).format(new Date(date+'T12:00:00Z'));
   const parts=text.split(/(?:^|\n)#{1,3}\s*\*{0,2}(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)\b/i);
   const dayIndex=parts.findIndex((x,i)=>i%2===1&&x.toLowerCase()===day.toLowerCase());
+  if(parts.length>1&&dayIndex<0)return {};
   const content=dayIndex>0?parts[dayIndex+1]:text;
   const headers=[...content.matchAll(/\*\*([^*\n]+?)\s+(?:projected lineup|lineup)\*\*/gi)];
   const result={};

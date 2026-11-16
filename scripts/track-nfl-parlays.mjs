@@ -9,6 +9,7 @@ import {nflParlayData} from '../site/nfl.mjs';
 import {captureLegs,gradeLeg} from '../site/nfl-parlay-tracking.mjs';
 import {observeLeg} from '../site/nba-parlay-tracking.mjs';
 import {defaults} from '../site/nfl-parlay-engine.mjs';
+import {loadNflFinals,nflBoxGrade} from './nfl-finals.mjs';
 
 const data=fileURLToPath(new URL('../site/data/',import.meta.url)), out=join(data,'tracker');
 const now=Date.parse(process.env.TRACK_NOW||'')||Date.now(), today=dateKey(new Date(now));
@@ -38,13 +39,18 @@ if(next&&archive){
   for(const leg of legs){observeLeg(store,leg);changed.add(month(leg));}
 }else coverage[next?'Week '+next.week:'No upcoming week']={games:next?season.filter(g=>g.week===next.week).length:0,prices:odds?.length??null,legs:0,archive:!!archive};
 
-// Grade legs whose game has finished and whose play-by-play is in the archive.
-const byGame=new Map(season.map(g=>[g.id,g]));
+// Settle official box-score markets while the detailed play-by-play is still pending.
+const byGame=new Map((schedule||[]).map(g=>[g.id,g]));
+const due=r=>{const age=now-Date.parse(r.tip);return !r.result&&age>=2.5*3600_000&&age<=6*86400_000;};
+const boxes=await loadNflFinals(schedule||[],new Set([...store.values()].filter(r=>due(r)&&
+  (!archive?.events?.[r.game]?.length||byGame.get(r.game)?.sa==null)).map(r=>r.game)));
 let graded=0;
 for(const leg of store.values()){
-  if(leg.result||now-Date.parse(leg.tip)<3.5*3600_000)continue;
+  if(leg.result||now-Date.parse(leg.tip)<2.5*3600_000)continue;
   const g=byGame.get(leg.game), events=archive?.events?.[leg.game];
-  const updated=gradeLeg(leg,g,events,extra?.snaps?.[leg.game]?.[leg.team],now);
+  const prior=gradeLeg(leg,g,events,extra?.snaps?.[leg.game]?.[leg.team],now);
+  const fromBox=prior===leg?nflBoxGrade(boxes.get(leg.game),{...leg,player:leg.name,market:leg.stat},now):null;
+  const updated=fromBox?{...leg,...fromBox}:prior;
   if(updated!==leg){store.set(leg.k,updated);changed.add(month(leg));graded++;}
 }
 

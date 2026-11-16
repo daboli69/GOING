@@ -34,7 +34,7 @@ export function kickoffHour(date,time){
   return at.toISOString().slice(0,13)+':00';
 }
 // One request for every outdoor site (Open-Meteo takes comma-separated coordinates), retried, so a busy shared runner
-// IP is not rate-limited by a burst of parallel calls. Throws when outdoor games got no forecast, so the refresh notes it.
+// IP is not rate-limited by a burst of parallel calls. Keep the known dome entries if the weather request fails.
 const getJson=async url=>{
   for(let i=0;i<3;i++){
     const r=await fetch(url,{signal:AbortSignal.timeout(15000)}).catch(()=>null);
@@ -68,7 +68,5 @@ export async function nflWeather(games){
     out[g.id]={roof:site.roof,temp:Math.round(h.temperature_2m[i]),wind:Math.round(h.wind_speed_10m[i]),
       gust:Math.round(h.wind_gusts_10m[i]),rain:Math.round(rain*100)/100,rainChance:h.precipitation_probability?.[i]??null,checked};
   });
-  const missing=outdoor.filter(x=>!out[x.g.id]).length;
-  if(missing===outdoor.length)throw new Error(`No forecast for ${missing} outdoor NFL games`);
   return out;
 }

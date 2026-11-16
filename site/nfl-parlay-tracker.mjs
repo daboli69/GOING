@@ -30,7 +30,7 @@ const breakdowns={
   'Quote age':l=>l.flags.includes('Stale quote')?'Stale':l.flags.includes('Quote time unknown')?'Unknown':'Within 90 minutes'
 };
 const legText=l=>tdMarkets.has(l.stat)?l.stat+': '+(l.side==='Over'?'Yes':'No'):l.side+' '+l.line+' '+l.stat+(yardMarkets.has(l.stat)?' yds':'');
-const nfl=createTracker({prefix:'nfl-parlay-legs',title:'NFL Leg Tracker',suggested:'long/suggested-parlays.html',markets,prior:PRIOR,breakdowns,
+const nfl=createTracker({prefix:'nfl-parlay-legs',title:'NFL Leg Tracker',suggested:'long/suggested-parlays.html',markets,prior:PRIOR,chance:l=>l.chance,breakdowns,
   recent:{key:'last8',label:'L8'},legText,savedTickets:savedNflTickets,alternates:false,startLabel:'Kickoff',
   forms:[['L5','last5'],['L8','last8'],['Sample','season'],['Home','home'],['Away','away'],['Venue','venue']],
   empty:'Results will appear once the tracker captures priced NFL props before kickoff.',
