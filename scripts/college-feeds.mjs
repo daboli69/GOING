@@ -1,5 +1,6 @@
-import {number} from '../site/college-core.mjs';
+import {collegeSports,collegeStatus,number} from '../site/college-core.mjs';
 import {americanNumber} from '../site/track-core.mjs';
+import {ESPN} from '../site/feeds.mjs';
 
 export const easternDate=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
 const team=t=>({id:String(t.id),name:t.shortDisplayName||t.displayName,code:t.abbreviation});
@@ -24,12 +25,43 @@ export function collegeScoreboard(payload,sport){
     const time=Date.parse(c?.date||e.date);
     if(!e.id||!a?.team?.id||!h?.team?.id||!Number.isFinite(time)||!t)return [];
     const start=new Date(time).toISOString(),date=easternDate(new Date(time));
-    const status=t.completed&&/^STATUS_FINAL/.test(t.name)?'final':/CANCEL/i.test(t.name)?'canceled':
-      t.state==='in'?'live':t.name==='STATUS_SCHEDULED'&&c.timeValid!==false?'scheduled':'other';
+    const status=collegeStatus(t,c.timeValid);
     return [{id:String(e.id),date,start,status,neutral:c.neutralSite===true,detail:t.shortDetail||t.description,
       away:team(a.team),home:team(h.team),aScore:['final','live'].includes(status)?number(a.score):null,
       hScore:['final','live'].includes(status)?number(h.score):null,market:sport==='fbs'&&status==='scheduled'?footballMarket(c.odds?.[0]):null}];
   });
+}
+
+export const collegeResultRow=g=>({id:g.id,status:g.status,start:g.start,a:g.away.id,h:g.home.id,aScore:g.aScore,hScore:g.hScore});
+
+export function collegeSummaryResult(payload,id){
+  const game=payload?.header?.competitions?.find(c=>String(c.id)===id);
+  const away=game?.competitors?.find(t=>t.homeAway==='away'),home=game?.competitors?.find(t=>t.homeAway==='home');
+  const start=Date.parse(game?.date);
+  if(!away?.team?.id||!home?.team?.id||!Number.isFinite(start))return null;
+  const status=collegeStatus(game.status?.type,game.timeValid);
+  const aScore=number(away.score),hScore=number(home.score);
+  return {id,status,start:new Date(start).toISOString(),a:String(away.team.id),h:String(home.team.id),
+    aScore:status==='final'?aScore:null,hScore:status==='final'?hScore:null};
+}
+
+export async function fetchCollegeResults(records,read=fetch){
+  const results=new Map(), queue=[...new Map(records.filter(p=>collegeSports[p.sport]&&/^\d+$/.test(p.game))
+    .map(p=>[p.sport+'|'+p.game,p])).entries()].slice(0,24);
+  // Missing archived finals are occasional. Keep the exact-id lookups off the hot path for other records.
+  let next=0;
+  await Promise.all(Array.from({length:Math.min(4,queue.length)},async()=>{
+    while(next<queue.length){
+      const [key,p]=queue[next++];
+      try{
+        const url=`${ESPN}/${collegeSports[p.sport].path}/summary?event=${p.game}`;
+        const response=await read(url,{signal:AbortSignal.timeout(4500)});
+        const result=response.ok?collegeSummaryResult(await response.json(),p.game):null;
+        if(result?.a===p.a&&result.h===p.h)results.set(key,result);
+      }catch{}
+    }
+  }));
+  return results;
 }
 // RFC 4180 fields, including escaped quotes and embedded newlines.
 export function csvObjects(csv){

@@ -70,11 +70,12 @@ function matchupForecast(b){
   const rows=[sideBySide(forecastName(b),f.prob)];
   if(f.members){
     for(const m of f.members)rows.push(sideBySide(esc(ufcMembers[m.key].label),[m.prob,1-m.prob]));
-    if(b.baseline)rows.push(sideBySide('Raw Elo baseline',b.baseline.prob));
   }
+  if(b.baseline&&b.baseline.version!==f.version)rows.push(sideBySide('Raw Elo baseline',b.baseline.prob));
   const market=marketChances(b);
   if(market)rows.push(sideBySide('Market with vig removed',market));
-  const probabilities=box('Winner forecast',table(['Model',name(a),name(c)],rows,{cls:'compact'}),
+  const capture=b.forecastAt?`<p class="tiny">${b.forecastSource==='tracker'?'Recovered from Pick Tracker':'Pregame forecast saved'} ${esc(stamp(b.forecastAt))}</p>`:'';
+  const probabilities=box('Winner forecast',capture+table(['Model',name(a),name(c)],rows,{cls:'compact'}),
     'The ensemble averages available model probabilities. Each model is trained on earlier bouts. Sportsbook prices are shown for comparison.');
   if(!f.profiles)return probabilities;
   const row=(label,fmt)=>[label,...f.profiles.map(p=>p?fmt(p):'—')];

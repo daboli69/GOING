@@ -20,7 +20,7 @@ export function confirmedBacklog(rows,confirmed,now=Date.now()){
 }
 
 // An advancing tracker timestamp does not prove that finished games are being graded.
-export function healthProblems({live,archive,college,tracker,parlays,nflParlays,firstBasket,tdBoard},now=Date.now()){
+export function healthProblems({live,archive,college,ufc,tracker,parlays,nflParlays,firstBasket,tdBoard},now=Date.now()){
   const h=iso=>{
     const elapsed=now-Date.parse(iso);
     return Number.isFinite(elapsed)&&elapsed>=-120000?Math.max(0,elapsed)/3600000:Infinity;
@@ -29,7 +29,8 @@ export function healthProblems({live,archive,college,tracker,parlays,nflParlays,
   stale('Live slates, injuries and prices',live?.updated,3);
   for(const m of live?.missing||[])problems.push({key:'live:'+m,text:`Live snapshot is missing ${m}`});
   stale('Season archives (NFL, NBA, NHL)',archive?.updated,30);
-  for(const s of ['cbb','cwb','fbs'])if(college?.[s]?.available!==false)stale(`College ${s.toUpperCase()} feed`,college?.[s]?.updated,3);
+  for(const s of ['cbb','cwb','fbs'])stale(`College ${s.toUpperCase()} feed`,college?.[s]?.available===false?null:college?.[s]?.updated,3);
+  if(ufc!==undefined)stale('UFC card feed',ufc?.updated,3);
   stale('Pick tracker',tracker?.updated,3);
   stale('NBA parlay leg tracker',parlays?.updated,3);
   if(nflParlays!==undefined)stale('NFL parlay leg tracker',nflParlays?.updated,3);
@@ -44,9 +45,9 @@ export function healthProblems({live,archive,college,tracker,parlays,nflParlays,
 }
 
 if(process.argv[1]===fileURLToPath(import.meta.url)){
-  const [live,archive,college,tracker,parlays,nflParlays,firstBasket,tdBoard]=await Promise.all(['live/manifest.json','archive.json','college/summary.json',
+  const [live,archive,college,ufc,tracker,parlays,nflParlays,firstBasket,tdBoard]=await Promise.all(['live/manifest.json','archive.json','college/summary.json','fights/summary.json',
     'tracker/index.json','tracker/parlay-legs-index.json','tracker/nfl-parlay-legs-index.json','tracker/first-basket-index.json','tracker/td-board-index.json'].map(read));
-  const problems=healthProblems({live,archive,college,tracker,parlays,nflParlays,firstBasket,tdBoard});
+  const problems=healthProblems({live,archive,college,ufc,tracker,parlays,nflParlays,firstBasket,tdBoard});
   await writeFile(join(data,'health.json'),JSON.stringify({checked:new Date().toISOString(),problems:problems.map(p=>p.text),keys:problems.map(p=>p.key)}));
   console.log(problems.length?'Feed problems:\n- '+problems.map(p=>p.text).join('\n- '):'All feeds are fresh.');
   for(const [name,iso] of [['live',live?.updated],['archives',archive?.updated],['college',college?.cbb?.updated],['tracker',tracker?.updated]])

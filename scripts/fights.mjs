@@ -4,6 +4,7 @@ import {parseFightCards,parseFightMarket,parseFightResult,parseFighter,ufcScoreb
 import {fightHistory,fightForecast} from '../site/fights-core.mjs';
 import {attachUfcStats} from './ufc-model-data.mjs';
 import {buildUfcEnsemble} from './ufc-ensemble.mjs';
+import {readUfcForecastHistory,retainUfcForecasts} from './ufc-forecast-history.mjs';
 
 const cache=new URL('../.cache/fights/',import.meta.url),out=new URL('../site/data/fights/',import.meta.url);
 await Promise.all([mkdir(cache,{recursive:true}),mkdir(out,{recursive:true})]);
@@ -112,24 +113,23 @@ const history=fightHistory(completed);
 const statsCoverage=await attachUfcStats(completed,{cached,download,mapLimit,day});
 const ensemble=statsCoverage.archive>2000?buildUfcEnsemble(completed):null;
 for(const card of active){
-  if(card.status!=='scheduled'||Date.parse(card.start)<=now)continue;
+  if(card.status!=='scheduled'||Date.parse(card.start)<=Date.now())continue;
   for(const bout of card.bouts)if(bout.status==='scheduled'){
     bout.baseline=fightForecast(bout,history);
     bout.forecast=ensemble?.forecast(bout,card)??bout.baseline;
+    if(bout.forecast)bout.forecastAt=new Date().toISOString();
   }
 }
-// Keep the last pre-event forecast visible next to live and final results.
-for(const card of visible){
-  if(card.status==='scheduled'&&Date.parse(card.start)>now)continue;
-  const old=previous?.cards?.find(c=>c.id===card.id);
-  if(!old||Date.parse(old.checked)>=Date.parse(card.start))continue;
-  for(const bout of card.bouts){
-    const prior=old.bouts.find(b=>b.id===bout.id&&b.fighters.every((f,i)=>f.id===bout.fighters[i].id));
-    if(!prior?.forecast)continue;
-    bout.forecast=prior.forecast;
-    bout.baseline=prior.baseline;
-    if(!bout.segment&&prior.segment)bout.segment=prior.segment;
+const started=visible.filter(card=>card.status!=='scheduled'||Date.parse(card.start)<=Date.now());
+const tracked=await readUfcForecastHistory(started,new URL('../site/data/tracker/',import.meta.url));
+for(const card of started){
+  // A slow refresh can cross the start of a card while calculating forecasts.
+  for(const bout of card.bouts)if(Date.parse(bout.forecastAt)>=Date.parse(card.start)){
+    delete bout.forecast;
+    delete bout.baseline;
+    delete bout.forecastAt;
   }
+  retainUfcForecasts(card,previous?.cards?.find(c=>c.id===card.id),tracked);
 }
 // Bout totals are training inputs and need not be sent to the browser.
 for(const card of completed)for(const bout of card.bouts)delete bout.modelStats;

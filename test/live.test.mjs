@@ -40,7 +40,7 @@ test('feed health flags stale and missing feeds but not fresh ones',()=>{
     tracker:{updated:ago(1)},parlays:{updated:ago(1)}};
   assert.deepEqual(healthProblems(fresh,t),[]);
   const bad=healthProblems({...fresh,live:{updated:ago(5),missing:['injuries nhl']},archive:null,college:{...fresh.college,fbs:{available:false}}},t).map(p=>p.key);
-  assert.deepEqual(bad,['Live slates, injuries and prices','live:injuries nhl','Season archives (NFL, NBA, NHL)']);
+  assert.deepEqual(bad,['Live slates, injuries and prices','live:injuries nhl','Season archives (NFL, NBA, NHL)','College FBS feed']);
 });
 
 test('player photos and team logos are requested at the size the pages show',async()=>{

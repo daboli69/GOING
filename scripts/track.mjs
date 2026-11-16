@@ -13,7 +13,8 @@ import { nflPage, nflResult } from '../site/nfl.mjs';
 import { nbaPage, nbaResult } from '../site/nba.mjs';
 import { nhlPage, nhlResult } from '../site/nhl.mjs';
 import { outcome, leanOf, impliedProb, mlbStat } from '../site/track-core.mjs';
-import { collegeSports, isCollege, collegePicks, collegeSettlement } from '../site/college-core.mjs';
+import { collegeSports, isCollege, collegePicks, collegeCaptureKey, collegeScheduleChange, collegeSettlement } from '../site/college-core.mjs';
+import { collegeResultRow, fetchCollegeResults } from './college-feeds.mjs';
 import { fightPick, fightSettlement } from '../site/fights-core.mjs';
 import { kickoff } from '../site/nfl-availability.mjs';
 import { loadNflFinals,nflBoxGrade } from './nfl-finals.mjs';
@@ -190,18 +191,31 @@ for(const sport of Object.keys(collegeSports)){
   if(!snapshot)continue;
   for(const result of snapshot.results)collegeResults.set(sport+'|'+result.id,result);
   for(const game of snapshot.games){
+    const key=sport+'|'+game.id, result=collegeResultRow(game);
+    if(!collegeResults.has(key))collegeResults.set(key,result);
     const checked=Date.parse(game.marketAt),start=Date.parse(game.start);
     // A stale or historical feed can still supply results, but cannot replace a pregame capture.
     if(game.status!=='scheduled'||!Number.isFinite(start)||start<=now||!Number.isFinite(checked)||checked>now||now-checked>90*60_000)continue;
-    collegeScope.add(sport+'|'+game.id);
-    for(const pick of collegePicks(sport,game))upsert(pick);
+    collegeScope.add(key);
+    for(const pick of collegePicks(sport,game)){
+      const capture=collegeCaptureKey(pick,store.get(pick.k),{...result,marketAt:game.marketAt});
+      if(capture)upsert({...pick,k:capture});
+    }
   }
 }
 for(const [k,p] of store){
-  if(!p.result&&p.kind==='game'&&Date.parse(p.start)>now&&collegeScope.has(p.sport+'|'+p.game)&&!seen.has(k)){
+  const key=p.sport+'|'+p.game;
+  if(!p.result&&p.kind==='game'&&Date.parse(p.start)>now&&collegeScope.has(key)&&!seen.has(k)&&
+    !collegeScheduleChange(p,collegeResults.get(key))){
     store.delete(k);dropped++;
   }
 }
+const missingCollege=[...store.values()].filter(p=>{
+  const age=now-Date.parse(p.start);
+  return !p.result&&isCollege(p.sport)&&age>=2*3600_000&&age<7*86400_000&&
+    !collegeSettlement(p,collegeResults.get(p.sport+'|'+p.game));
+});
+const officialCollege=fetchCollegeResults(missingCollege);
 
 /* ---------- UFC capture and grading ---------- */
 const fightBoard=await read('fights/board.json');
@@ -242,8 +256,9 @@ const pendingNba=[...store.values()].filter(p=>p.sport==='nba'&&p.kind==='prop'&
   finals.has('nba|'+p.game)&&now-Date.parse(p.start)<=7*86400_000);
 const pendingNhl=[...store.values()].filter(p=>p.sport==='nhl'&&p.kind==='prop'&&!p.result&&
   finals.has('nhl|'+p.game)&&now-Date.parse(p.start)<=7*86400_000);
-const [nbaBoxes,nhlBoxes,tdDone]=await Promise.all([loadNbaFinals(new Set(pendingNba.map(p=>p.game))),
-  loadNhlFinals(new Set(pendingNhl.map(p=>p.game))),loadTdContracts(nflSchedule,neededTdContracts(store.values(),now))]);
+const [nbaBoxes,nhlBoxes,tdDone,collegeFallback]=await Promise.all([loadNbaFinals(new Set(pendingNba.map(p=>p.game))),
+  loadNhlFinals(new Set(pendingNhl.map(p=>p.game))),loadTdContracts(nflSchedule,neededTdContracts(store.values(),now)),officialCollege]);
+for(const [key,result] of collegeFallback)collegeResults.set(key,result);
 const results={nfl:nflResult,nba:nbaResult,nhl:nhlResult};
 // MLB results come straight from the official box score.
 const boxes=new Map();
@@ -253,13 +268,14 @@ function boxscore(pk){
 }
 let graded=0;
 for(const p of store.values()){
-  if(p.result||Date.parse(p.start)>now-(p.sport==='ufc'?0:2*3600_000))continue;
+  const collegeFinal=isCollege(p.sport)?collegeResults.get(p.sport+'|'+p.game):null;
+  if(p.result||Date.parse(p.start)>now-(p.sport==='ufc'?0:2*3600_000)&&!collegeScheduleChange(p,collegeFinal))continue;
   let value=null;
   if(p.sport==='ufc'){
     const result=fightSettlement(p,fightResults.get(p.game));
     if(result)Object.assign(p,result);
   }else if(isCollege(p.sport)){
-    const result=collegeSettlement(p,collegeResults.get(p.sport+'|'+p.game));
+    const result=collegeSettlement(p,collegeFinal);
     if(result)Object.assign(p,result);
   }else if(p.kind==='model'){
     const f=finals.get(p.sport+'|'+p.game);

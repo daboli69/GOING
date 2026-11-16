@@ -148,6 +148,12 @@ jobs:
             site/data/college
           key: college-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
+      # Restore the permanent tracker rows before building the UFC card history.
+      - name: Restore pick record
+        run: |
+          mkdir -p site/data/tracker
+          if git fetch --depth 1 origin tracker:refs/remotes/origin/tracker 2>/dev/null; then git archive refs/remotes/origin/tracker | tar -x -C site/data/tracker; fi
+
       - name: Restore UFC feeds
         uses: actions/cache/restore@v6
         with:
@@ -191,12 +197,6 @@ jobs:
           else
             echo "::notice::No model feed could be restored."
           fi
-
-      # Pick tracker: the permanent record lives on the `tracker` branch, never in the cache.
-      - name: Restore pick record
-        run: |
-          mkdir -p site/data/tracker
-          if git fetch --depth 1 origin tracker:refs/remotes/origin/tracker 2>/dev/null; then git archive refs/remotes/origin/tracker | tar -x -C site/data/tracker; fi
 
       - name: Capture and grade picks
         id: track
