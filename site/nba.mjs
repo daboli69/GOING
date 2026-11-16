@@ -367,15 +367,17 @@ function standouts(){
     }
   }
   const v=S.f.cat||'All',list=cards.filter(r=>v==='All'||v===r.cat).sort((a,b)=>Math.abs(b.strength)-Math.abs(a.strength));
-  const render=r=>card(team(r.t)+'<span> · '+esc(r.n)+'</span>',
-    `<p class="tiny standout-context"><span class="standout-matchup">${versus(r.g)}</span> <span>· ${esc(r.cat)}</span></p>`+
+  const teamMark=t=>`<span class="standout-team"><span class="standout-logo" aria-hidden="true">${logo(t)}</span> <span>${esc(t)}</span></span>`;
+  const matchupMark=g=>`<span class="standout-matchup">${teamMark(g.a)} <span class="muted">@</span> ${teamMark(g.h)}</span>`;
+  const render=r=>card(teamMark(r.t)+' <span class="standout-feature">'+esc(r.n)+'</span>',
+    `<p class="tiny standout-context">${matchupMark(r.g)} <span class="standout-category">${esc(r.cat)}</span></p>`+
     grid(2,[metric(r.t+' Offense',display(r.k,r.val),ordinal(r.rr)),metric(r.o+' Defense',display(r.k,r.opp),ordinal(r.dd))],'standout-metrics'),
     'standout-card '+(r.strength>0?'good':'bad'));
   const board=rows=>grid(3,rows.map(render),'standout-grid');
   return `<h1>Slate Standouts ${info('Teams stand out when a strength meets a vulnerable opponent, or the reverse.')}</h1>`+slate({navOnly:true})+
     tools(cardCats.map(k=>toggle(k+(k==='All'?'':' '+cards.filter(r=>r.cat===k).length),'cat',k)).join('')+toggles(['Season','Last 10'],'window')+btn(S.f.sortGame?'Sort By Strength':'Sort By Game','flip','sortGame'))+
     tools(badge('▲ '+list.filter(x=>x.strength>0).length+' Standouts','g')+badge('▼ '+list.filter(x=>x.strength<0).length+' Tough Spots','r')+badge(S.games.length+' Games'))+
-    (S.f.sortGame?S.games.map(g=>box(versus(g),board(list.filter(x=>x.g===g)))).join(''):
+    (S.f.sortGame?S.games.map(g=>box(matchupMark(g),board(list.filter(x=>x.g===g)))).join(''):
     box('▲ Biggest Standouts Tonight',board(list.filter(x=>x.strength>0).slice(0,18)))+box('▼ Tough Spots Tonight',board(list.filter(x=>x.strength<0).slice(0,18))));
 }
 function shotZoneReport(list,zone){
