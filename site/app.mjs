@@ -6,7 +6,7 @@ import {isCollege} from './college-core.mjs';
 import {refreshScores} from './live-scores.mjs';
 import {refreshNflAvailability,upcomingNflGames} from './nfl-availability.mjs';
 import {fetchSleeperNfl,mergeSleeperNfl} from './nfl-workload.mjs';
-import {archiveCache,crossed,different,mergeNbaSlate,modelFeed,newerModel,object,quoteAgeChanged,readJson,readSnapshot} from './pro-refresh.mjs';
+import {archiveCache,different,mergeNbaSlate,modelFeed,newerModel,nflDeadlineChanged,object,quoteAgeChanged,readJson,readSnapshot} from './pro-refresh.mjs';
 
 // Each section's code loads the first time one of its pages opens, so a visit downloads only what it shows.
 // The build adds a modulepreload hint for the page's own section, so this costs no extra round trip.
@@ -614,8 +614,7 @@ async function tickNflInputs(force=false){
   const games=upcomingNflGames(S.games,now);
   const remaining=games.map(g=>g.id).join('|'),kickoffChanged=state.nflParlayRemaining!==remaining;
   const since=state.nflParlayChecked??now;
-  const deadlineChanged=draft&&(quoteAgeChanged(S.odds,since,now)||
-    games.some(g=>crossed(Date.parse(kickoff(g.date,g.time))-90*60000,since,now)));
+  const deadlineChanged=draft&&nflDeadlineChanged(S.odds,games,since,now);
   state.nflParlayChecked=now;
   state.nflParlayRemaining=remaining;
   if(!force&&(!games.length||state.nflParlayNext>now)){

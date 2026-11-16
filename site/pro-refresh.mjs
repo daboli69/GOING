@@ -1,15 +1,18 @@
 import {dataURL} from './ui.mjs';
+import {kickoff} from './nfl-availability.mjs';
 
 export const readJson=(url,timeout=7000)=>fetch(url,{cache:'no-cache',signal:AbortSignal.timeout(timeout)})
   .then(r=>r.ok?r.json():null).catch(()=>null);
 export const readSnapshot=(file,timeout)=>readJson(dataURL(file),timeout);
 export const object=x=>!!x&&typeof x==='object'&&!Array.isArray(x);
 export const different=(a,b)=>a!==b&&JSON.stringify(a)!==JSON.stringify(b);
-export const crossed=(at,since,now)=>at>=since&&at<now;
+const crossed=(at,since,now)=>at>=since&&at<now;
 export const quoteAgeChanged=(quotes,since,now)=>quotes.some(q=>{
   const seen=Date.parse(q?.capturedAt);
   return [90,120].some(minutes=>crossed(seen+minutes*60000,since,now));
 });
+export const nflDeadlineChanged=(quotes,games,since,now)=>quoteAgeChanged(quotes,since,now)||
+  games.some(g=>crossed(Date.parse(kickoff(g.date,g.time))-90*60000,since,now));
 
 // Share simultaneous loads, remember good archives and allow failed cold loads to be retried.
 export function archiveCache({now=Date.now,ttl=15*60000}={}){

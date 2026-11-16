@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {archiveCache,mergeNbaSlate,newerModel,quoteAgeChanged} from '../site/pro-refresh.mjs';
+import {archiveCache,mergeNbaSlate,newerModel,nflDeadlineChanged,quoteAgeChanged} from '../site/pro-refresh.mjs';
 import {setModelFeed} from '../site/models.mjs';
 import {current as S} from '../site/ui.mjs';
 
@@ -65,4 +65,11 @@ test('parlay lines are flagged and expire even while the published snapshots sta
   assert.equal(quoteAgeChanged(quotes,seen+89*60000,seen+91*60000),true);
   assert.equal(quoteAgeChanged(quotes,seen+119*60000,seen+121*60000),true);
   assert.equal(quoteAgeChanged(quotes,seen+121*60000,seen+122*60000),false);
+});
+
+test('NFL drafts refresh at the inactives window for the scheduled Eastern kickoff',()=>{
+  const games=[{date:'2026-11-16',time:'20:15'}];
+  const before=Date.parse('2026-11-16T23:44:30Z'),after=Date.parse('2026-11-16T23:45:30Z');
+  assert.equal(nflDeadlineChanged([],games,before,after),true);
+  assert.equal(nflDeadlineChanged([],games,after,after+60000),false);
 });
