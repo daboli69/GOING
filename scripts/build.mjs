@@ -8,6 +8,7 @@ import { routes, sections } from '../site/config.mjs';
 import { isCollege } from '../site/college-core.mjs';
 import { compactNflParlays } from './nfl-parlay-archive.mjs';
 import { compactNbaParlays } from './nba-parlay-archive.mjs';
+import { publishTrackerHistory } from './tracker-history.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const site=join(root,'site'), dist=join(root,'dist');
@@ -19,6 +20,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 await rm(dist,{recursive:true,force:true});
 await cp(site,dist,{recursive:true});
 const dataDir=join(dist,'data');
+await publishTrackerHistory(join(dataDir,'tracker'));
 const dataFiles=new Set(await readdir(dataDir).catch(()=>[]));
 const readArchive=async file=>JSON.parse(await readFile(join(dataDir,file),'utf8'));
 for(const file of dataFiles){

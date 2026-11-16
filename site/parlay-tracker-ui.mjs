@@ -1,10 +1,11 @@
 // The leg tracker page shared by GOING UP (nba-parlay-tracker.mjs) and GOING LONG (nfl-parlay-tracker.mjs): every
 // screened leg at its last pregame quote, graded after the game, with results by decision, rule and breakdown.
 import {href} from './config.mjs';
-import {current as S,box,btn,dataURL,dateAdd,dateKey,dialog,empty,esc,get,grid,metric,select,table,tools} from './ui.mjs';
+import {current as S,box,btn,dateAdd,dateKey,dialog,empty,esc,grid,metric,select,table,tools} from './ui.mjs';
 import {pct,round,signed} from './math.mjs';
 import {add,blank,brier,breakeven,impliedProb,rate,roi} from './track-core.mjs';
 import {legKey} from './parlay-core.mjs';
+import {trackerFeed} from './tracker-feed.mjs';
 export {round,signed,pct,impliedProb};
 
 const pageSize=100;
@@ -37,16 +38,13 @@ export {time};
    empty           message before the first capture
 */
 export function createTracker(opts){
-let index={}, legs=[], missingMonths=0;
+const feed=trackerFeed(opts.prefix);
+let index={},legs=[],notice='';
 const adjusted=leg=>opts.chance?.(leg)??(leg.form?.season?.n?(leg.form.season.hits+opts.prior)/(leg.form.season.n+2*opts.prior):null);
 const legText=opts.legText||(l=>l.side+' '+l.line+' '+l.stat);
 
 async function load(){
-  const next=await get(dataURL('tracker/'+opts.prefix+'-index.json'),{});
-  const files=await Promise.all((next.months||[]).map(m=>get(dataURL('tracker/'+opts.prefix+'-'+m+'.json'),null)));
-  index=next;
-  missingMonths=files.filter(file=>!Array.isArray(file)).length;
-  legs=files.filter(Array.isArray).flat();
+  ({index,rows:legs,notice}=await feed());
 }
 
 function groups(rows,keys){
@@ -136,11 +134,12 @@ function savedResults(){
 
 function page(){
   const head=`<h1>${esc(opts.title)}</h1><p><a class="pill" href="${href(opts.suggested)}">Suggested Parlays</a></p>
-    <p class="subtle">Latest capture ${esc(time(index.updated))} · ${legs.length} distinct priced legs</p>`;
+    ${index.updated?`<p class="subtle">Latest capture ${esc(time(index.updated))} · ${legs.length} distinct priced legs</p>`:''}`+
+    (notice?`<p class="subtle" role="status">${esc(notice)}</p>`:'');
   const coverage=box('Capture coverage',table(['Slate','Games','Quoted lines','Matched legs','Archive available'],
     Object.entries(index.coverage||{}).map(([date,c])=>[esc(date),c.games??'—',c.prices??'—',c.legs,c.archive?'Yes':'No']),
     {empty:'The first scheduled capture is pending.'}),opts.coverage(index));
-  if(!legs.length)return head+coverage+box('',empty(opts.empty))+savedResults();
+  if(!legs.length)return head+coverage+(notice?'':box('',empty(opts.empty)))+savedResults();
   const rules=[...new Set(legs.flatMap(l=>Object.keys(l.checks||{})))];
   const rows=filtered(), s=summarize(rows);
   const filters=tools(select('Period','legWindow',['Last 7 days','Last 30 days','All time'])+
@@ -150,7 +149,7 @@ function page(){
     select('Result','legResult',['All','Pending',...Object.values(outcomes)])+
     select('Failed rule','legRule',['All',...rules])+
     `<input type="search" data-field="search" aria-label="Search player or team" placeholder="Search player or team" value="${esc(S.f.search||'')}">`);
-  return head+coverage+(missingMonths?`<p class="subtle">${missingMonths} monthly files could not load.</p>`:'')+filters+
+  return head+coverage+filters+
     grid(4,[metric('Decided legs',s.won+s.lost,s.won+' hits · '+s.lost+' misses'),
       metric('Hit rate',pct(rate(s),1),'Break-even '+pct(breakeven(s),1)),
       metric('Flat-stake ROI',roi(s)==null?'—':signed(roi(s)*100,1)+'%',s.stake?signed(s.units,1)+' hypothetical units':''),

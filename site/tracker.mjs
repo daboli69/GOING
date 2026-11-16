@@ -1,14 +1,14 @@
 // Pick Tracker page: every pick the site offered before games started, graded against final results.
-import {current as S,esc,box,grid,metric,table,cell,info,empty,tools,btn,select,badge,team,get,dataURL,dateAdd,today,round,pct} from './ui.mjs';
+import {current as S,esc,box,grid,metric,table,cell,info,empty,tools,btn,select,badge,team,dateAdd,today,round,pct} from './ui.mjs';
 import {heat,signed} from './math.mjs';
 import {toolLabel,isModelTool,blank,add,rate,roi,breakeven,brier,units,impliedProb} from './track-core.mjs';
 import {isCollege,collegePickLabel} from './college-core.mjs';
+import {trackerFeed} from './tracker-feed.mjs';
 
-let picks=[],index={};
+const feed=trackerFeed('picks','index');
+let picks=[],index={},notice='';
 export async function trackerLoad(){
-  index=await get(dataURL('tracker/index.json'),{});
-  const months=await Promise.all((index.months||[]).map(m=>get(dataURL(`tracker/picks-${m}.json`),[])));
-  picks=months.flat();
+  ({index,rows:picks,notice}=await feed());
 }
 export function trackerAction(act,v){
   if(act==='tool'){S.f.tool=S.f.tool===v?null:v;return true;}
@@ -52,8 +52,9 @@ export function trackerPage(){
   const captureCols=college?['Captured','Version','Projection','Gap vs line']:ufc?['Captured','Version']:[];
   const capture=r=>college?collegeCapture(r):ufc?[r.p.at?esc(captureTime(r.p.at)):'—',esc(r.p.version??'—')]:[];
   const head=`<h1>Pick Tracker ${info('Each refresh captures model forecasts and priced picks before play starts. The tracker grades college picks from final scores and UFC winner forecasts from confirmed bout results. UFC draws push and no contests are voided. Missing college and UFC results stay pending. Units assume a 1-unit stake at the recorded price.')}</h1>`+
-    `<p class="subtle">Updated ${ago(index.updated)} · ${index.picks??0} picks recorded · ${index.graded??0} graded · ${index.pending??0} waiting on results</p>`;
-  if(!picks.length)return head+box('',empty('No picks recorded yet. The tracker records picks every hour before games start, so they will appear after the next update.'));
+    (index.updated?`<p class="subtle">Updated ${ago(index.updated)} · ${index.picks??0} picks recorded · ${index.graded??0} graded · ${index.pending??0} waiting on results</p>`:'')+
+    (notice?`<p class="subtle" role="status">${esc(notice)}</p>`:'');
+  if(!picks.length)return notice?head:head+box('',empty('No picks recorded yet. The tracker records picks before games start.'));
   const markets=['All markets',...new Set(picks.map(p=>p.market))].sort((a,b)=>a==='All markets'?-1:b==='All markets'?1:a.localeCompare(b));
   const filters=tools(['All','NBA','NFL','NHL','MLB','CBB','CWB','FBS','UFC'].map(s=>btn(s,'set','sport:'+s,f.sport===s?'on':'')).join('')+
     select('Picks','kind',['All picks','Model picks','Prop picks','Game picks'])+select('Market','market',markets)+select('Window','window',['Last 7 days','Last 30 days','Season'])+
@@ -102,7 +103,9 @@ export function trackerPage(){
     }
     return p.kind==='model'?`${team(p.side)} to win <span class="muted">vs ${esc(p.side===p.h?p.a:p.h)}</span>`:`${esc(p.player)} <span class="muted">${esc(p.side)} ${esc(p.line)} ${esc(p.market)}</span>`;
   };
-  const toolsOf=r=>[...new Set(scoped.filter(x=>x.p.k===r.p.k).map(x=>toolLabel(x.t).split(' · ').slice(1).join(' · ')))].join(', ');
+  const toolsOf=({p})=>[...new Set(Object.entries(p.tools)
+    .filter(([t,m])=>(!f.tool||t===f.tool)&&(!f.lean||m.lean===true))
+    .map(([t])=>toolLabel(t).split(' · ').slice(1).join(' · ')))].join(', ');
   const done=[...seen.values()].filter(r=>r.p.result).sort((a,b)=>b.p.start.localeCompare(a.p.start)).slice(0,f.more?400:40);
   const recent=table(['Date','League','Pick','Tools','Odds','Chance','Result','Actual','Units',...captureCols],done.map(r=>{const p=r.p,u=p.odds==null?null:units(p.result,p.odds);return [esc(p.date),p.sport.toUpperCase(),cell(describe(p)),esc(toolsOf(r)),pickOdds(p),r.m.prob==null?'—':pct(r.m.prob),
     cell(esc(p.result),p.result==='won'?'good heat':p.result==='lost'?'bad heat':''),esc(p.value??'—'),u==null?'—':signed(u,2),...capture(r)];}),{sort:'tracker-recent',wrap:'box',empty:'Nothing graded in this view yet.'});
