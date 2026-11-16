@@ -1,4 +1,3 @@
-const base='https://api.nhle.com/stats/rest/en/shiftcharts';
 const seconds=s=>{const [m,n]=String(s||'0:00').split(':').map(Number);return m*60+n;};
 const norm=s=>String(s||'').normalize('NFD').replace(/[^\p{L}\p{N}]/gu,'').toLowerCase();
 export function together(groups){
@@ -31,16 +30,21 @@ export function lineStats(rows,shots,team,combos){
   });
 }
 export async function recentLines(lineups,hockey,shotGames,load){
-  const output={};
+  const stats={}, coverage={};
   for(const [t,combos] of Object.entries(lineups)){
     const games=(hockey.schedule?.[t]||[]).filter(g=>g.date<hockey.date&&['OFF','FINAL'].includes(g.status)).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
     const arr=combos.forwards.concat(combos.defense),values=arr.map(()=>[]);
+    const sample={games:games.map(g=>g.id),analyzed:0};
     for(const g of games){
-      const j=await load(base+'?cayenneExp=gameId='+g.id).catch(()=>null);
-      if(!j?.data?.length)continue;
-      lineStats(j.data,shotGames[g.id]||[],t,arr).forEach((x,i)=>{if(x.sec)values[i].push(x);});
+      const shots=shotGames[g.id];
+      if(!Array.isArray(shots)||!shots.some(row=>row[5]>0))continue;
+      const rows=await load(g,t).catch(()=>null);
+      if(!rows?.length)continue;
+      sample.analyzed++;
+      lineStats(rows,shots,t,arr).forEach((x,i)=>{if(x.sec)values[i].push(x);});
     }
-    output[t]=values;
+    stats[t]=values;
+    coverage[t]=sample;
   }
-  return output;
+  return {stats,coverage};
 }

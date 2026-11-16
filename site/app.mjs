@@ -271,7 +271,7 @@ function loadLineStats(){
   const g=S.game,token=req,d=S.day;
   S.lineStats={};
   get(dataURL('live/nhl-lines-'+d+'-'+g.a+'-'+g.h+'.json'),{}).then(x=>{
-    if(token!==req||S.game!==g)return;
+    if(token!==req||S.game?.id!==g.id)return;
     S.lineStats=x;render();
   });
 }
