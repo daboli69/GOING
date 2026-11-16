@@ -45,6 +45,7 @@ test('deployment rejects a timestamp regression and a broken tracker or bundle',
     await json('tracker/'+index,{updated:ago(3),count:0,months:[]});
   assert.deepEqual(await verifyArtifact(dir,{now,previous:{updated:ago(10)}}),[]);
   assert.match(manifestProblem({updated:ago(10),missing:[]},{updated:ago(4)},now),/newer public/);
+  assert.equal(manifestProblem({updated:ago(1),missing:[]},{updated:ago(-20)},now),null);
   await json('tracker/td-board-index',{updated:ago(3),count:1,months:['2026-11']});
   await write('long/index.html',html.replace('style.css?v=1234567890','style.css?v=0987654321'));
   const errors=await verifyArtifact(dir,{now});

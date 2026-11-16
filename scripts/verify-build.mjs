@@ -11,7 +11,8 @@ const timestamp=x=>Number.isFinite(Date.parse(x));
 export function manifestProblem(local,previous,now=Date.now()){
   if(!timestamp(local?.updated)||!Array.isArray(local?.missing)||Date.parse(local.updated)>now+120000)
     return 'The live snapshot has an invalid timestamp or shape.';
-  if(timestamp(previous?.updated)&&Date.parse(local.updated)<Date.parse(previous.updated))
+  const prior=Date.parse(previous?.updated);
+  if(Number.isFinite(prior)&&prior<=now+120000&&Date.parse(local.updated)<prior)
     return 'The deployment would replace a newer public live snapshot.';
   return null;
 }
