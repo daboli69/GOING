@@ -18,6 +18,7 @@ import { fightPick, fightSettlement } from '../site/fights-core.mjs';
 import { kickoff } from '../site/nfl-availability.mjs';
 import { loadNflFinals,nflBoxGrade } from './nfl-finals.mjs';
 import { loadNbaFinals } from './nba-finals.mjs';
+import { loadNhlFinals,nhlFinalGrade } from './nhl-finals.mjs';
 import { gradeLeg as nbaGrade } from '../site/nba-parlay-tracking.mjs';
 import { loadTdContracts,neededTdContracts,tdGrade } from './nfl-td-settlement.mjs';
 
@@ -238,8 +239,10 @@ for(const f of await readdir(join(data,'live')).catch(()=>[])){
 }
 const pendingNba=[...store.values()].filter(p=>p.sport==='nba'&&p.kind==='prop'&&!p.result&&
   finals.has('nba|'+p.game)&&now-Date.parse(p.start)<=7*86400_000);
-const [nbaBoxes,tdDone]=await Promise.all([loadNbaFinals(new Set(pendingNba.map(p=>p.game))),
-  loadTdContracts(nflSchedule,neededTdContracts(store.values(),now))]);
+const pendingNhl=[...store.values()].filter(p=>p.sport==='nhl'&&p.kind==='prop'&&!p.result&&
+  finals.has('nhl|'+p.game)&&now-Date.parse(p.start)<=7*86400_000);
+const [nbaBoxes,nhlBoxes,tdDone]=await Promise.all([loadNbaFinals(new Set(pendingNba.map(p=>p.game))),
+  loadNhlFinals(new Set(pendingNhl.map(p=>p.game))),loadTdContracts(nflSchedule,neededTdContracts(store.values(),now))]);
 const results={nfl:nflResult,nba:nbaResult,nhl:nhlResult};
 // MLB results come straight from the official box score.
 const boxes=new Map();
@@ -265,7 +268,8 @@ for(const p of store.values()){
     value=mlbStat(await boxscore(p.game),p.id,p.market);
     if(value!=null){p.value=value;p.result=outcome(+value,p.line,p.side);}
   }else{
-    const fromBox=p.sport==='nfl'?tdGrade(tdDone,p,now)||nflBoxGrade(nflBoxes.get(p.game),p,now):null;
+    const fromBox=p.sport==='nfl'?tdGrade(tdDone,p,now)||nflBoxGrade(nflBoxes.get(p.game),p,now):
+      p.sport==='nhl'?nhlFinalGrade(nhlBoxes.get(p.game),p,now):null;
     if(fromBox){Object.assign(p,fromBox);graded++;continue;}
     if(p.sport==='nba'){
       const result=nbaGrade({player:p.id,stat:p.market,line:p.line,side:p.side},nbaBoxes.get(p.game)?.players,now);

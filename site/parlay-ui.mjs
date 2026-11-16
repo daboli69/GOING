@@ -85,6 +85,7 @@ export function createParlays(opts){
     return cfg;
   }
   const config=()=>readFilters(local(settingsKey,{}));
+  const activeDraft=state=>opts.liveDraft&&(opts.prefill!==false||state.generated);
   const draft=()=>{
     const period=opts.period();
     if(S.f.parlay?.period!==period)S.f.parlay={period,locked:[],ticket:[],message:''};
@@ -205,9 +206,9 @@ export function createParlays(opts){
 
   function page(data){
     const cfg=config(), state=draft(), report=evaluate(data.rows,cfg,{taken:takenLegs(opts.liveDraft?state.savedId:undefined)});
-    const preview=!opts.liveDraft||!state.initialized?build(report.eligible,cfg,{rules:ticketRules(cfg)}).ticket:[];
+    const preview=!activeDraft(state)||!state.initialized?build(report.eligible,cfg,{rules:ticketRules(cfg)}).ticket:[];
     if(opts.liveDraft&&!state.initialized){
-      state.ticket=preview;
+      if(activeDraft(state))state.ticket=preview;
       state.initialized=true;
       state.evaluatedAt=new Date().toISOString();
     }
@@ -224,8 +225,8 @@ export function createParlays(opts){
       box('Filters',controls(data,cfg))+
       box('Suggested ticket',(opts.liveDraft?`<p class="subtle">Last evaluated ${esc(timeLabel(state.evaluatedAt))} · ${report.eligible.length} eligible priced legs</p>`:'')+
         (state.message?`<p class="subtle" role="status">${esc(state.message)}</p>`:'')+
-        shortage(data,cfg,report,opts.liveDraft?ticket.length:ticket.length||preview.length)+
-        (ticket.length?ticketTable(ticket,state.locked)+(ticket.length>=2?(opts.ticketSummary||mathSummary)(ticket):''):empty(opts.liveDraft?'No suggested legs match the current filters.':'Generate a ticket from the eligible legs.')))+
+        shortage(data,cfg,report,activeDraft(state)?ticket.length:ticket.length||preview.length)+
+        (ticket.length?ticketTable(ticket,state.locked)+(ticket.length>=2?(opts.ticketSummary||mathSummary)(ticket):''):empty(activeDraft(state)?'No suggested legs match the current filters.':'Generate a ticket from the eligible legs.')))+
       (opts.afterTicket?.(data,report,ticket)||'')+box(singleGame?'SGP ticket history':'Ticket history',history());
   }
 
@@ -269,7 +270,11 @@ export function createParlays(opts){
   function action(act,value,data,target){
     const state=draft(), cfg=config();
     if(target)preserveDetails(target);
-    if(act==='parlayRefreshDraft'&&opts.liveDraft)return refreshDraft(data,cfg,state);
+    if(act==='parlayRefreshDraft'&&opts.liveDraft){
+      if(activeDraft(state))return refreshDraft(data,cfg,state);
+      state.evaluatedAt=new Date().toISOString();
+      return true;
+    }
     if(act==='parlayField'){
       const [key,val]=JSON.parse(value);
       if(key.startsWith('result:')){
@@ -294,7 +299,7 @@ export function createParlays(opts){
     else if(act==='parlayIncludeGame')cfg.games=toggle(cfg.games,value);
     else if(act==='parlayIncludePlayer')cfg.players=toggle(cfg.players,value);
     else if(act==='parlayReset'){
-      keep(settingsKey,defaults);state.ticket=[];state.locked=[];state.message='';state.savedId=null;state.initialized=false;return true;
+      keep(settingsKey,defaults);state.ticket=[];state.locked=[];state.message='';state.savedId=null;state.initialized=false;state.generated=false;return true;
     }else if(act==='parlayLock'){
       if(state.ticket.some(leg=>legKey(leg)===value))state.locked=toggle(state.locked,value);
       return true;
@@ -316,13 +321,13 @@ export function createParlays(opts){
         state.ticket=state.ticket.map(leg=>legKey(leg)===value?replacement:leg);
       }else state.ticket=ticket;
       state.message='';
-      if(opts.liveDraft)state.evaluatedAt=new Date().toISOString();
+      if(opts.liveDraft){state.evaluatedAt=new Date().toISOString();state.generated=true;}
       state.savedId=state.ticket.length>=2?saveTicket(state.ticket,cfg):null;
       if(state.savedId)state.message='Ticket saved in this browser.';
       return true;
     }else return false;
     keep(settingsKey,cfg);
-    if(opts.liveDraft)return refreshDraft(data,cfg,state);
+    if(activeDraft(state))return refreshDraft(data,cfg,state);
     state.message='Filters changed. Generate to apply them to a new ticket.';
     return true;
   }

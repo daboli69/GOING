@@ -173,7 +173,7 @@ function tdCalibration(){
       table(['Anytime model','Players','Average','Scored'],bins('any','td',[[0,.1],[.1,.2],[.2,.3],[.3,.4],[.4,.55],[.55,1]]),{wrap:'box',cls:'compact'})+
       table(['First TD model','Players','Average','Scored first'],bins('first','firstHit',[[0,.02],[.02,.04],[.04,.07],[.07,.1],[.1,1]]),{wrap:'box',cls:'compact'}));
   };
-  return box('Calibration Log','<p class="subtle">Each hourly run saves the board before kickoff and grades it from the play-by-play. The backtest replays every earlier week with only the data available before it (no lines are stored for past weeks, so it uses each team\'s season scoring for implied points).</p>'+
+  return box('Calibration Log','<p class="subtle">Refresh runs save the board before kickoff and grade it from confirmed scoring summaries or the season play-by-play. The backtest replays every earlier week with only the data available before it (no lines are stored for past weeks, so it uses each team\'s season scoring for implied points).</p>'+
     grid(2,[summary(log.live||[],'Live: saved before kickoff'),summary(log.backtest||[],'Backtest: earlier weeks')]));
 }
 export function tdBoardAction(act,v,data){
