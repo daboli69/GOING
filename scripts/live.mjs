@@ -120,15 +120,43 @@ if(!Object.keys(lineups).length&&(slates.nhl[today]||[]).some(upcoming))lineups=
 else await save(lineupFile,lineups);
 const year=Number(today.slice(0,4))-(today.slice(5,7)<'10'), season=''+year+(year+1);
 const [archive,shots]=await Promise.all([read(`nhl-${season}.json`),read(`nhl-shots-${season}.json`)]);
-const shiftCache=new Map();
-const load=url=>{if(!shiftCache.has(url))shiftCache.set(url,json(url,20000).then(j=>{if(!j)throw new Error('No shift data');return j;}));return shiftCache.get(url);};
-let lineGames=0;
-if(archive&&shots)for(const g of slates.nhl[today]||[]){
-  const teams=Object.fromEntries([g.a,g.h].filter(t=>lineups[t]).map(t=>[t,lineups[t]]));
-  if(!Object.keys(teams).length)continue;
-  await save(`nhl-lines-${today}-${g.a}-${g.h}.json`,await recentLines(teams,{...archive,date:today},shots,load).catch(()=>({})));
-  lineGames++;
+const shiftCache=new Map(), shiftDeadline=AbortSignal.timeout(22000);
+let shiftsMissing=false;
+const load=url=>{
+  if(!shiftCache.has(url))shiftCache.set(url,(async()=>{
+    try{
+      const r=await fetch(url,{signal:AbortSignal.any([shiftDeadline,AbortSignal.timeout(5000)])});
+      if(r.ok){
+        const j=await r.json();
+        if(j?.data?.length)return j;
+      }
+    }catch{}
+    shiftsMissing=true;
+    return null;
+  })());
+  return shiftCache.get(url);
+};
+const lineGames=(slates.nhl[today]||[]).filter(g=>lineups[g.a]||lineups[g.h]);
+if(archive&&shots){
+  let i=0;
+  await Promise.all(Array.from({length:Math.min(3,lineGames.length)},async()=>{
+    while(i<lineGames.length){
+      const g=lineGames[i++], teams=Object.fromEntries([g.a,g.h].filter(t=>lineups[t]).map(t=>[t,lineups[t]]));
+      const file='nhl-lines-'+today+'-'+g.a+'-'+g.h+'.json';
+      const stats=await recentLines(teams,{...archive,date:today},shots,load);
+      if(shiftsMissing){
+        const [previous,previousLineups]=await Promise.all([read('live/'+file),read('live/'+lineupFile)]);
+        for(const [t,lineup] of Object.entries(teams)){
+          if(!stats[t]?.some(rows=>rows.length)&&previous?.[t]&&
+            JSON.stringify([lineup.forwards,lineup.defense])===JSON.stringify([previousLineups?.[t]?.forwards,previousLineups?.[t]?.defense]))
+            stats[t]=previous[t];
+        }
+      }
+      await save(file,stats);
+    }
+  }));
 }
+if(shiftsMissing)note.push('nhl line matchups '+today);
 
 // Small summary for the landing page.
 const nflWeek=nextWeek?schedule.filter(g=>g.week===nextWeek.week&&g.id.slice(0,4)===nextWeek.id.slice(0,4)):[];
@@ -153,4 +181,4 @@ await save('manifest.json',{updated:new Date().toISOString(),archive_updated:arc
   nfl:{week:nextWeek?.week??null,games:nflWeek.length||null},missing:note});
 
 await rm(out,{recursive:true,force:true});await rename(tmp,out);
-console.log(`Live snapshot: ${Object.keys(slates.nba).length} NBA days, ${Object.keys(slates.nhl).length} NHL days, ${Object.keys(lineups).length} NHL lineups, ${lineGames} line-matchup games.${note.length?' Missing: '+note.join(', '):''}`);
+console.log(`Live snapshot: ${Object.keys(slates.nba).length} NBA days, ${Object.keys(slates.nhl).length} NHL days, ${Object.keys(lineups).length} NHL lineups, ${archive&&shots?lineGames.length:0} line-matchup games.${note.length?' Missing: '+note.join(', '):''}`);
