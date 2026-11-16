@@ -22,10 +22,11 @@ export const upcomingNflGames=(games,now)=>games.filter(g=>{
   return start>now&&start<=now+8*day;
 });
 
-function gameInactives(game,payload,now){
+export function gameInactives(game,payload,now){
   const header=payload?.header?.competitions?.find(c=>String(c.id)===String(game.espn));
   if(!header)return null;
   const start=Date.parse(kickoff(game.date,game.time)),teams={};
+  if(!Number.isFinite(start))return null;
   for(const entry of payload.injuries||[]){
     const code=nflTeamCode(entry.team?.abbreviation);
     if(code!==game.a&&code!==game.h)continue;

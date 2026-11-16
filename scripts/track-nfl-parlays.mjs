@@ -46,7 +46,7 @@ const byGame=new Map((schedule||[]).map(g=>[g.id,g]));
 const due=r=>{const age=now-Date.parse(r.tip);return !r.result&&age>=2.5*3600_000&&age<=6*86400_000;};
 const [boxes,tdDone]=await Promise.all([
   loadNflFinals(schedule||[],new Set([...store.values()].filter(r=>due(r)&&
-    (!archive?.events?.[r.game]?.length||byGame.get(r.game)?.sa==null)).map(r=>r.game))),
+    (!archive?.events?.[r.game]?.length||byGame.get(r.game)?.sa==null||!extra?.snaps?.[r.game]?.[r.team]?.length)).map(r=>r.game))),
   loadTdContracts(schedule||[],neededTdContracts(store.values(),now))]);
 let graded=0;
 for(const leg of store.values()){
