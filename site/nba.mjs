@@ -161,11 +161,16 @@ function getSummary(g,w){
   const a=teamStat(g.a,w),h=teamStat(g.h,w), league=teams().map(t=>teamStat(t,w));
   const fields=[['Pts / Possession','ortg'],['Pace','pace'],['Transition Share','trans'],['Three Pointers','threes'],['Free Throw Rate','ftr'],['Offensive Rebounds','oreb'],['Turnover %','tov'],['Paint FG%','paintFg'],['Mid-Range FG%','midFg']];
   const ranksFor=(k,key)=>ranks(league,x=>x[k][key],k==='d'&&key!=='oreb'||k==='o'&&key==='tov');
-  return table([logo(g.a)+' '+g.a+' OFF',logo(g.h)+' '+g.h+' DEF','Category',logo(g.h)+' '+g.h+' OFF',logo(g.a)+' '+g.a+' DEF'],fields.map(([n,k])=>{
-    const heatCell=(x,b)=>{const rk=ranksFor(b,k).get(x.t);return cell(matchupMetric(ordinal(rk)+' <small>'+display(k,x[b][k])+'</small>',k),heat(rk,15,6,true));};
+  const heading=(t,side)=>`<span class="matchup-summary-team">${logo(t)} <span>${esc(t)} ${side}</span></span>`;
+  return table([heading(g.a,'OFF'),heading(g.h,'DEF'),'Category',heading(g.h,'OFF'),heading(g.a,'DEF')],fields.map(([n,k])=>{
+    const heatCell=(x,b)=>{
+      const rk=ranksFor(b,k).get(x.t);
+      const value=`<span class="matchup-summary-value"><span>${ordinal(rk)}</span> <small>${display(k,x[b][k])}</small></span>`;
+      return cell(matchupMetric(value,k),heat(rk,15,6,true));
+    };
     const b=k==='pace'?'game':'o',d=k==='pace'?'game':'d';
     return [heatCell(a,b),heatCell(h,d),cell(matchupMetric(n,k)),heatCell(h,b),heatCell(a,d)];
-  }),{groups:[group('Scoring',5)],wrap:'box'});
+  }),{groups:[group('Scoring',5)],wrap:'box',cls:'matchup-summary'});
 }
 function keys(){
   const g=S.game,w=S.f.window||'Season',v=S.f.view||'Summary',top=slate();
@@ -179,7 +184,7 @@ function keys(){
   }));
   if(v==='Overview')body=grid(2,[g.a,g.h].map(t=>teamBanner(t)+grid(3,[['PPG','ppg'],['ORtg','ortg'],['3PM','threes'],['Pace','pace'],['Net rating','net'],['Avg margin','margin']].map(([n,k])=>metric(n,matchupMetric(display(k,teamStat(t,w).o[k]??teamStat(t,w).game[k]),k))))))+getSummary(g,w);
   if(v==='Rotations & History')body=grid(2,[g.a,g.h].map(t=>teamBanner(t)+table(['Player','MIN','PTS','AST','REB'],players().filter(p=>p.team===t).sort((a,b)=>b.min-a.min).slice(0,12).map(p=>[person(p),round(p.min),...[6,8,9].map(k=>round(mean(p.logs,r=>r[k])))]))+table(['Date','Opp','Score','Margin'],teamStat(t,w).l.slice(-6).reverse().map(r=>[esc(r[1]),team(r[2]),r[4]+'–'+r[5],signed(r[4]-r[5],0)]))));
-  return top+box('Matchup Keys',tools(toggles(periods,'window')+btn('Show All Summaries','allSummaries',''))+heading+tabbar(['Overview','Categories','Rotations & History','Summary'],'view')+body+`<p class="tiny">${oddsNote(g)}</p>`,'Season and recent-game statistics are matched offense against defense.');
+  return top+box('Matchup Keys',tools(toggles(periods,'window')+btn('Show All Summaries','allSummaries',''))+heading+tabbar(['Overview','Categories','Rotations & History','Summary'],'view')+body+`<p class="tiny">${oddsNote(g)}</p>`,'Season and recent-game statistics are matched offense against defense.','nba-matchup-keys');
 }
 const outStatus = status => /^(out|injured reserve|suspension|suspended)$/i.test(status||'');
 
