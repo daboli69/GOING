@@ -3,6 +3,7 @@ import {join} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {routes} from '../site/config.mjs';
 import {readPublicJson} from './watch-delivery.mjs';
+import {historyVersion} from './tracker-history.mjs';
 
 const root=fileURLToPath(new URL('../dist/',import.meta.url));
 const trackFiles={'index':'picks','parlay-legs-index':'parlay-legs','nfl-parlay-legs-index':'nfl-parlay-legs',
@@ -68,6 +69,13 @@ export async function verifyArtifact(dir,{previous,priorModels,now=Date.now()}={
       const file='data/tracker/'+prefix+'-'+m+'.json', records=await json(file);
       if(!Array.isArray(records))errors.push('Invalid tracker records in '+file);
       else rows+=records.length;
+      if(info.versions){
+        const version=info.versions[m];
+        if(!/^[a-f0-9]{16}$/.test(version)){errors.push('Invalid tracker history version in '+file);continue;}
+        const path='data/tracker/history/'+prefix+'-'+m+'-'+version+'.json';
+        const [original,published]=await Promise.all([read(file),read(path)]);
+        if(published!=null&&(published!==original||historyVersion(published)!==version))errors.push('Tracker history mismatch in '+path);
+      }
     }
     if(rows!==count)errors.push('Tracker count mismatch in '+path);
   }

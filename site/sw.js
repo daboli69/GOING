@@ -1,11 +1,6 @@
-// Offline support and faster repeat visits. scripts/build.mjs fills in VERSION and CORE; under `npm start` (unbuilt
-// site/) the app does not register this worker at all.
-//   Pages:            network first, checked with the server every time (GitHub Pages otherwise lets the browser reuse a
-//                     page for 10 minutes), so a deploy shows up on the next load; the saved copy when offline.
-//   Code (?v=…):      cache first. Each build gets new URLs, so a cached file is never stale.
-//   Data (data/*):    network first, also checked with the server every time; saved copy when offline. Newest 80 kept.
-//   Fonts and brand:  saved copy at once, refreshed in the background for the next visit.
-// Other sites (ESPN, NHL and MLB images and scores) go straight to the network and the browser's own cache.
+// Offline support and faster repeat visits. The build fills in VERSION and CORE. The unbuilt site does not register this worker.
+// Pages and mutable data revalidate on each visit. Failed requests can use a saved copy.
+// Versioned code and tracker history use the cache first. Tracker history shares the 80-file data cache.
 const VERSION='__VERSION__';
 const CORE=__CORE__;
 const CODE='going-code-'+VERSION, PAGES='going-pages', DATA='going-data', STATIC='going-static';
@@ -16,38 +11,63 @@ self.addEventListener('install',e=>{
   e.waitUntil(caches.open(CODE).then(c=>c.addAll(CORE.map(p=>new URL(p,scope).href))).then(()=>self.skipWaiting()));
 });
 self.addEventListener('activate',e=>{
-  e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('going-code-')&&k!==CODE).map(k=>caches.delete(k))))
+  // Open tabs and saved pages can still ask for the preceding build.
+  e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('going-code-')&&k!==CODE).slice(0,-1).map(k=>caches.delete(k))))
     .then(()=>self.clients.claim()));
 });
 
-async function trim(name,limit){
-  const c=await caches.open(name),keys=await c.keys();
-  for(const k of keys.slice(0,Math.max(0,keys.length-limit)))await c.delete(k);
+const cached=(name,req)=>caches.open(name).then(c=>c.match(req,{ignoreVary:true})).catch(()=>undefined);
+
+// Register the background work when handling the event. The response can stream while the cache saves it.
+function respond(event,strategy){
+  const writes=[];
+  const defer=task=>writes.push(task.catch(()=>{}));
+  const response=strategy(defer);
+  event.respondWith(response);
+  event.waitUntil(response.catch(()=>{}).then(()=>Promise.all(writes)));
 }
-async function networkFirst(req,name,fallback){
-  try{
-    // 'no-cache' revalidates with the server (a cheap 304 when nothing changed) instead of trusting the browser cache.
-    // A navigation request cannot be copied with new options, so pages are fetched by URL.
-    const res=await fetch(req.mode==='navigate'?req.url:req,{cache:'no-cache',credentials:'same-origin'});
-    if(res.ok){const c=await caches.open(name);await c.delete(req);await c.put(req,res.clone());if(name===DATA)trim(DATA,DATA_LIMIT);}
-    return res;
-  }catch(err){
-    const hit=await caches.match(req,{ignoreVary:true})||(fallback&&await caches.match(fallback));
-    if(hit)return hit;
-    throw err;
+
+async function save(name,req,response){
+  const cache=await caches.open(name);
+  await cache.put(req,response);
+  if(name===DATA){
+    const keys=await cache.keys();
+    await Promise.all(keys.slice(0,Math.max(0,keys.length-DATA_LIMIT)).map(key=>cache.delete(key)));
   }
 }
-async function staleWhileRevalidate(req,name,e){
-  const hit=await caches.match(req);
-  const update=fetch(req).then(async res=>{if(res.ok)await (await caches.open(name)).put(req,res.clone());return res;});
-  if(hit){e.waitUntil(update.catch(()=>{}));return hit;}
-  return update;
+
+async function networkFirst(req,name,defer,fallback){
+  const previous=async()=>await cached(name,req)||(fallback&&await cached(name,fallback));
+  let response;
+  try{
+    // Navigation requests cannot be copied with options, so fetch those by URL.
+    response=await fetch(req.mode==='navigate'?req.url:req,{cache:'no-cache',credentials:'same-origin'});
+  }catch(err){
+    const prior=await previous();
+    if(prior)return prior;
+    throw err;
+  }
+  if(response.ok)defer(save(name,req,response.clone()));
+  if(response.status===429||response.status>=500)return await previous()||response;
+  return response;
 }
-async function cacheFirst(req,name){
-  const hit=await caches.match(req);
+
+async function staleWhileRevalidate(req,name,defer){
+  const hit=await cached(name,req);
+  if(hit){
+    defer(fetch(req).then(res=>res.ok?save(name,req,res):null));
+    return hit;
+  }
+  const res=await fetch(req);
+  if(res.ok)defer(save(name,req,res.clone()));
+  return res;
+}
+
+async function cacheFirst(req,name,defer){
+  const hit=await cached(name,req);
   if(hit)return hit;
   const res=await fetch(req);
-  if(res.ok)(await caches.open(name)).put(req,res.clone());
+  if(res.ok)defer(save(name,req,res.clone()));
   return res;
 }
 
@@ -55,8 +75,13 @@ self.addEventListener('fetch',e=>{
   const req=e.request,url=new URL(req.url);
   if(req.method!=='GET'||url.origin!==scope.origin||!url.pathname.startsWith(scope.pathname))return;
   const path=url.pathname.slice(scope.pathname.length);
-  if(req.mode==='navigate')e.respondWith(networkFirst(req,PAGES,new URL('./',scope).href));
-  else if(url.searchParams.has('v'))e.respondWith(cacheFirst(req,CODE));
-  else if(path.startsWith('data/'))e.respondWith(networkFirst(req,DATA));
-  else if(/^(fonts|brand)\//.test(path))e.respondWith(staleWhileRevalidate(req,STATIC,e));
+  const version=url.searchParams.get('v');
+  if(req.mode==='navigate')respond(e,defer=>networkFirst(req,PAGES,defer,new URL('./',scope).href));
+  else if(/^data\/tracker\/history\/[\w-]+-[a-f0-9]{16}\.json$/.test(path))respond(e,defer=>cacheFirst(req,DATA,defer));
+  else if(/^[a-f0-9]{10}$/.test(version)&&/^[\w.-]+\.(mjs|css)$/.test(path)){
+    if(version===VERSION)respond(e,defer=>cacheFirst(req,CODE,defer));
+    else e.respondWith(caches.match(req,{cacheName:'going-code-'+version}).catch(()=>undefined).then(hit=>hit||fetch(req)));
+  }
+  else if(path.startsWith('data/'))respond(e,defer=>networkFirst(req,DATA,defer));
+  else if(/^(fonts|brand)\//.test(path))respond(e,defer=>staleWhileRevalidate(req,STATIC,defer));
 });
