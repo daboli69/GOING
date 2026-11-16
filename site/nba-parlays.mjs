@@ -1,9 +1,30 @@
 // GOING UP Suggested Parlays: the shared parlay page (parlay-ui.mjs) with the NBA engine and filters.
-import {current as S,btn,slate,tools} from './ui.mjs';
+import {current as S,badge,box,btn,empty,esc,slate,tools} from './ui.mjs';
 import {href} from './config.mjs';
+import {pct} from './math.mjs';
+import {adjustedLegChance,legKey} from './parlay-core.mjs';
 import {defaults,evaluate,markets,weights} from './nba-parlay-engine.mjs';
 import {createParlays} from './parlay-ui.mjs';
 export {toAmerican,fromAmerican} from './parlay-ui.mjs';
+
+function fullList(_data,{eligible},ticket){
+  if(!eligible.length)return box('Full List',empty('No priced legs pass the current filters.'));
+  const onTicket=new Set(ticket.map(legKey));
+  const ranked=eligible.map(leg=>({leg,chance:adjustedLegChance(leg)}))
+    .sort((a,b)=>b.chance-a.chance||b.leg.form.season.n-a.leg.form.season.n||b.leg.score-a.leg.score);
+  const rows=ranked.map(({leg,chance})=>{
+    const {season,last10}=leg.form;
+    const price=Number(leg.price)>0?'+'+Number(leg.price):leg.price;
+    return `<li><div class="parlay-pool-row"><div><strong>${esc(leg.name)}</strong> ${esc(leg.team+' vs '+leg.opp)}
+      <div>${esc(leg.side+' '+leg.line+' '+leg.stat+' · '+price+' '+leg.provider)} ${onTicket.has(legKey(leg))?badge('On ticket','g'):''}</div></div>
+      <strong>${pct(chance,1)}</strong></div>
+      <p class="subtle">Season ${season.hits}/${season.n} · Last 10 ${last10.hits}/${last10.n}</p>
+      <p><strong>Why it qualifies</strong> ${esc(leg.reasons.join(' · '))}</p>
+      ${leg.flags.length?`<p class="subtle"><strong>Watch</strong> ${esc(leg.flags.join(' · '))}</p>`:''}</li>`;
+  });
+  return box('Full List',`<p class="subtle">${ranked.length} eligible legs, ranked by estimated hit chance. The estimate adds five hits and five misses to each season record to account for small samples. Future results can differ.</p>
+    <ol class="parlay-pool">${rows.join('')}</ol>`);
+}
 
 const nba=createParlays({
   settingsKey:'nba-parlay-settings',ticketsKey:'nba-parlay-tickets',liveDraft:true,prefill:false,
@@ -16,6 +37,7 @@ const nba=createParlays({
   nav:()=>slate({navOnly:true,date:true}),
   intro:()=>tools(`<a class="pill" href="${href('up/parlay-tracker.html')}">Parlay Leg Tracker</a>`+
     btn('Check for updates','nbaParlayCheck','')),
+  afterTicket:fullList,
   recent:{key:'last10',label:'L10'},
   noRows:'No priced NBA props were published for this slate. Try again after the next price refresh.',
   hints:{'Maximum spread':'Raise maximum spread toward 14.5.','Minimum total':'Lower the minimum game total.',

@@ -48,6 +48,29 @@ test('prop history treats whole-number pushes as neither wins nor losses',()=>{
   assert.deepEqual(record([4,5,6],5,'Over'),{hits:1,n:2,pushes:1,rate:.5});
 });
 
+test('Full List ranks the entire eligible pool by adjusted hit rate, even when games repeat',t=>{
+  t.mock.method(Date,'now',()=>now);
+  const {f,route,day}=S;
+  const sample=[4,4,...Array(18).fill(9)];
+  const rows=[row({player:{...row().player,id:'short',name:'Short sample'},
+      form:{...row().form,season:Array(10).fill(9)}}),
+    ...Array.from({length:13},(_,i)=>row({player:{...row().player,id:'long'+i,name:'Long sample '+i},
+      form:{...row().form,season:sample},quote:{...row().quote,over:'+120'}})),
+    row({player:{...row().player,id:'out',name:'Cut player'},out:true})];
+  try{
+    Object.assign(S,{f:{},route:{sport:'nba'},day:'2026-11-12'});
+    const html=parlayPage({rows,games:[],roster:[]});
+    const pool=/<ol class="parlay-pool">([\s\S]*?)<\/ol>/.exec(html)?.[1];
+    assert.ok(pool);
+    assert.equal([...pool.matchAll(/<li>/g)].length,14);
+    assert.ok(pool.indexOf('Long sample 0')<pool.indexOf('Short sample'));
+    assert.match(pool,/76\.7%/);
+    assert.match(pool,/\+120 Kalshi/);
+    assert.match(pool,/Type A edge/);
+    assert.doesNotMatch(pool,/Cut player/);
+  }finally{Object.assign(S,{f,route,day});}
+});
+
 test('the screen keeps the 6.5 default inclusive and enforces the 14.5 hard cutoff',()=>{
   const eligible=evaluateRows([row()]).eligible;
   assert.equal(eligible.length,1);
