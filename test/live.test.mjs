@@ -12,6 +12,7 @@ test('live scores only poll games that are under way or about to start',()=>{
   assert.deepEqual(dueGames(games,now).map(g=>g.id),['a','b','f']);
   assert.equal(isDone({sa:20,sh:17}),true,'NFL archive rows are final once both scores exist');
   assert.equal(startOf({date:'2026-11-13',time:'20:15'}),Date.parse('2026-11-14T01:15:00Z'));
+  assert.equal(startOf({date:'2026-09-13',time:'13:00'}),Date.parse('2026-09-13T17:00:00Z'));
 });
 
 test('pro slates take live and final scores, matched by ESPN id or by teams',()=>{

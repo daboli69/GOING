@@ -1,12 +1,12 @@
 name: Refresh and deploy
 
-# Hourly, all day: slates, injuries, public prices and NHL lineups (about a minute).
+# Every 15 minutes: slates, injuries, public prices and NHL lineups. GitHub can delay or drop a scheduled run.
 # The first run after 7am Eastern every morning (DST-proof), and the first after 17:00 UTC, also rebuilds the
 # season archives (nflverse, hoopR, NHL), so the day starts on fresh data for every sport.
 # The local model publisher starts a run with mode=models whenever forecasts change.
 on:
   schedule:
-    - cron: '7 * * * *'
+    - cron: '11,26,41,56 * * * *'
   push:
     branches: [main]
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 45
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment-retry.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
 
@@ -90,8 +90,24 @@ jobs:
             site/data/*.json
           key: archive-v1-${{ github.run_id }}
 
+      - name: Restore live snapshots
+        uses: actions/cache/restore@v6
+        with:
+          path: site/data/live
+          key: live-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: live-v1-
+
       - name: Capture live snapshots
-        run: node scripts/live.mjs || echo "::warning::Live snapshot failed; pages fall back to the archives."
+        id: live
+        continue-on-error: true
+        run: node scripts/live.mjs
+
+      - name: Save live snapshots
+        if: steps.live.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: site/data/live
+          key: live-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Restore college feeds
         uses: actions/cache/restore@v6
@@ -203,6 +219,16 @@ jobs:
           path: dist
 
       - id: deployment
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+
+      - name: Wait for Pages artifact metadata
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 20
+
+      - name: Retry Pages deployment
+        id: deployment-retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v5
 
       # One open issue named "GOING feed health" lists stale feeds. GitHub emails the repo owner when it opens or changes.

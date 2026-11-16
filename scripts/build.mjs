@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { routes, sections } from '../site/config.mjs';
 import { isCollege } from '../site/college-core.mjs';
+import { compactNflParlays } from './nfl-parlay-archive.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const site=join(root,'site'), dist=join(root,'dist');
@@ -16,6 +17,13 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 
 await rm(dist,{recursive:true,force:true});
 await cp(site,dist,{recursive:true});
+const dataDir=join(dist,'data');
+for(const file of await readdir(dataDir).catch(()=>[])){
+  const year=file.match(/^nfl-(\d{4})\.json$/)?.[1];
+  if(!year)continue;
+  const archive=JSON.parse(await readFile(join(dataDir,file),'utf8'));
+  await writeFile(join(dataDir,'nfl-parlay-'+year+'.json'),JSON.stringify(compactNflParlays(archive)));
+}
 // Version every script and stylesheet by a hash of the site code. GitHub Pages lets browsers cache files for ten
 // minutes; without this a visitor right after a deploy can mix old and new modules. Every import of a module gets the
 // same versioned name, so each module still loads once. Data-only deploys keep the same version (and the cache).

@@ -34,33 +34,61 @@ export function chooseQuotes(rows,byLine=false){
   }
   return [...top.values()].map(({volume,yes,no,...x})=>x);
 }
-export async function publicQuotes(s,games,{onAlternates}={}){
+async function readMarkets(u,read){
+  try{
+    let r=await read(u,{signal:AbortSignal.timeout(4500)});
+    if(r.status===429||r.status>=500){
+      const delay=1000*(Number(r.headers.get('retry-after'))||.7);
+      if(delay<=2500){await new Promise(resolve=>setTimeout(resolve,delay));r=await read(u,{signal:AbortSignal.timeout(4500)});}
+    }
+    const j=r.ok?await r.json():null;
+    return Array.isArray(j?.markets)?j:null;
+  }catch{return null;}
+}
+
+export async function publicQuotes(s,games,{onAlternates,onFailure,read=fetch}={}){
   if(!series[s]||!games.length)return [];
   const by=new Map(games.flatMap(g=>eventSuffixes(s,g).map(k=>[k,g])));
-  const starts=games.map(g=>g.date).sort();
-  const after=Math.floor(Date.parse(starts[0]+'T00:00:00Z')/1000)-8*86400;
-  const capturedAt=new Date().toISOString();
-  const all=await Promise.allSettled(Object.entries(series[s]).map(async ([market,ticker])=>{
-    const rows=[];let cursor='';
-    for(let page=0;page<3;page++){
-      const u=new URL(host);
-      for(const [k,v] of Object.entries({series_ticker:ticker,status:'open',limit:'1000',min_created_ts:String(after),...(cursor?{cursor}:{})}))u.searchParams.set(k,v);
-      let r=await fetch(u,{signal:AbortSignal.timeout(3500)});
-      if(r.status===429||r.status>=500){
-        const delay=1000*(Number(r.headers.get('retry-after'))||.7);
-        if(delay<=2500){await new Promise(resolve=>setTimeout(resolve,delay));r=await fetch(u,{signal:AbortSignal.timeout(3500)});}
+  const capturedAt=new Date().toISOString(), rows=[], failed=[];
+  const markets=Object.entries(series[s]);
+  if(s==='nfl'){
+    // Query exact upcoming matchups. Broad NFL series scans hit the page cap before reaching some games.
+    const requests=markets.flatMap(([market,ticker])=>[...by].map(([suffix,game])=>({market,game,event:ticker+'-'+suffix})));
+    let i=0;
+    await Promise.all(Array.from({length:Math.min(3,requests.length)},async()=>{
+      while(i<requests.length){
+        const {market,game,event}=requests[i++];
+        const u=new URL(host);
+        u.searchParams.set('event_ticker',event);
+        const j=await readMarkets(u,read);
+        if(!j||j.cursor){failed.push({market,game});continue;}
+        for(const m of j.markets){
+          const x=m.event_ticker===event&&quote(m,market,game);
+          if(x)rows.push(x);
+        }
       }
-      if(!r.ok)break;
-      const j=await r.json();
-      for(const m of j.markets||[]){
-        const g=by.get(m.event_ticker?.slice(ticker.length+1)),x=g&&quote(m,market,g);
-        if(x)rows.push(x);
+    }));
+  }else{
+    const starts=games.map(g=>g.date).sort();
+    const after=Math.floor(Date.parse(starts[0]+'T00:00:00Z')/1000)-8*86400;
+    await Promise.all(markets.map(async ([market,ticker])=>{
+      let cursor='';
+      for(let page=0;page<3;page++){
+        const u=new URL(host);
+        for(const [k,v] of Object.entries({series_ticker:ticker,status:'open',limit:'1000',min_created_ts:String(after),...(cursor?{cursor}:{})}))u.searchParams.set(k,v);
+        const j=await readMarkets(u,read);
+        if(!j){failed.push({market});return;}
+        for(const m of j.markets){
+          const g=by.get(m.event_ticker?.slice(ticker.length+1)),x=g&&quote(m,market,g);
+          if(x)rows.push(x);
+        }
+        cursor=j.cursor;
+        if(!cursor)return;
       }
-      cursor=j.cursor;if(!cursor)break;
-    }
-    return rows;
-  }));
-  const rows=all.flatMap(r=>r.status==='fulfilled'?r.value:[]);
+      failed.push({market});
+    }));
+  }
+  if(failed.length)onFailure?.(failed);
   const quotes=chooseQuotes(rows);
   if(s==='nba'&&onAlternates)onAlternates(chooseQuotes(rows,true).map(q=>({...q,capturedAt})));
   return quotes.map(q=>({...q,capturedAt}));

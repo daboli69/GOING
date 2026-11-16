@@ -38,7 +38,7 @@ export {time};
 */
 export function createTracker(opts){
 let index={}, legs=[], missingMonths=0;
-const adjusted=leg=>leg.form?.season?.n?(leg.form.season.hits+opts.prior)/(leg.form.season.n+2*opts.prior):null;
+const adjusted=leg=>opts.chance?.(leg)??(leg.form?.season?.n?(leg.form.season.hits+opts.prior)/(leg.form.season.n+2*opts.prior):null);
 const legText=opts.legText||(l=>l.side+' '+l.line+' '+l.stat);
 
 async function load(){
