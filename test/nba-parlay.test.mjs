@@ -150,3 +150,11 @@ test('Assist Spots changes ordering without changing hit rates or upgrading mixe
   assert.deepEqual(positive.form,before.form);
   assert.deepEqual(ticketMath([positive]),ticketMath([before]));
 });
+
+test('NBA parlay suggestions withhold expired quotes and quotes with no verifiable time',()=>{
+  for(const capturedAt of ['2026-11-12T13:59:59Z',null,'2026-11-12T16:01Z']){
+    const candidate=row({quote:{...row().quote,capturedAt}});
+    assert.equal(evaluateRows([candidate]).eligible.length,0);
+    assert.equal(evaluateRows([candidate]).screened[0].checks['Quote freshness'],'Quote older than two hours or untimestamped');
+  }
+});

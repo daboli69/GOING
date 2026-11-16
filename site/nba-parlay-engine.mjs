@@ -39,6 +39,8 @@ export function assess(row,side,cfg,context){
   const captured=Date.parse(leg.capturedAt);
   if(!Number.isFinite(captured)||captured>context.now)leg.flags.push('Quote time unknown');
   else if(context.now-captured>90*60000)leg.flags.push('Stale quote');
+  check('Quote freshness',!Number.isFinite(captured)||captured>context.now||context.now-captured>120*60000?
+    'Quote older than two hours or untimestamped':null);
 
   check('Season average',avg==null?'Season average unavailable':null);
   let matchup=0;

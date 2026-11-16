@@ -7,6 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {current as S,dateKey} from '../site/ui.mjs';
 import {routes} from '../site/config.mjs';
 import {firstBasketBoard} from '../site/nba.mjs';
+import {loadNbaFinals} from './nba-finals.mjs';
 
 const data=fileURLToPath(new URL('../site/data/',import.meta.url)), out=join(data,'tracker');
 const now=Date.parse(process.env.TRACK_NOW||'')||Date.now(), today=dateKey(new Date(now));
@@ -33,13 +34,17 @@ if(archive&&games?.length){
     changed.add(today.slice(0,7));saved++;
   }
 }
-// Grade: the archive's first scorer (free throws included) once the game is in the archive.
+// Grade the first point scorer (including free throws) from the archive or a confirmed ESPN final.
+const due=[...store.values()].filter(x=>x.actual===undefined&&now-Date.parse(x.tip)>=2*3600_000);
+const finals=await loadNbaFinals(due.filter(x=>!archive?.first?.[x.game]?.firstPts&&now-Date.parse(x.tip)<=7*86400_000).map(x=>x.game));
 let graded=0;
-for(const x of store.values()){
-  if(x.actual!==undefined||now-Date.parse(x.tip)<3*3600_000)continue;
-  const z=archive?.first?.[x.game];
-  if(!z?.firstPts)continue;
-  x.actual=z.firstPts;x.actualTeam=z.poss?.find(p=>p[1]>0)?.[0]||null;x.graded=new Date(now).toISOString();
+for(const x of due){
+  const z=archive?.first?.[x.game], first=finals.get(x.game)?.first;
+  if(!z?.firstPts&&!first)continue;
+  x.actual=z?.firstPts??first.athlete;
+  x.actualTeam=z?.poss?.find(p=>p[1]>0)?.[0]??first?.team??null;
+  x.resultSource=z?.firstPts?'Season play-by-play':'ESPN final play-by-play';
+  x.graded=new Date(now).toISOString();
   changed.add(month(x));graded++;
 }
 // Backtest: replay every past night with only the data available before it (starters projected from each team's

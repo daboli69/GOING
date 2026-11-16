@@ -17,6 +17,9 @@ import { collegeSports, isCollege, collegePicks, collegeSettlement } from '../si
 import { fightPick, fightSettlement } from '../site/fights-core.mjs';
 import { kickoff } from '../site/nfl-availability.mjs';
 import { loadNflFinals,nflBoxGrade } from './nfl-finals.mjs';
+import { loadNbaFinals } from './nba-finals.mjs';
+import { gradeLeg as nbaGrade } from '../site/nba-parlay-tracking.mjs';
+import { loadTdContracts,neededTdContracts,tdGrade } from './nfl-td-settlement.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const data=join(root,'site','data'), out=join(data,'tracker');
@@ -233,6 +236,10 @@ for(const f of await readdir(join(data,'live')).catch(()=>[])){
   const m=f.match(/^slate-(nba|nhl)-/);if(!m)continue;
   for(const g of await read('live/'+f)||[])if(['FINAL','OFF'].includes(g.status))fin(m[1],g.id,g.sa,g.sh);
 }
+const pendingNba=[...store.values()].filter(p=>p.sport==='nba'&&p.kind==='prop'&&!p.result&&
+  finals.has('nba|'+p.game)&&now-Date.parse(p.start)<=7*86400_000);
+const [nbaBoxes,tdDone]=await Promise.all([loadNbaFinals(new Set(pendingNba.map(p=>p.game))),
+  loadTdContracts(nflSchedule,neededTdContracts(store.values(),now))]);
 const results={nfl:nflResult,nba:nbaResult,nhl:nhlResult};
 // MLB results come straight from the official box score.
 const boxes=new Map();
@@ -258,8 +265,15 @@ for(const p of store.values()){
     value=mlbStat(await boxscore(p.game),p.id,p.market);
     if(value!=null){p.value=value;p.result=outcome(+value,p.line,p.side);}
   }else{
-    const fromBox=p.sport==='nfl'?nflBoxGrade(nflBoxes.get(p.game),p,now):null;
+    const fromBox=p.sport==='nfl'?tdGrade(tdDone,p,now)||nflBoxGrade(nflBoxes.get(p.game),p,now):null;
     if(fromBox){Object.assign(p,fromBox);graded++;continue;}
+    if(p.sport==='nba'){
+      const result=nbaGrade({player:p.id,stat:p.market,line:p.line,side:p.side},nbaBoxes.get(p.game)?.players,now);
+      if(result.result){
+        Object.assign(p,{value:result.value,result:result.result,graded:result.graded,resultSource:result.resultSource});
+        graded++;continue;
+      }
+    }
     const arch=await archive(p.sport,seasonFor(p.sport,p.date));
     if(arch){S.data=arch;S.route={sport:p.sport};try{value=results[p.sport]({...p,game:p.game});}catch{value=null;}}
     if(value!=null){p.value=value;p.result=outcome(+value,p.line,p.side);}

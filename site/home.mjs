@@ -25,6 +25,15 @@ const minutesFormat=new Intl.NumberFormat('en-US');
 const elapsed=(ms,now)=>minutesFormat.format(Math.max(0,Math.floor((now-ms)/60000)))+' min ago';
 const clockLabel=(ms,now)=>(dayKey.format(ms)===dayKey.format(now)?'':clockDate.format(ms)+' · ')+clockTime.format(ms)+' ET';
 const clockIcon='<span class="update-clock-icon" aria-hidden="true"></span>';
+export function snapshotNotice(live,now=Date.now()){
+  const stamp=Date.parse(live?.updated);
+  if(!Number.isFinite(stamp))return 'Live snapshot unavailable';
+  const problems=new Set(Array.isArray(live.missing)?live.missing:[]);
+  const parts=[];
+  if(now-stamp>=30*60000)parts.push('Live snapshot delayed');
+  if(problems.size)parts.push(problems.size===1?'1 feed reported a problem':problems.size+' feeds reported problems');
+  return parts.join(' · ');
+}
 
 function clock(label,iso,now){
   const ms=Date.parse(iso);
@@ -40,6 +49,9 @@ export function tickHomeClocks(){
     time.textContent=clockLabel(ms,now);
     time.nextElementSibling.textContent=elapsed(ms,now);
   }
+  const status=document.querySelector('[data-snapshot-status]');
+  const message=snapshotNotice(summary.live,now);
+  if(status&&status.textContent!==message){status.textContent=message;status.hidden=!message;}
   return navigator.onLine&&now>=nextCheck?homeLoad():false;
 }
 
@@ -81,7 +93,7 @@ function facts(s){
 }
 export function homePage(){
   const now=Date.now();
-  const latest=Math.max(...Object.keys(sections).flatMap(s=>updates(s).map(([,iso])=>Date.parse(iso))).filter(Number.isFinite));
+  const status=snapshotNotice(summary.live,now);
   const doors=Object.entries(sections).map(([s,x])=>{
     const name=sportWordmark(x);
     if(!x.home)return `<article class="door soon" data-door="${s}"><h2 class="door-name">${name}</h2><p class="door-sport">${esc(x.sport)} · ${esc(x.league)}</p><p class="door-soon">Coming soon. Baseball dashboards and models are not built yet.</p></article>`;
@@ -89,7 +101,7 @@ export function homePage(){
       `<dl class="door-facts">${facts(s)||'<div><dt>Today</dt><dd class="muted">No snapshot yet</dd></div>'}</dl><nav class="door-links" aria-label="${esc(x.name)} shortcuts">${quick[s].map(t=>link(s,t)).join('')}</nav>`+
       `<div class="door-updates">${updates(s).map(([label,iso])=>clock(label,iso,now)).join('')}</div></article>`;
   }).join('');
-  const introClock=clock('Last updated',Number.isFinite(latest)?new Date(latest).toISOString():null,now);
-  return `<section class="going-intro"><div><h1 class="going-title"><img class="going-wordmark" src="${href('brand/going-wordmark.svg')}" width="461" height="100" alt="GOING"></h1><p class="lede">Ensemble models and matchup dashboards for basketball, football, hockey, baseball and UFC.</p></div><div class="going-update">${introClock}</div></section>`+
+  const introClock=clock('Live snapshot',summary.live?.updated,now);
+  return `<section class="going-intro"><div><h1 class="going-title"><img class="going-wordmark" src="${href('brand/going-wordmark.svg')}" width="461" height="100" alt="GOING"></h1><p class="lede">Ensemble models and matchup dashboards for basketball, football, hockey, baseball and UFC.</p></div><div class="going-update">${introClock}<p class="tiny" data-snapshot-status ${status?'':'hidden'}>${esc(status)}</p></div></section>`+
     `<div class="doors">${doors}</div>`;
 }
