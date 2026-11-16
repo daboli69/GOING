@@ -3,9 +3,9 @@ import {mkdir,readFile,readdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {current as S,dateKey,dateAdd} from '../site/ui.mjs';
-import {ESPN,sportPath} from '../site/feeds.mjs';
+import {loadNbaFinals} from './nba-finals.mjs';
 import {parlayData} from '../site/nba.mjs';
-import {captureLegs,finalPlayers,gradeLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
+import {captureLegs,gradeLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
 import {defaults} from '../site/nba-parlay-engine.mjs';
 
 const data=fileURLToPath(new URL('../site/data/',import.meta.url)), out=join(data,'tracker');
@@ -47,16 +47,11 @@ const hour=Math.floor(now/3600_000);
 const games=[...pending].filter(([,legs])=>now-Date.parse(legs[0].tip)<7*86400_000||
   Number(legs[0].game.slice(-3))%24===hour%24)
   .sort(([,a],[,b])=>a[0].tip.localeCompare(b[0].tip)).slice(0,32);
-for(let i=0;i<games.length;i+=5)await Promise.all(games.slice(i,i+5).map(async ([game,legs])=>{
-  if(!/^\d+$/.test(game))return;
-  const box=await fetch(`${ESPN}/${sportPath.nba}/summary?event=${game}`,{signal:AbortSignal.timeout(8000)})
-    .then(r=>r.ok?r.json():null).catch(()=>null);
-  const players=finalPlayers(box,game);
-  for(const leg of legs){
-    const updated=gradeLeg(leg,players,now);
-    if(updated!==leg){store.set(leg.k,updated);changed.add(month(leg));}
-  }
-}));
+const finals=await loadNbaFinals(games.map(([game])=>game));
+for(const [game,legs] of games)for(const leg of legs){
+  const updated=gradeLeg(leg,finals.get(game)?.players,now);
+  if(updated!==leg){store.set(leg.k,updated);changed.add(month(leg));}
+}
 
 const months=new Map();
 for(const leg of store.values()){

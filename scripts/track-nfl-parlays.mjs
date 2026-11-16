@@ -10,6 +10,7 @@ import {captureLegs,gradeLeg} from '../site/nfl-parlay-tracking.mjs';
 import {observeLeg} from '../site/nba-parlay-tracking.mjs';
 import {defaults} from '../site/nfl-parlay-engine.mjs';
 import {loadNflFinals,nflBoxGrade} from './nfl-finals.mjs';
+import {loadTdContracts,neededTdContracts,tdGrade} from './nfl-td-settlement.mjs';
 
 const data=fileURLToPath(new URL('../site/data/',import.meta.url)), out=join(data,'tracker');
 const now=Date.parse(process.env.TRACK_NOW||'')||Date.now(), today=dateKey(new Date(now));
@@ -42,13 +43,16 @@ if(next&&archive){
 // Settle official box-score markets while the detailed play-by-play is still pending.
 const byGame=new Map((schedule||[]).map(g=>[g.id,g]));
 const due=r=>{const age=now-Date.parse(r.tip);return !r.result&&age>=2.5*3600_000&&age<=6*86400_000;};
-const boxes=await loadNflFinals(schedule||[],new Set([...store.values()].filter(r=>due(r)&&
-  (!archive?.events?.[r.game]?.length||byGame.get(r.game)?.sa==null)).map(r=>r.game)));
+const [boxes,tdDone]=await Promise.all([
+  loadNflFinals(schedule||[],new Set([...store.values()].filter(r=>due(r)&&
+    (!archive?.events?.[r.game]?.length||byGame.get(r.game)?.sa==null)).map(r=>r.game))),
+  loadTdContracts(schedule||[],neededTdContracts(store.values(),now))]);
 let graded=0;
 for(const leg of store.values()){
   if(leg.result||now-Date.parse(leg.tip)<2.5*3600_000)continue;
   const g=byGame.get(leg.game), events=archive?.events?.[leg.game];
-  const prior=gradeLeg(leg,g,events,extra?.snaps?.[leg.game]?.[leg.team],now);
+  const exact=tdGrade(tdDone,{...leg,player:leg.name,market:leg.stat},now);
+  const prior=exact?{...leg,...exact}:gradeLeg(leg,g,events,extra?.snaps?.[leg.game]?.[leg.team],now);
   const fromBox=prior===leg?nflBoxGrade(boxes.get(leg.game),{...leg,player:leg.name,market:leg.stat},now):null;
   const updated=fromBox?{...leg,...fromBox}:prior;
   if(updated!==leg){store.set(leg.k,updated);changed.add(month(leg));graded++;}

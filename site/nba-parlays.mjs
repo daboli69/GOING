@@ -18,7 +18,8 @@ const nba=createParlays({
   recent:{key:'last10',label:'L10'},
   noRows:'No priced NBA props were published for this slate. Try again after the next price refresh.',
   hints:{'Maximum spread':'Raise maximum spread toward 14.5.','Minimum total':'Lower the minimum game total.',
-    'Type sample':'Try a smaller type-edge sample.','Season or L10 hit rate':'Try a lower minimum hit rate.'},
+    'Type sample':'Try a smaller type-edge sample.','Season or L10 hit rate':'Try a lower minimum hit rate.',
+    'Quote older than two hours or untimestamped':'Check again after the next price refresh.'},
 });
 export const savedParlayTickets=nba.savedTickets;
 export const parlayPage=data=>nba.page(data);
