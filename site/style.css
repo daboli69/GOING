@@ -67,6 +67,8 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 @media(max-width:550px){.site-header{gap:5px}.brand{margin-right:auto}.nav{width:100%;order:3;justify-content:space-around;flex-wrap:wrap;border-radius:14px}.navbutton{padding:6px 7px;font-size:13px}.navitem:nth-last-child(-n+2) .navmenu{left:auto;right:0}.navmenu{z-index:10;min-width:155px}.grid.two,.grid.three,.courtgrid{grid-template-columns:minmax(0,1fr)}.panel{padding:12px;margin-bottom:12px}.matchhero h1{font-size:20px}.matchhero h1 img{width:27px;height:27px}.selectrow{gap:6px}.selectrow select{min-width:0;max-width:43vw}.viewtab{font-size:14px}.slate{padding:9px 10px}.tablewrap{max-width:100%}.door-facts dd{font-size:19px}}
 @media(pointer:coarse){.pill,.subnav a,.navbutton,.navmenu a{min-height:44px;display:inline-flex;align-items:center}.navmenu a{display:flex}.sq,.icon{min-width:44px;min-height:44px}}
 .matchup-summary-value{display:inline-flex;align-items:baseline;gap:.3em;white-space:nowrap}
+.standout-card h3,.standout-context{display:flex;align-items:center;flex-wrap:wrap;gap:3px 6px}
+.standout-matchup{display:inline-flex;align-items:center;gap:4px}
 @media(max-width:760px){
   .board.matchup-summary{border-spacing:2px}
   .matchup-summary thead tr:last-child th{width:17.5%;min-width:0;padding:5px 1px}
@@ -82,6 +84,10 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 @media(max-width:550px){
   .nba-matchup-keys .viewtabs{grid-auto-columns:minmax(0,1fr);gap:5px}
   .nba-matchup-keys .viewtab{min-height:44px;white-space:normal}
+  .standout-grid{gap:10px}
+  .grid.standout-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .standout-metrics .metric{padding:7px 4px}
+  .standout-metrics strong{font-size:21px;line-height:1.1}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 .site-header{min-height:82px}.slate:not(.tight){margin-bottom:16px}.period-label{padding-inline:1px}.section-label{margin-top:5px}.pill{padding-top:6px;padding-bottom:6px}
