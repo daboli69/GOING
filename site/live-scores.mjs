@@ -16,14 +16,15 @@ const urlFor=(s,day)=>{
   const ymd=day.replaceAll('-','');
   return collegeSports[s]?`${ESPN}/${collegeSports[s].path}/scoreboard?groups=${collegeSports[s].group}&limit=300&dates=${ymd}`:`${ESPN}/${sportPath[s]}/scoreboard?dates=${ymd}`;
 };
-const getJson=url=>fetch(url,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
+const getJson=url=>fetch(url,{cache:'no-store',signal:AbortSignal.timeout(6500)}).then(r=>r.ok?r.json():null).catch(()=>null);
 
 // Pro slates (NBA, NHL, NFL): match on the ESPN event id when the row has one, otherwise on the two teams.
 export function applyPro(games,rows){
   let changed=false;
   for(const g of games){
     const r=rows.find(x=>x.id===g.espn||x.id===g.id)||rows.find(x=>nflTeamCode(x.a)===nflTeamCode(g.a)&&nflTeamCode(x.h)===nflTeamCode(g.h));
-    if(!r||!['LIVE','FINAL'].includes(r.status)||r.sa==null||r.sh==null)continue;
+    if(!r||!['LIVE','FINAL'].includes(r.status)||!Number.isFinite(r.sa)||!Number.isFinite(r.sh)||
+      isDone(g)&&r.status!=='FINAL')continue;
     if(g.status!==r.status||g.sa!==r.sa||g.sh!==r.sh){Object.assign(g,{status:r.status,sa:r.sa,sh:r.sh});changed=true;}
   }
   return changed;
@@ -46,15 +47,14 @@ export function applyCollege(games,payload){
 }
 
 // Returns true when any game changed, so the caller can redraw.
-export async function refreshScores(s,games){
+export async function refreshScores(s,games,read=getJson){
   const due=dueGames(games);
   if(!due.length)return false;
   const days=[...new Set(due.map(g=>dateKey(new Date(startOf(g)))))];
-  let changed=false;
-  for(const day of days){
-    const j=await getJson(urlFor(s,day));if(!j)continue;
+  const changed=await Promise.all(days.map(async day=>{
+    const j=await read(urlFor(s,day));if(!Array.isArray(j?.events))return false;
     const slate=due.filter(g=>dateKey(new Date(startOf(g)))===day);
-    changed=(collegeSports[s]?applyCollege(slate,j):applyPro(slate,scoreboard(j,s)))||changed;
-  }
-  return changed;
+    return collegeSports[s]?applyCollege(slate,j):applyPro(slate,scoreboard(j,s));
+  }));
+  return changed.some(Boolean);
 }
