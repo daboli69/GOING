@@ -1,7 +1,7 @@
 // Build static college snapshots for the existing Pages deployment. No keys required.
 import {mkdir,readFile,rename,writeFile} from 'node:fs/promises';
 import {collegeSports,collegeSeason,collegeHistory,collegeForecast} from '../site/college-core.mjs';
-import {collegeScoreboard,csvObjects,basketballFinals,basketballPlayers,playerFields,easternDate,footballForm} from './college-feeds.mjs';
+import {collegeScoreboard,collegeResultRow,csvObjects,basketballFinals,basketballPlayers,playerFields,easternDate,footballForm} from './college-feeds.mjs';
 import {ESPN} from '../site/feeds.mjs';
 
 const cache=new URL('../.cache/college/',import.meta.url),out=new URL('../site/data/college/',import.meta.url);
@@ -81,7 +81,7 @@ async function make(s){
   const coverage=Object.fromEntries(days.map((d,i)=>[d,slates[i]?.at??null]));
   const snapshot={sport:s,season:year,updated,coverage,games,teams:Object.values(history.teams),
     archiveAt:s==='fbs'?null:raw?.at??null,formAt:form?.at??null,
-    results:[...completed,...games.filter(g=>g.status==='canceled')].map(({id,status,aScore,hScore})=>({id,status,aScore,hScore}))};
+    results:[...completed,...games.filter(g=>['canceled','postponed'].includes(g.status))].map(collegeResultRow)};
   if(!slates.some(Boolean))throw new Error('No scoreboard snapshots');
   await write(new URL(s+'.json',out),JSON.stringify(snapshot));
   return [s,{date:today,games:games.filter(g=>g.date===today).length,available:coverage[today]!=null,updated:coverage[today]}];

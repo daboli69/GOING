@@ -12,6 +12,14 @@ export const collegeSeason=(sport,date)=>{
   return sport==='fbs'?year-(month<8):year+(month>=10);
 };
 export const number=v=>v==null||String(v).trim()===''||!Number.isFinite(Number(v))?null:Number(v);
+export function collegeStatus(type,timeValid=true){
+  if(type?.completed&&/^STATUS_FINAL/.test(type.name))return 'final';
+  if(/CANCEL/i.test(type?.name||''))return 'canceled';
+  if(type?.name==='STATUS_POSTPONED')return 'postponed';
+  if(type?.state==='in')return 'live';
+  if(type?.name==='STATUS_SCHEDULED'&&timeValid!==false)return 'scheduled';
+  return 'other';
+}
 export const minCollegeGames=3;
 const expected=(a,b)=>1/(1+10**((b-a)/400));
 const avg=(rows,get)=>{
@@ -87,7 +95,22 @@ export function collegePicks(sport,g){
   }
   return picks;
 }
+export function collegeScheduleChange(p,game){
+  if(!p||!game||(game.a&&game.a!==p.a)||(game.h&&game.h!==p.h))return null;
+  if(game.status==='postponed')return 'Postponed';
+  // Early corrections and ordinary delays still belong to the original slot.
+  const moved=Math.abs(Date.parse(game.start)-Date.parse(p.start));
+  return ['scheduled','live','final'].includes(game.status)&&moved>=12*3600000?'Rescheduled':null;
+}
+export function collegeCaptureKey(pick,prior,game){
+  if(!prior)return pick.k;
+  if(prior.rescheduled&&Date.parse(game.marketAt)<=Date.parse(prior.graded))return null;
+  return prior.rescheduled||!prior.result&&collegeScheduleChange(prior,game)?pick.k+'|'+pick.date:pick.k;
+}
 export function collegeSettlement(p,final){
+  if(!final||(final.a&&final.a!==p.a)||(final.h&&final.h!==p.h))return null;
+  const change=collegeScheduleChange(p,final);
+  if(change)return {result:'void',value:change,rescheduled:true};
   if(final?.status==='canceled')return {result:'void',value:'Canceled'};
   if(final?.status!=='final'||final.aScore==null||final.hScore==null)return null;
   const {aScore:a,hScore:h}=final,margin=p.side==='home'?h-a:a-h;

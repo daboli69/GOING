@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {collegeScoreboard,csvObjects,basketballPlayers} from '../scripts/college-feeds.mjs';
-import {collegeHistory,collegeForecast,collegePicks,collegeSettlement,collegeSeason} from '../site/college-core.mjs';
+import {collegeScoreboard,collegeResultRow,fetchCollegeResults,csvObjects,basketballPlayers} from '../scripts/college-feeds.mjs';
+import {collegeHistory,collegeForecast,collegePicks,collegeCaptureKey,collegeSettlement,collegeSeason} from '../site/college-core.mjs';
 import {blank,add,roi} from '../site/track-core.mjs';
 
 const away={id:'1',name:'Away U',code:'AU'},home={id:'2',name:'Home U',code:'HU'};
@@ -76,4 +76,31 @@ test('player leaderboards aggregate finished appearances and keep missing stats 
   assert.equal(p.points,15);
   assert.equal(p.threePct,0.5);
   assert.equal(p.assists,null);
+});
+
+test('college postponements void the original slot and a new schedule creates its own record',async()=>{
+  const [g]=collegeScoreboard({events:[event]},'cwb');
+  g.forecast={version:'college-v1',pHome:.6};
+  const [pick]=collegePicks('cwb',g);
+  const delayed=collegeResultRow({...g,start:'2026-11-14T03:00:00Z'});
+  assert.equal(collegeSettlement(pick,delayed),null,'ordinary delays preserve the record');
+
+  const later={...g,marketAt:'2026-11-20T13:00Z',start:'2026-11-20T16:00Z',date:'2026-11-20'};
+  const [newPick]=collegePicks('cwb',later);
+  const moved=collegeResultRow(later);
+  const postponed=collegeResultRow({...g,status:'postponed'});
+  assert.deepEqual(collegeSettlement(pick,postponed),{result:'void',value:'Postponed',rescheduled:true});
+  assert.deepEqual(collegeSettlement(pick,moved),{result:'void',value:'Rescheduled',rescheduled:true});
+  assert.equal(collegeCaptureKey(newPick,pick,{...moved,marketAt:later.marketAt}),pick.k+'|2026-11-20');
+  assert.equal(collegeCaptureKey(pick,{...pick,rescheduled:true,graded:'2026-11-14T19:00Z'},
+    {...postponed,marketAt:'2026-11-14T18:00Z'}),null,'old scheduled copies cannot revive a postponed pick');
+
+  const query=async url=>{
+    assert.match(url,/womens-college-basketball\/summary\?event=100$/);
+    return Response.json({header:{competitions:[{id:'100',date:later.start,competitors:[espnTeam(home,'home'),espnTeam(away,'away')],
+      status:status('STATUS_SCHEDULED','pre')}]}});};
+  const results=await fetchCollegeResults([pick,pick],query);
+  assert.equal(results.size,1);
+  assert.equal(collegeSettlement(pick,results.get('cwb|100')).value,'Rescheduled');
+  assert.equal((await fetchCollegeResults([{...pick,a:'99'}],query)).size,0,'a different matchup cannot settle this pick');
 });
