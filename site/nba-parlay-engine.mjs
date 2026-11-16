@@ -1,5 +1,6 @@
 import {implied,mean} from './math.mjs';
-import {legKey,clamp,record,allowedRanks,favorable,format,signed,percent,buildTicket,ticketMath} from './parlay-core.mjs';
+import {legKey,clamp,record,allowedRanks,favorable,format,signed,percent,buildTicket,ticketMath,adjustedLegChance} from './parlay-core.mjs';
+import {lineupEffect,lineupReason} from './nba-lineup-splits.mjs';
 export {legKey,record,allowedRanks,buildTicket,ticketMath};
 
 export const markets=['Points','Threes','Rebounds','Assists'];
@@ -10,6 +11,7 @@ export const defaults={legs:6,stats:markets,side:'Both',hit:60,sample:5,spread:6
 const active=g=>['FUT','PRE'].includes(g.status);
 const typed=stat=>stat==='Points'||stat==='Threes';
 
+export const nbaLegChance=leg=>clamp(adjustedLegChance(leg)+(leg.context?.lineup?.adjustment??0),0,1);
 
 export function assess(row,side,cfg,context){
   const {quote,player,game,stat,avg,form,reads}=row;
@@ -107,10 +109,6 @@ export function assess(row,side,cfg,context){
     impact+=clamp(direction*(row.threeRate-.4)*4,-.5,.5);
     leg.reasons.push('Team 3PA rate '+percent(row.threeRate));
   }
-  for(const absent of row.absences){
-    leg.reasons.push(absent.name+' out'+(absent.delta==null?'':' · '+signed(absent.delta)+' in '+absent.n+' games without'));
-    if(absent.delta!=null)impact+=clamp(direction*absent.delta/Math.max(avg,1),-.3,.3);
-  }
   if(row.uncertain)impact-=.25;
   leg.form={season,last10,venue,last5:record(form.last5,leg.line,side),home:record(form.home,leg.line,side),away:record(form.away,leg.line,side)};
   leg.avg=avg;
@@ -122,6 +120,13 @@ export function assess(row,side,cfg,context){
     ...(assistResearch?{assistRead:assistResearch.read,assistTargetDelta:assistResearch.targetDelta,assistMixEdge:assistResearch.mixEdge}:{})};
   leg.cut=Object.values(checks).find(Boolean)||null;
   if(!leg.cut){
+    const lineup=lineupEffect(row.lineup||[],leg.line,side);
+    if(lineup){
+      leg.context.lineup=lineup;
+      leg.reasons.push(lineupReason(lineup));
+      impact+=8*lineup.adjustment;
+    }
+    for(const absent of row.absences)if(absent.name!==lineup?.name)leg.reasons.push(absent.name+' listed out');
     leg.score=cfg.weights.form*mean([season.rate,last10.rate,venue.rate])+cfg.weights.matchup*matchup+
       cfg.weights.line*clamp(gap/Math.max(Math.abs(leg.line),1),0,1)+cfg.weights.context*impact;
   }

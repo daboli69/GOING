@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {allowedRanks,buildTicket,defaults,evaluate,legKey,record,ticketMath} from '../site/nba-parlay-engine.mjs';
+import {allowedRanks,buildTicket,defaults,evaluate,legKey,nbaLegChance,record,ticketMath} from '../site/nba-parlay-engine.mjs';
+import {lineupEffect,rotationTeammates,teammateSplits} from '../site/nba-lineup-splits.mjs';
 import {captureLegs,finalPlayers,gradeLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
 import {chooseQuotes} from '../scripts/market-data.mjs';
 import {parlayPage,savedParlayTickets} from '../site/nba-parlays.mjs';
@@ -67,8 +68,36 @@ test('Full List ranks the entire eligible pool by adjusted hit rate, even when g
     assert.match(pool,/76\.7%/);
     assert.match(pool,/\+120 Kalshi/);
     assert.match(pool,/Type A edge/);
+    assert.match(pool,/>Type A<\/span>/);
     assert.doesNotMatch(pool,/Cut player/);
   }finally{Object.assign(S,{f,route,day});}
+});
+
+test('NBA lineup context nudges the ticket and full-list chance in either direction',()=>{
+  const statSample={name:'Rotation teammate',withTeammate:[3,4,5,6],withoutTeammate:[8,9,10,11]};
+  const base=evaluateRows([row()]).eligible[0];
+  const getLeg=current=>evaluateRows([row({lineup:[{...statSample,current}]})]).eligible[0];
+  const out=getLeg('listed out'),incoming=getLeg('expected in');
+  assert.ok(out.score>base.score&&base.score>incoming.score);
+  assert.ok(Math.abs(nbaLegChance(out)-nbaLegChance(base)-.03)<1e-12);
+  assert.ok(Math.abs(nbaLegChance(incoming)-nbaLegChance(base)+.03)<1e-12);
+  assert.match(out.reasons.join(' '),/listed out.*4\.5 avg \(0\/4 hits\) with vs 9\.5 avg \(4\/4 hits\) without/);
+  assert.equal(lineupEffect([{...statSample,current:'listed out'}],6.5,'Under').adjustment,-.03);
+  assert.equal(lineupEffect([{...statSample,withTeammate:[6.5,6.5,5,6],current:'listed out'}],6.5,'Over'),null);
+});
+
+test('NBA teammate history starts after either player changes teams, and availability is labeled by its evidence',()=>{
+  const game=(id,team='DET',value=9)=>({id,team,date:'2026-11-'+String(id).padStart(2,'0'),minutes:24,value});
+  const entry={id:'mate',name:'Player Mate',games:[game(2),game(3,'CHI'),game(6),game(7),game(9)]};
+  const recent=[7,8,9];
+  assert.equal(rotationTeammates('DET',[entry],null,recent).length,0);
+  assert.equal(rotationTeammates('DET',[entry],[{name:entry.name,status:'Questionable'}],recent).length,0);
+  assert.equal(rotationTeammates('DET',[entry],[],recent)[0].current,'expected in');
+  const rotation=rotationTeammates('DET',[entry],[{name:entry.name,status:'Available'}],recent);
+  assert.equal(rotation[0].current,'listed available');
+  const [split]=teammateSplits('player','DET',[game(2),game(3),game(4),game(7,'GS'),game(8),game(9)],rotation);
+  assert.deepEqual(split.withTeammate,[9]);
+  assert.deepEqual(split.withoutTeammate,[9]);
 });
 
 test('the screen keeps the 6.5 default inclusive and enforces the 14.5 hard cutoff',()=>{

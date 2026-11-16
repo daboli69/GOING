@@ -5,6 +5,7 @@ import {parlayPage,parlayAction} from './nba-parlays.mjs';
 import {openingTables,teamFirst,shotTables,makeEdge,earlyShares,blendShare,scorerShares,fairChances,impliedChance,americanFrom,roundRobin,regression,convictionTier} from './first-basket.mjs';
 import {propQuotes} from './ui.mjs';
 import {allowedRanks,markets} from './nba-parlay-engine.mjs';
+import {rotationTeammates,teammateSplits} from './nba-lineup-splits.mjs';
 import {typeLetters as letters,minimumTypeShots,shotMixLabels,eligibleShot,shotMix,playerProfile,assistLabels,assistArchive,assistMatchup} from './nba-research.mjs';
 
 const nbaKeys={Points:6,Threes:7,Assists:8,Rebounds:9};
@@ -524,20 +525,21 @@ export function parlayData(quotes=S.odds){
     const list=byTeam.get(p.team)||[];
     list.push(p);byTeam.set(p.team,list);
   }
+  const logGame=r=>({id:r[0],date:r[1],team:r[2],minutes:r[5]});
+  const rotations=new Map([...byTeam].map(([teamCode,players])=>{
+    const name=teamName(teamCode);
+    const report=Array.isArray(S.injuries?.[name])?nbaInjuryReport(teamCode):null;
+    const entries=players.map(p=>({id:p.id,name:p.name,games:p.logs.map(logGame)}));
+    const rotation=rotationTeammates(teamCode,entries,report,
+      teamStat(teamCode).l.slice(-3).map(game=>game[0]));
+    return [teamCode,rotation];
+  }));
   const rows=roster.flatMap(player=>{
     const game=gamesFor(player.team), opp=game.a===player.team?game.h:game.a;
     const spread=gameNumber(game.odds?.spread)??gameNumber(game.odds?.details?.match(/([+-]\d+(?:\.\d+)?)\s*$/)?.[1]);
     const report=nbaInjuryReport(player.team);
     const status=report.find(x=>nbaName(x.name)===nbaName(player.name))?.status;
     const isOut=x=>/^(out|injured reserve|suspension|suspended)$/i.test(x||'');
-    const teammates=byTeam.get(player.team)||[];
-    const absences=report.filter(x=>/^out$|^injured reserve$/i.test(x.status||'')&&nbaName(x.name)!==nbaName(player.name)).flatMap(x=>{
-      const teammate=teammates.find(p=>nbaName(p.name)===nbaName(x.name));
-      const recent=teamStat(player.team).l.slice(-3);
-      if(!teammate||recent.filter(game=>teammate.logs.some(r=>r[0]===game[0]&&r[5]>0)).length<2)return [];
-      const played=new Set(teammate.logs.filter(r=>r[2]===player.team&&r[5]>0).map(r=>r[0]));
-      return [{name:x.name,played}];
-    });
     return markets.flatMap(stat=>{
       const matches=propQuotes(player,stat,[...byPlayer.get('id:'+player.id)||[],...byPlayer.get('name:'+nbaName(player.name))||[]]);
       if(!matches.length)return [];
@@ -549,6 +551,7 @@ export function parlayData(quotes=S.odds){
       const defense=defenseLogs(stat,needsType?pType:player.pos,key,needsType);
       const vs=defenseLogs(stat,player.pos,key,false);
       const assistContext=stat==='Assists'?assistData(player,opp):null;
+      const lineup=teammateSplits(player.id,player.team,logs.map(r=>({...logGame(r),value:r[key]})),rotations.get(player.team));
       // Match the prop board's read inputs, including the position average per player appearance.
       return matches.map(quote=>({date:S.day,player,game,opp,stat,quote,spread:spread==null?null:Math.abs(spread),
         total:gameNumber(game.odds?.total),avg,form:{season,last5,last10,home,away,venue:game.h===player.team?home:away},
@@ -558,10 +561,9 @@ export function parlayData(quotes=S.odds){
         pace:mean([teamStat(player.team).game.pace,teamStat(opp).game.pace].filter(x=>x!=null)),
         threeRate:teamStat(player.team).o.tpr,out:isOut(status),uncertain:/day.to.day|questionable|doubtful|^dtd$/i.test(status||'')?status:null,
         injuryReport:Array.isArray(S.injuries?.[teamName(player.team)]),
-        absences:absences.map(({name,played})=>{
-          const without=logs.filter(r=>r[2]===player.team&&!played.has(r[0]));
-          return {name,n:without.length,delta:without.length>=3?mean(without,r=>r[key])-avg:null};
-        })}));
+        lineup,absences:lineup.filter(x=>x.current==='listed out').map(({name,withoutTeammate})=>({
+          name,n:withoutTeammate.length,delta:withoutTeammate.length>=3?mean(withoutTeammate)-avg:null
+        }))}));
     });
   });
   const data={rows,roster,games:S.games,odds:S.odds,injuries:S.injuries};
