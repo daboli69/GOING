@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { routes, sections } from '../site/config.mjs';
 import { isCollege } from '../site/college-core.mjs';
 import { compactNflParlays } from './nfl-parlay-archive.mjs';
+import { compactNbaParlays } from './nba-parlay-archive.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const site=join(root,'site'), dist=join(root,'dist');
@@ -18,11 +19,19 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 await rm(dist,{recursive:true,force:true});
 await cp(site,dist,{recursive:true});
 const dataDir=join(dist,'data');
-for(const file of await readdir(dataDir).catch(()=>[])){
+const dataFiles=new Set(await readdir(dataDir).catch(()=>[]));
+const readArchive=async file=>JSON.parse(await readFile(join(dataDir,file),'utf8'));
+for(const file of dataFiles){
   const year=file.match(/^nfl-(\d{4})\.json$/)?.[1];
   if(!year)continue;
-  const archive=JSON.parse(await readFile(join(dataDir,file),'utf8'));
+  const archive=await readArchive(file);
   await writeFile(join(dataDir,'nfl-parlay-'+year+'.json'),JSON.stringify(compactNflParlays(archive)));
+}
+for(const file of dataFiles){
+  const year=file.match(/^nba-(\d{4})\.json$/)?.[1], shotFile='nba-shots-'+year+'.json';
+  if(!year||!dataFiles.has(shotFile))continue;
+  const [archive,shots]=await Promise.all([readArchive(file),readArchive(shotFile)]);
+  await writeFile(join(dataDir,'nba-parlay-'+year+'.json'),JSON.stringify(compactNbaParlays(archive,shots)));
 }
 // Version every script and stylesheet by a hash of the site code. GitHub Pages lets browsers cache files for ten
 // minutes; without this a visitor right after a deploy can mix old and new modules. Every import of a module gets the

@@ -1,5 +1,5 @@
 import {american} from '../site/math.mjs';
-const host='https://external-api.kalshi.com/trade-api/v2/markets';
+const host='https://external-api.kalshi.com/trade-api/v2/';
 const series={
   nfl:{Receiving:'KXNFLRECYDS',Rushing:'KXNFLRSHYDS',Passing:'KXNFLPASSYDS','Anytime TD':'KXNFLTD','First TD':'KXNFLFIRSTTD',
     Receptions:'KXNFLREC','Rush Attempts':'KXNFLRSHATT','Pass Attempts':'KXNFLPASSATT',Completions:'KXNFLPASSCOMP'},
@@ -34,14 +34,14 @@ export function chooseQuotes(rows,byLine=false){
   }
   return [...top.values()].map(({volume,yes,no,...x})=>x);
 }
-async function readMarkets(u,read){
+async function readListing(u,read,key='markets'){
   for(let i=0;i<2;i++){
     let delay=400;
     try{
       const r=await read(u,{signal:AbortSignal.timeout(4500)});
       if(r.ok){
         const data=await r.json();
-        if(Array.isArray(data?.markets))return data;
+        if(Array.isArray(data?.[key]))return data;
       }else if(r.status!==429&&r.status<500){
         return null;
       }else{
@@ -54,37 +54,59 @@ async function readMarkets(u,read){
   return null;
 }
 
+async function readInParallel(items,run){
+  let i=0;
+  await Promise.all(Array.from({length:Math.min(3,items.length)},async()=>{
+    while(i<items.length)await run(items[i++]);
+  }));
+}
+
 export async function publicQuotes(s,games,{onAlternates,onFailure,read=fetch}={}){
   if(!series[s]||!games.length)return [];
   const by=new Map(games.flatMap(g=>eventSuffixes(s,g).map(k=>[k,g])));
   const capturedAt=new Date().toISOString(), rows=[], failed=[];
   const markets=Object.entries(series[s]);
   if(s==='nfl'){
-    // Query exact upcoming matchups. Broad NFL series scans hit the page cap before reaching some games.
-    const requests=markets.flatMap(([market,ticker])=>[...by].map(([suffix,game])=>({market,game,event:ticker+'-'+suffix})));
-    let i=0;
-    await Promise.all(Array.from({length:Math.min(3,requests.length)},async()=>{
-      while(i<requests.length){
-        const {market,game,event}=requests[i++];
-        const u=new URL(host);
-        u.searchParams.set('event_ticker',event);
-        const j=await readMarkets(u,read);
-        if(!j||j.cursor){failed.push({market,game});continue;}
-        for(const m of j.markets){
-          const x=m.event_ticker===event&&quote(m,market,game);
-          if(x)rows.push(x);
-        }
+    const collect=(list,market,game,event)=>{
+      for(const m of list){
+        const x=m.event_ticker===event&&quote(m,market,game);
+        if(x)rows.push(x);
       }
-    }));
+    };
+    // Event pages contain whole matchups. Keep the exact lookup when the event
+    // listing or its nested markets are incomplete.
+    const requests=[];
+    await readInParallel(markets,async ([market,ticker])=>{
+      const events=[...by].map(([suffix,game])=>({market,game,event:ticker+'-'+suffix}));
+      const u=new URL('events',host);
+      u.searchParams.set('tickers',events.map(x=>x.event).join(','));
+      u.searchParams.set('status','open');
+      u.searchParams.set('with_nested_markets','true');
+      const j=await readListing(u,read,'events');
+      const complete=j?.cursor===''&&j.events.every(e=>typeof e?.event_ticker==='string');
+      const found=new Map((complete?j.events:[]).map(e=>[e.event_ticker,e.markets]));
+      for(const item of events){
+        const list=found.get(item.event);
+        if(!complete||found.has(item.event)&&!Array.isArray(list))requests.push(item);
+        else if(list)collect(list,market,item.game,item.event);
+      }
+    });
+    await readInParallel(requests,async ({market,game,event})=>{
+      const u=new URL('markets',host);
+      u.searchParams.set('event_ticker',event);
+      const j=await readListing(u,read);
+      if(!j||j.cursor){failed.push({market,game});return;}
+      collect(j.markets,market,game,event);
+    });
   }else{
     const starts=games.map(g=>g.date).sort();
     const after=Math.floor(Date.parse(starts[0]+'T00:00:00Z')/1000)-8*86400;
     await Promise.all(markets.map(async ([market,ticker])=>{
       let cursor='';
       for(let page=0;page<3;page++){
-        const u=new URL(host);
+        const u=new URL('markets',host);
         for(const [k,v] of Object.entries({series_ticker:ticker,status:'open',limit:'1000',min_created_ts:String(after),...(cursor?{cursor}:{})}))u.searchParams.set(k,v);
-        const j=await readMarkets(u,read);
+        const j=await readListing(u,read);
         if(!j){failed.push({market});return;}
         for(const m of j.markets){
           const g=by.get(m.event_ticker?.slice(ticker.length+1)),x=g&&quote(m,market,g);

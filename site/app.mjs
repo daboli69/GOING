@@ -89,7 +89,11 @@ async function dataFor(s,y,{parlays=false}={}){
     const archive=parlays?get(dataURL('nfl-parlay-'+y+'.json'),null).then(x=>x??full()):full();
     promise=Promise.all([get(dataURL('nfl-schedule.json'),[]),archive]).then(([schedule,x])=>({...x,schedule}));
   }
-  else if(s==='nba')promise=Promise.all([get(dataURL('nba-'+y+'.json'),{}),get(dataURL('nba-shots-'+y+'.json'),{})]).then(([x,shots])=>({...x,shots}));
+  else if(s==='nba'){
+    const full=()=>dataFor(s,y);
+    promise=parlays?get(dataURL('nba-parlay-'+y+'.json'),null).then(x=>x??full()):
+      Promise.all([get(dataURL('nba-'+y+'.json'),{}),get(dataURL('nba-shots-'+y+'.json'),{})]).then(([x,shots])=>({...x,shots}));
+  }
   else promise=Promise.all([get(dataURL('nhl-'+iceTag+'.json'),{}),get(dataURL('nhl-shots-'+iceTag+'.json'),{})]).then(([x,shots])=>({...x,shots}));
   memory[tag]=promise;return promise;
 }
@@ -198,7 +202,7 @@ async function load(){
   }
   try{
     const d=S.day,year=s==='nfl'?S.year:seasonFor(s,d);
-    const [,data,dayGames,injuries,odds,lineups,models]=await Promise.all([need(s),dataFor(s,year,{parlays:nflDraftViews.has(id)}),
+    const [,data,dayGames,injuries,odds,lineups,models]=await Promise.all([need(s),dataFor(s,year,{parlays:id==='nba-parlays'||nflDraftViews.has(id)}),
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
       injuriesFor(s),oddsFor(s,d),
       s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{},
