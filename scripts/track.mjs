@@ -19,6 +19,7 @@ import { kickoff } from '../site/nfl-availability.mjs';
 import { loadNflFinals,nflBoxGrade } from './nfl-finals.mjs';
 import { loadNbaFinals } from './nba-finals.mjs';
 import { loadNhlFinals,nhlFinalGrade } from './nhl-finals.mjs';
+import { confirmedBacklog } from './health.mjs';
 import { gradeLeg as nbaGrade } from '../site/nba-parlay-tracking.mjs';
 import { loadTdContracts,neededTdContracts,tdGrade } from './nfl-td-settlement.mjs';
 
@@ -295,5 +296,6 @@ for(const [m,list] of Object.entries(months)){
 }
 const all=[...store.values()];
 await writeFile(join(out,'index.json'),JSON.stringify({updated:nowIso,months:Object.keys(months).sort(),
-  picks:all.length,pending:all.filter(p=>!p.result).length,graded:all.filter(p=>p.result&&p.result!=='void').length}));
+  picks:all.length,pending:all.filter(p=>!p.result).length,graded:all.filter(p=>p.result&&p.result!=='void').length,
+  gradingBacklog:confirmedBacklog(all.filter(p=>!p.result),p=>finals.has(p.sport+'|'+p.game),now)}));
 console.log(`Tracker: ${store.size} picks (${store.size-before>=0?'+':''}${store.size-before}), ${seen.size} captured this run, ${dropped} pulled lines dropped, ${graded} newly graded.`);

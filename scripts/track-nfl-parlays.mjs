@@ -11,6 +11,7 @@ import {observeLeg} from '../site/nba-parlay-tracking.mjs';
 import {defaults} from '../site/nfl-parlay-engine.mjs';
 import {loadNflFinals,nflBoxGrade} from './nfl-finals.mjs';
 import {loadTdContracts,neededTdContracts,tdGrade} from './nfl-td-settlement.mjs';
+import {confirmedBacklog} from './health.mjs';
 
 const data=fileURLToPath(new URL('../site/data/',import.meta.url)), out=join(data,'tracker');
 const now=Date.parse(process.env.TRACK_NOW||'')||Date.now(), today=dateKey(new Date(now));
@@ -65,5 +66,6 @@ for(const leg of store.values()){
 }
 for(const key of changed)await save(`nfl-parlay-legs-${key}.json`,months.get(key).sort((a,b)=>a.tip.localeCompare(b.tip)||a.k.localeCompare(b.k)));
 await save('nfl-parlay-legs-index.json',{updated:new Date(now).toISOString(),months:[...months.keys()].sort(),
-  count:store.size,coverage,filters:defaults});
+  count:store.size,coverage,filters:defaults,gradingBacklog:confirmedBacklog(
+    [...store.values()].filter(l=>!l.result),l=>boxes.has(l.game)||byGame.get(l.game)?.sa!=null,now)});
 console.log(`NFL parlay tracker: ${store.size} distinct legs, ${graded} newly graded.`);
