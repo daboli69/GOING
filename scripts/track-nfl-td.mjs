@@ -7,6 +7,7 @@ import {current as S,dateKey} from '../site/ui.mjs';
 import {routes,viewDefaults} from '../site/config.mjs';
 import {tdBoardData} from '../site/nfl.mjs';
 import {offenseTd} from '../site/nfl-td.mjs';
+import {loadNflFinals,gradeTdBoard} from './nfl-finals.mjs';
 
 const data=fileURLToPath(new URL('../site/data/',import.meta.url)), out=join(data,'tracker');
 const now=Date.parse(process.env.TRACK_NOW||'')||Date.now(), today=dateKey(new Date(now));
@@ -36,10 +37,20 @@ if(next&&archive){
     store.set(x.g.id,{...snapshot(x),capturedAt:new Date(now).toISOString()});changed.add(month(x.g));saved++;
   }
 }
-for(const x of store.values()){
-  const ev=archive?.events?.[x.game], g=season.find(y=>y.id===x.game);
-  if(x.graded||!ev?.length||g?.sa==null)continue;
-  grade(x,ev);changed.add(month(x));graded++;
+const byGame=new Map(season.map(g=>[g.id,g]));
+const pending=[...store.values()].filter(x=>!x.graded&&now-Date.parse(x.tip)>=2.5*3600_000);
+const boxes=await loadNflFinals(season,new Set(pending.filter(x=>now-Date.parse(x.tip)<=7*86400_000&&
+  (!archive?.events?.[x.game]?.length||byGame.get(x.game)?.sa==null)).map(x=>x.game)));
+for(const x of pending){
+  const ev=archive?.events?.[x.game], g=byGame.get(x.game);
+  if(ev?.length&&g?.sa!=null){
+    grade(x,ev);x.resultSource='Season play-by-play';
+  }else{
+    const result=gradeTdBoard(x,boxes.get(x.game),now);
+    if(!result)continue;
+    Object.assign(x,result);
+  }
+  changed.add(month(x));graded++;
 }
 // Backtest: each earlier week with only the data before it (no stored lines, injuries or weather for past weeks).
 if(archive){

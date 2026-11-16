@@ -405,6 +405,7 @@ document.addEventListener('click',e=>{
   if(act==='step'){changePeriod(+v);return;}
   if(act==='retry'){S.error=null;load();return;}
   if(act==='nflParlayCheck'){if(S.loaded&&nflDraftViews.has(S.route.id))tickNflInputs(true);return;}
+  if(act==='nbaParlayCheck'){if(S.loaded&&S.route.id==='nba-parlays')tickNbaInputs(true);return;}
   if(isModel(S.route.id)&&M.models?.modelAction(act,v)){render();return;}
   if(S.route.id==='tracker'&&M.tracker?.trackerAction(act,v)){render();return;}
   if(trackerOf(S.route.id)&&M[trackerOf(S.route.id)]?.parlayTrackerAction(act,v)){render();return;}
@@ -500,7 +501,7 @@ document.addEventListener('change',e=>{
   if(t.dataset.yardPrice&&M.mlb){M.mlb.setPrice(t.dataset.yardPrice,t.value);render();return;}
   if((S.route.id==='nba-parlays'||nflDraftViews.has(S.route.id))&&t.dataset.parlay){
     M[S.route.sport].action('parlayField',JSON.stringify([t.dataset.parlay,t.type==='checkbox'?t.checked:t.value]),t);
-    if(t.type!=='number'||S.route.id==='nfl-sgp')render();
+    if(t.type!=='number'||S.route.id==='nfl-sgp'||S.route.id==='nba-parlays')render();
     return;
   }
   if(S.route.sport==='mlb'&&k&&M.mlb?.field(k,t.value)){render();return;}
@@ -512,10 +513,47 @@ document.addEventListener('going:render',()=>render());
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menu){menu=null;header();}});
 window.addEventListener('popstate',()=>{dateHash=location.hash;start();});
 window.addEventListener('hashchange',()=>{if(dateHash!==location.hash){dateHash=location.hash;start();}});
+const isEditing=()=>document.activeElement?.matches('main input, main select, main textarea');
+const readLive=file=>fetch(dataURL('live/'+file),{cache:'no-cache',signal:AbortSignal.timeout(7000)})
+  .then(r=>r.ok?r.json():null).catch(()=>null);
+async function tickNbaInputs(force=false){
+  const token=req,state=S.f,d=S.day,now=Date.now();
+  if(state.nbaChecking||!force&&(isEditing()||d<dateKey(new Date(now))))return;
+  const remaining=S.games.filter(g=>Date.parse(g.iso)>now&&!final(g)).map(g=>g.id).join('|');
+  if(!force&&state.nbaCheckDay!==d){
+    state.nbaCheckDay=d;state.nbaCheckNext=now+3*60000;
+    state.nbaRemaining=remaining;state.nbaChecked=now;
+    return;
+  }
+  if(!force&&state.nbaCheckNext>now)return;
+  state.nbaChecking=true;
+  state.nbaCheckDay=d;
+  state.nbaCheckNext=now+3*60000;
+  try{
+    const [odds,injuries]=await Promise.all([readLive('odds-nba-'+d+'.json'),readLive('injuries-nba.json')]);
+    if(token!==req)return;
+    if(!force&&isEditing()){state.nbaCheckNext=0;return;}
+    const pricesChanged=Array.isArray(odds)&&JSON.stringify(odds)!==JSON.stringify(S.odds);
+    const injuriesChanged=injuries&&!Array.isArray(injuries)&&typeof injuries==='object'&&JSON.stringify(injuries)!==JSON.stringify(S.injuries);
+    const expired=S.odds.some(q=>{
+      const expires=Date.parse(q.capturedAt)+120*60000;
+      return expires>=state.nbaChecked&&expires<now;
+    });
+    if(pricesChanged)S.odds=odds;
+    if(injuriesChanged)S.injuries=injuries;
+    if(force||pricesChanged||injuriesChanged||expired||remaining!==state.nbaRemaining){
+      M.nba.action('parlayRefreshDraft','');
+      render();
+    }
+    state.nbaChecked=now;
+    state.nbaRemaining=remaining;
+    if(force)toast(Array.isArray(odds)?'Published NBA prices checked':'NBA price snapshot unavailable');
+  }catch(e){console.error(e);if(force&&token===req)toast('Could not check for updates');}
+  finally{state.nbaChecking=false;}
+}
 async function tickNflInputs(force=false){
   const token=req,now=Date.now(),state=S.f,id=S.route.id;
   const draft=nflDraftViews.has(id);
-  const isEditing=()=>document.activeElement?.matches('main input, main select, main textarea');
   if(state.nflParlayChecking||!force&&isEditing())return;
   const games=upcomingNflGames(S.games,now);
   const remaining=games.map(g=>g.id).join('|'),kickoffChanged=state.nflParlayRemaining!==remaining;
@@ -531,8 +569,7 @@ async function tickNflInputs(force=false){
     if(fetchProjections)state.nflProjectionNext=now+8*60000;
     const [availability,odds,projections]=await Promise.all([
       refreshNflAvailability(games,{...S.nflAvailability,teams:S.injuries},{now}),
-      fetch(dataURL('live/odds-nfl.json'),{cache:'no-cache',signal:AbortSignal.timeout(7000)})
-        .then(r=>r.ok?r.json():null).catch(()=>null),
+      readLive('odds-nfl.json'),
       fetchProjections?fetchSleeperNfl(S.year,S.week):null
     ]);
     if(token!==req)return;
@@ -566,6 +603,10 @@ async function tickScores(){
   if(nflLiveViews.has(S.route.id)){
     await tickNflInputs();
     if(token!==req||nflDraftViews.has(S.route.id))return;
+  }
+  if(S.route.id==='nba-parlays'){
+    await tickNbaInputs();
+    if(token!==req||isEditing())return;
   }
   if(S.route.id==='home'){
     if(await tickHomeClocks()&&token===req)render();

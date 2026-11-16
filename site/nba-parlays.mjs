@@ -1,12 +1,12 @@
 // GOING UP Suggested Parlays: the shared parlay page (parlay-ui.mjs) with the NBA engine and filters.
-import {current as S,slate} from './ui.mjs';
+import {current as S,btn,slate,tools} from './ui.mjs';
 import {href} from './config.mjs';
 import {defaults,evaluate,markets,weights} from './nba-parlay-engine.mjs';
 import {createParlays} from './parlay-ui.mjs';
 export {toAmerican,fromAmerican} from './parlay-ui.mjs';
 
 const nba=createParlays({
-  settingsKey:'nba-parlay-settings',ticketsKey:'nba-parlay-tickets',
+  settingsKey:'nba-parlay-settings',ticketsKey:'nba-parlay-tickets',liveDraft:true,prefill:false,
   engine:{defaults,weights,markets,evaluate},
   weightNames:{form:'Hit rates',matchup:'Matchup',line:'Line vs average',context:'Game context',mix:'Stat variety'},
   fields:[{key:'hit',label:'Min. hit rate %',min:0,max:100},{key:'sample',label:'Min. type sample',min:1,max:30,integer:true},
@@ -14,7 +14,8 @@ const nba=createParlays({
   summary:f=>[f.hit+'% min. hit rate',f.sample+'-game type sample',f.spread+' max spread',f.total+' min. total'],
   period:()=>S.day,periodLabel:()=>S.day,
   nav:()=>slate({navOnly:true,date:true}),
-  intro:`<p><a class="pill" href="${href('up/parlay-tracker.html')}">Parlay Leg Tracker</a></p>`,
+  intro:()=>tools(`<a class="pill" href="${href('up/parlay-tracker.html')}">Parlay Leg Tracker</a>`+
+    btn('Check for updates','nbaParlayCheck','')),
   recent:{key:'last10',label:'L10'},
   noRows:'No priced NBA props were published for this slate. Try again after the next price refresh.',
   hints:{'Maximum spread':'Raise maximum spread toward 14.5.','Minimum total':'Lower the minimum game total.',
