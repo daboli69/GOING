@@ -1,5 +1,7 @@
 // Kickoff-hour forecasts for NFL games from Open-Meteo (free, no key). Domes skip the request; retractable roofs are
 // forecast and marked, since teams decide on the day. Used by GOING LONG Suggested Parlays.
+import {kickoff} from '../site/nfl-availability.mjs';
+
 const stadiums={
   ARI:[33.5276,-112.2626,'retractable'],ATL:[33.7554,-84.4008,'retractable'],BAL:[39.278,-76.6227],BUF:[42.7738,-78.787],
   CAR:[35.2258,-80.8528],CHI:[41.8623,-87.6167],CIN:[39.0955,-84.5161],CLE:[41.5061,-81.6995],DAL:[32.7473,-97.0945,'retractable'],
@@ -25,48 +27,55 @@ export function siteFor(g){
 }
 // Eastern date and clock to the UTC hour Open-Meteo reports.
 export function kickoffHour(date,time){
-  if(!date||!/^\d{1,2}:\d{2}$/.test(time||''))return null;
-  const [y,m,d]=date.split('-').map(Number),[hh,mm]=time.split(':').map(Number),guess=Date.UTC(y,m-1,d,hh,mm);
-  const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
-    .formatToParts(new Date(guess)).map(x=>[x.type,x.value]));
-  const at=new Date(guess-(Date.UTC(+p.year,+p.month-1,+p.day,+p.hour%24,+p.minute)-guess));
-  at.setUTCMinutes(0,0,0);
-  return at.toISOString().slice(0,13)+':00';
+  const at=kickoff(date,time);
+  return at?at.slice(0,13)+':00':null;
 }
+const nextHour=(hour,n)=>new Date(Date.parse(hour+'Z')+n*3600000).toISOString().slice(0,16);
 // One request for every outdoor site (Open-Meteo takes comma-separated coordinates), retried, so a busy shared runner
 // IP is not rate-limited by a burst of parallel calls. Keep the known dome entries if the weather request fails.
 const getJson=async url=>{
   for(let i=0;i<3;i++){
-    const r=await fetch(url,{signal:AbortSignal.timeout(15000)}).catch(()=>null);
-    if(r?.ok)return r.json();
-    await new Promise(done=>setTimeout(done,2000*(i+1)));
+    try{
+      const r=await fetch(url,{signal:AbortSignal.timeout(8000)});
+      if(r.ok)return await r.json();
+      if(r.status<500&&r.status!==429)return null;
+    }catch{}
+    if(i<2)await new Promise(done=>setTimeout(done,1500*(i+1)));
   }
   return null;
 };
-export async function nflWeather(games){
-  const checked=new Date().toISOString(), out={};
+export async function nflWeather(games,{previous,read=getJson,now=Date.now()}={}){
+  const checked=new Date(now).toISOString(), out={};
   const outdoor=[];
   for(const g of games){
     const site=siteFor(g), hour=kickoffHour(g.date,g.time);
     if(!site||!hour)continue;
+    const location=site.lat+','+site.lon, prior=previous?.[g.id], age=now-Date.parse(prior?.checked);
     if(site.roof==='dome')out[g.id]={roof:'dome',checked};
-    else outdoor.push({g,site,hour});
+    else if(prior?.hour===hour&&prior.location===location&&prior.roof===site.roof&&age>=0&&age<3600000&&
+      [prior.temp,prior.wind,prior.gust,prior.rain].every(Number.isFinite))out[g.id]=prior;
+    else outdoor.push({g,site,hour,location});
   }
   if(!outdoor.length)return out;
-  const days=outdoor.map(x=>x.hour.slice(0,10)).sort();
+  const hours=outdoor.map(x=>x.hour).sort();
   const u=new URL('https://api.open-meteo.com/v1/forecast');
   for(const [k,v] of Object.entries({latitude:outdoor.map(x=>x.site.lat).join(','),longitude:outdoor.map(x=>x.site.lon).join(','),
     hourly:'temperature_2m,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m',temperature_unit:'fahrenheit',
-    wind_speed_unit:'mph',precipitation_unit:'inch',timezone:'UTC',start_date:days[0],end_date:days.at(-1)}))u.searchParams.set(k,v);
-  const j=await getJson(u);
+    wind_speed_unit:'mph',precipitation_unit:'inch',timezone:'UTC',start_date:hours[0].slice(0,10),
+    end_date:nextHour(hours.at(-1),2).slice(0,10)}))u.searchParams.set(k,v);
+  const j=await read(u);
   const list=Array.isArray(j)?j:j?[j]:[];
-  outdoor.forEach(({g,site,hour},n)=>{
+  outdoor.forEach(({g,site,hour,location},n)=>{
     const h=list[n]?.hourly, i=h?.time?.indexOf(hour);
     if(i==null||i<0)return;
-    // Rain over the three hours from kickoff, so a shower mid-game counts.
-    const rain=(h.precipitation||[]).slice(i,i+3).reduce((a,b)=>a+(b||0),0);
-    out[g.id]={roof:site.roof,temp:Math.round(h.temperature_2m[i]),wind:Math.round(h.wind_speed_10m[i]),
-      gust:Math.round(h.wind_gusts_10m[i]),rain:Math.round(rain*100)/100,rainChance:h.precipitation_probability?.[i]??null,checked};
+    const windows=[0,1,2];
+    const rain=windows.map(offset=>h.precipitation?.[i+offset]);
+    const [temp,wind,gust]=[h.temperature_2m?.[i],h.wind_speed_10m?.[i],h.wind_gusts_10m?.[i]];
+    // A missing hour is unknown. It cannot be counted as dry.
+    if(windows.some(offset=>h.time[i+offset]!==nextHour(hour,offset))||!rain.every(Number.isFinite)||
+      ![temp,wind,gust].every(Number.isFinite))return;
+    out[g.id]={roof:site.roof,temp:Math.round(temp),wind:Math.round(wind),gust:Math.round(gust),
+      rain:Math.round(rain.reduce((a,b)=>a+b,0)*100)/100,rainChance:h.precipitation_probability?.[i]??null,checked,hour,location};
   });
   return out;
 }

@@ -102,6 +102,13 @@ jobs:
           key: live-v1-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: live-v1-
 
+      - name: Restore NHL shift reports
+        uses: actions/cache/restore@v6
+        with:
+          path: .live-cache/nhl-shifts
+          key: nhl-shifts-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: nhl-shifts-v1-
+
       - name: Capture live snapshots
         id: live
         continue-on-error: true
@@ -113,6 +120,13 @@ jobs:
         with:
           path: site/data/live
           key: live-v1-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Save NHL shift reports
+        if: steps.live.outcome == 'success' && hashFiles('.live-cache/nhl-shifts/*.json') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: .live-cache/nhl-shifts
+          key: nhl-shifts-v1-${{ hashFiles('.live-cache/nhl-shifts/*.json') }}
 
       - name: Restore college feeds
         uses: actions/cache/restore@v6

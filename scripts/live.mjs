@@ -7,7 +7,8 @@ import { ESPN,sportPath,scoreboard,nhlSlate,compactInjuries } from '../site/feed
 import { lineupUrl,parseLineups } from './lineups.mjs';
 import { publicQuotes } from './market-data.mjs';
 import { recentLines } from './lines-data.mjs';
-import { nflWeather } from './weather.mjs';
+import { pruneShiftCache,shiftReader } from './nhl-shifts.mjs';
+import { kickoffHour,nflWeather } from './weather.mjs';
 import { kickoff,refreshNflAvailability,upcomingNflGames } from '../site/nfl-availability.mjs';
 import { fetchSleeperNfl,mergeSleeperNfl } from '../site/nfl-workload.mjs';
 
@@ -110,6 +111,8 @@ const latestProjections=mergeSleeperNfl(previousProjections,projections);
 if(latestProjections)await save('nfl-projections.json',latestProjections);
 const nflGames=nextWeek?nflUpcoming.filter(g=>g.week===nextWeek.week&&g.id.slice(0,4)===nextWeek.id.slice(0,4))
   .map(g=>({...g,iso:kickoff(g.date,g.time)})):[];
+const previousWeather=await read('live/weather-nfl.json');
+const weatherJob=nflWeather(nflGames,{previous:previousWeather}).catch(e=>{console.warn(e.message);return {};});
 await saveOdds('nfl',nflGames,'odds-nfl.json');
 
 // NHL projected lineups and how each projected line has done together over the last five games.
@@ -118,45 +121,43 @@ let lineups=html?parseLineups(html,today):{};
 const lineupFile='nhl-lineups-'+today+'.json';
 if(!Object.keys(lineups).length&&(slates.nhl[today]||[]).some(upcoming))lineups=await backup(lineupFile,'nhl lineups '+today)||{};
 else await save(lineupFile,lineups);
+const lineFile=(d,g)=>'nhl-lines-'+d+'-'+g.a+'-'+g.h+'.json';
+for(const date of days.slice(0,2)){
+  const files=['nhl-lineups-'+date+'.json',...(slates.nhl[date]||[]).map(g=>lineFile(date,g))];
+  for(const file of files){
+    const prior=await read('live/'+file);
+    if(prior!=null)await save(file,prior);
+  }
+}
 const year=Number(today.slice(0,4))-(today.slice(5,7)<'10'), season=''+year+(year+1);
 const [archive,shots]=await Promise.all([read(`nhl-${season}.json`),read(`nhl-shots-${season}.json`)]);
-const shiftCache=new Map(), shiftDeadline=AbortSignal.timeout(22000);
-let shiftsMissing=false;
-const load=url=>{
-  if(!shiftCache.has(url))shiftCache.set(url,(async()=>{
-    try{
-      const r=await fetch(url,{signal:AbortSignal.any([shiftDeadline,AbortSignal.timeout(5000)])});
-      if(r.ok){
-        const j=await r.json();
-        if(j?.data?.length)return j;
-      }
-    }catch{}
-    shiftsMissing=true;
-    return null;
-  })());
-  return shiftCache.get(url);
-};
 const lineGames=(slates.nhl[today]||[]).filter(g=>lineups[g.a]||lineups[g.h]);
-if(archive&&shots){
+let shiftsMissing=false;
+if(lineGames.length&&archive&&shots){
+  await pruneShiftCache(archive.schedule,today);
+  const load=await shiftReader(season);
+  const previousLineups=await read('live/'+lineupFile);
   let i=0;
   await Promise.all(Array.from({length:Math.min(3,lineGames.length)},async()=>{
     while(i<lineGames.length){
       const g=lineGames[i++], teams=Object.fromEntries([g.a,g.h].filter(t=>lineups[t]).map(t=>[t,lineups[t]]));
-      const file='nhl-lines-'+today+'-'+g.a+'-'+g.h+'.json';
-      const stats=await recentLines(teams,{...archive,date:today},shots,load);
-      if(shiftsMissing){
-        const [previous,previousLineups]=await Promise.all([read('live/'+file),read('live/'+lineupFile)]);
-        for(const [t,lineup] of Object.entries(teams)){
-          if(!stats[t]?.some(rows=>rows.length)&&previous?.[t]&&
-            JSON.stringify([lineup.forwards,lineup.defense])===JSON.stringify([previousLineups?.[t]?.forwards,previousLineups?.[t]?.defense]))
-            stats[t]=previous[t];
+      const file=lineFile(today,g), {stats,coverage}=await recentLines(teams,{...archive,date:today},shots,load);
+      const previous=await read('live/'+file);
+      for(const [t,lineup] of Object.entries(teams)){
+        const prior=previous?._coverage?.[t], sample=coverage[t], oldLineup=previousLineups?.[t];
+        if(prior?.analyzed>sample.analyzed&&Array.isArray(previous[t])&&
+          JSON.stringify(prior.games)===JSON.stringify(sample.games)&&
+          JSON.stringify([lineup.forwards,lineup.defense])===JSON.stringify([oldLineup?.forwards,oldLineup?.defense])){
+          stats[t]=previous[t];
+          coverage[t]=prior;
         }
+        if(coverage[t].analyzed<sample.games.length)shiftsMissing=true;
       }
-      await save(file,stats);
+      await save(file,{...stats,_coverage:coverage});
     }
   }));
 }
-if(shiftsMissing)note.push('nhl line matchups '+today);
+if(shiftsMissing||lineGames.length&&(!archive||!shots))note.push('nhl line matchups '+today);
 
 // Small summary for the landing page.
 const nflWeek=nextWeek?schedule.filter(g=>g.week===nextWeek.week&&g.id.slice(0,4)===nextWeek.id.slice(0,4)):[];
@@ -164,14 +165,14 @@ const firstDay=s=>[today,add(today,1)].find(d=>slates[s][d]?.length)||today;
 const nbaDay=firstDay('nba'),nhlDay=firstDay('nhl');
 const archiveStamp=await read('archive.json');
 // NFL kickoff weather for this week's games (Open-Meteo, no key): temperature, wind, gusts and rain at the stadium.
-const weather=await nflWeather(nflGames).catch(e=>{console.warn(e.message);return {};});
+const weather=await weatherJob;
 const needsWeather=nflGames.filter(g=>!weather[g.id]);
 if(needsWeather.length){
   note.push('weather nfl ('+needsWeather.length+' forecasts unavailable)');
-  const old=await read('live/weather-nfl.json'), now=Date.now();
+  const now=Date.now();
   for(const g of needsWeather){
-    const stamp=Date.parse(old?.[g.id]?.checked);
-    if(stamp<=now&&now-stamp<=6*3600000)weather[g.id]=old[g.id];
+    const prior=previousWeather?.[g.id], stamp=Date.parse(prior?.checked);
+    if(prior?.hour===kickoffHour(g.date,g.time)&&stamp<=now&&now-stamp<=6*3600000)weather[g.id]=prior;
   }
 }
 await save('weather-nfl.json',weather);

@@ -81,6 +81,8 @@ function hLines(){
   const render=t=>{
     const a=official(t);
     if(!a)return teamBanner(t)+empty('No official line combinations are available for this team and date.')+skaterBoard(t);
+    const coverage=S.lineStats?._coverage?.[t];
+    const sample=coverage?`<p class="tiny">Shift and shot data available for ${coverage.analyzed} of ${coverage.games.length} recent games.</p>`:'';
     const make=(list,label)=>list.map((names,i)=>{
       const p=names.map(n=>findNamed(t,n)).filter(Boolean);
       const shared=p.length?[...new Set(p[0].logs.map(x=>x[0]))].filter(g=>p.every(y=>y.logs.some(x=>x[0]===g))):[];
@@ -88,7 +90,7 @@ function hLines(){
       const shares=r.length?grid(4,[metric('Shared ice',round(total(r,x=>x.sec)/60,0)+' min',r.length+' GP'),metric('Shot share',pct(ss),sf+'–'+sa,heat(ss,.5,.08)),metric('Goals',total(r,x=>x.gf)+'–'+total(r,x=>x.ga)),metric('Last 3 GP',pct(div(total(r.slice(0,3),x=>x.sf),total(r.slice(0,3),x=>x.sf+x.sa))))]):'<p class="tiny">'+shared.length+' games with all listed players in the box score · no shared shift totals available.</p>';
       return card(label+' '+(i+1),p.length?table(['Player','TOI / G','G / G','P / G','L5 SOG'],names.map(n=>{const q=findNamed(t,n);return q?[person(q),round(q.min),round(q.g,2),round(q.pts,2),round(mean(q.logs.slice(-5),r=>r[8]),2)]:[esc(n),'—','—','—','—'];}))+shares:esc(names.join(' · ')));
     });
-    return teamBanner(t,'Projected Lineup')+'<h3 class="section-label">Forward Lines</h3>'+grid(1,make(a.forwards,'Line'))+'<h3 class="section-label">Defense Pairs</h3>'+grid(1,make(a.defense,'Pair'))+'<h3 class="section-label">Goalies</h3>'+tools(a.goalies.map((n,i)=>badge(n,i===0?'g':'')).join(''));
+    return teamBanner(t,'Projected Lineup')+sample+'<h3 class="section-label">Forward Lines</h3>'+grid(1,make(a.forwards,'Line'))+'<h3 class="section-label">Defense Pairs</h3>'+grid(1,make(a.defense,'Pair'))+'<h3 class="section-label">Goalies</h3>'+tools(a.goalies.map((n,i)=>badge(n,i===0?'g':'')).join(''));
   };
   return slate({tall:true})+box('Line Matchups · '+g.a+' @ '+g.h,'<p class="subtle">Projected lines from <a href="https://www.nhl.com/news/nhl-lineup-projections-2026-27-season" target="_blank" rel="noopener">NHL.com</a>. Shared ice uses overlapping shifts in the previous five games where the league supplies shift charts.</p>'+grid(2,[render(g.a),render(g.h)]),'Projected lineups can change before puck drop.');
 }
