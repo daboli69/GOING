@@ -367,12 +367,16 @@ function standouts(){
     }
   }
   const v=S.f.cat||'All',list=cards.filter(r=>v==='All'||v===r.cat).sort((a,b)=>Math.abs(b.strength)-Math.abs(a.strength));
-  const render=r=>card(team(r.t)+' · '+esc(r.n),`<p class="tiny">${versus(r.g)} · ${esc(r.cat)}</p>`+grid(2,[metric(r.t+' Offense',display(r.k,r.val),ordinal(r.rr)),metric(r.o+' Defense',display(r.k,r.opp),ordinal(r.dd))]),r.strength>0?'good':'bad');
+  const render=r=>card(team(r.t)+'<span> · '+esc(r.n)+'</span>',
+    `<p class="tiny standout-context"><span class="standout-matchup">${versus(r.g)}</span> <span>· ${esc(r.cat)}</span></p>`+
+    grid(2,[metric(r.t+' Offense',display(r.k,r.val),ordinal(r.rr)),metric(r.o+' Defense',display(r.k,r.opp),ordinal(r.dd))],'standout-metrics'),
+    'standout-card '+(r.strength>0?'good':'bad'));
+  const board=rows=>grid(3,rows.map(render),'standout-grid');
   return `<h1>Slate Standouts ${info('Teams stand out when a strength meets a vulnerable opponent, or the reverse.')}</h1>`+slate({navOnly:true})+
     tools(cardCats.map(k=>toggle(k+(k==='All'?'':' '+cards.filter(r=>r.cat===k).length),'cat',k)).join('')+toggles(['Season','Last 10'],'window')+btn(S.f.sortGame?'Sort By Strength':'Sort By Game','flip','sortGame'))+
     tools(badge('▲ '+list.filter(x=>x.strength>0).length+' Standouts','g')+badge('▼ '+list.filter(x=>x.strength<0).length+' Tough Spots','r')+badge(S.games.length+' Games'))+
-    (S.f.sortGame?S.games.map(g=>box(versus(g),grid(3,list.filter(x=>x.g===g).map(render)))).join(''):
-    box('▲ Biggest Standouts Tonight',grid(3,list.filter(x=>x.strength>0).slice(0,18).map(render)))+box('▼ Tough Spots Tonight',grid(3,list.filter(x=>x.strength<0).slice(0,18).map(render))));
+    (S.f.sortGame?S.games.map(g=>box(versus(g),board(list.filter(x=>x.g===g)))).join(''):
+    box('▲ Biggest Standouts Tonight',board(list.filter(x=>x.strength>0).slice(0,18)))+box('▼ Tough Spots Tonight',board(list.filter(x=>x.strength<0).slice(0,18))));
 }
 function shotZoneReport(list,zone){
   const l=list.filter(r=>distanceZone(r)===zone);return {n:l.length,fg:l.filter(x=>x[7]).length,p:rate(l,x=>x[7]),s:div(l.length,list.length)};
