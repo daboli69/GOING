@@ -228,7 +228,7 @@ async function load(){
     const d=S.day,year=s==='nfl'?S.year:seasonFor(s,d);
     const [,data,dayGames,injuries,odds,lineups,models]=await Promise.all([need(s),dataFor(s,year,{parlays:id==='nba-parlays'||nflDraftViews.has(id)}),
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
-      injuriesFor(s),oddsFor(s,d),
+      id==='court'&&d===dateKey()?nbaInjuryReport().then(x=>x??injuriesFor(s)):injuriesFor(s),oddsFor(s,d),
       s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{},
       nflLiveViews.has(id)?nflParlayInputs(year,id):id==='basket'?basketInputs():null]);
     if(token!==req)return;
@@ -446,6 +446,7 @@ document.addEventListener('click',e=>{
   if(act==='retry'){S.error=null;load();return;}
   if(act==='nflParlayCheck'){if(S.loaded&&nflDraftViews.has(S.route.id))tickNflInputs(true);return;}
   if(act==='nbaParlayCheck'){if(S.loaded&&S.route.id==='nba-parlays')tickNbaInputs(true);return;}
+  if(act==='nbaCourtCheck'){if(S.loaded&&S.route.id==='court'&&S.day===dateKey())tickNbaInputs(true);return;}
   if(isModel(S.route.id)&&M.models?.modelAction(act,v)){render();return;}
   if(S.route.id==='tracker'&&M.tracker?.trackerAction(act,v)){render();return;}
   if(trackerOf(S.route.id)&&M[trackerOf(S.route.id)]?.parlayTrackerAction(act,v)){render();return;}
@@ -566,6 +567,7 @@ const readLive=file=>readSnapshot('live/'+file);
 async function tickNbaInputs(force=false){
   const token=req,state=S.f,d=S.day,now=Date.now();
   const today=dateKey(new Date(now)),draft=S.route.id==='nba-parlays';
+  const courtToday=S.route.id==='court'&&d===today;
   if(state.nbaChecking||!force&&isEditing())return;
   if(!force&&state.nbaFollowToday&&d<today){S.day=today;await load();return;}
   if(!force&&(d<today||d>dateAdd(today,3)))return;
@@ -581,7 +583,7 @@ async function tickNbaInputs(force=false){
   state.nbaCheckDay=d;
   state.nbaCheckNext=now+interval;
   try{
-    const injuriesRequest=S.route.id==='basket'?nbaInjuryReport().then(x=>x??readLive('injuries-nba.json')):readLive('injuries-nba.json');
+    const injuriesRequest=S.route.id==='basket'||courtToday?nbaInjuryReport().then(x=>x??readLive('injuries-nba.json')):readLive('injuries-nba.json');
     const [odds,injuries,slate]=await Promise.all([readLive('odds-nba-'+d+'.json'),injuriesRequest,readLive('slate-nba-'+d+'.json')]);
     if(token!==req)return;
     if(!force&&(document.visibilityState!=='visible'||isEditing())){state.nbaCheckNext=0;return;}
@@ -603,7 +605,8 @@ async function tickNbaInputs(force=false){
     }
     state.nbaChecked=now;
     state.nbaRemaining=S.games.filter(g=>Date.parse(g.iso)>now&&!final(g)).map(g=>g.id).join('|');
-    if(force)toast(Array.isArray(odds)?'Published NBA prices checked':'NBA price snapshot unavailable');
+    if(force)toast(courtToday?(object(injuries)?'NBA injury report checked':'NBA injury report unavailable'):
+      (Array.isArray(odds)?'Published NBA prices checked':'NBA price snapshot unavailable'));
   }catch(e){console.error(e);if(force&&token===req)toast('Could not check for updates');}
   finally{state.nbaChecking=false;}
 }
