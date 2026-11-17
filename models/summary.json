@@ -1,1 +1,1 @@
-{"nfl":{"generated_at":"2026-11-17T11:05:02+00:00","top":null,"record":{"games":69,"accuracy":0.6811594203}},"nba":{"generated_at":"2026-11-17T11:05:19+00:00","date":null,"top":null,"record":{"games":72,"accuracy":0.6666666666666666}}}
+{"nfl":{"generated_at":"2026-11-17T13:05:02+00:00","top":null,"record":{"games":69,"accuracy":0.6811594203}},"nba":{"generated_at":"2026-11-17T13:05:20+00:00","date":"2026-11-17","top":{"team":"LAC","p":0.8261,"opp":"UTAH"},"record":{"games":73,"accuracy":0.6575342465753424}}}
