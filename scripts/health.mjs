@@ -36,7 +36,7 @@ export function healthProblems({live,archive,college,ufc,tracker,parlays,nflParl
   if(nflParlays!==undefined)stale('NFL parlay leg tracker',nflParlays?.updated,3);
   if(firstBasket!==undefined)stale('First basket log',firstBasket?.updated,3);
   if(tdBoard!==undefined)stale('TD Board log',tdBoard?.updated,3);
-  for(const [label,index,minimum] of [['Pick tracker',tracker,5],['NFL parlay leg tracker',nflParlays,5],['TD Board log',tdBoard,1]]){
+  for(const [label,index,minimum] of [['Pick tracker',tracker,5],['NBA parlay leg tracker',parlays,5],['NFL parlay leg tracker',nflParlays,5],['TD Board log',tdBoard,1]]){
     const backlog=index?.gradingBacklog;
     if(backlog?.count>=minimum)problems.push({key:'grading:'+label,
       text:label+': '+backlog.count+' unresolved records across '+backlog.games+' confirmed final games started at least eight hours ago'});

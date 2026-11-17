@@ -72,3 +72,9 @@ export function gradeNbaParlayLeg(leg,box,now){
     return {...leg,value:null,result:'void',graded:new Date(now).toISOString(),resultSource:'ESPN · Canceled'};
   return gradeLeg(leg,box?.players,now);
 }
+
+export function reconcileNbaParlayLeg(leg,box,now){
+  const updated=gradeNbaParlayLeg(leg,box,now);
+  if(updated.result===leg.result&&updated.value===leg.value)return leg;
+  return updated;
+}

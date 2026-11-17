@@ -262,3 +262,14 @@ test('live and postponed NBA games stay pending until ESPN confirms a final',asy
   assert.equal(await r.refresh(now+12*60_000),true);
   assert.equal(r.resolve(tickets[0].legs[0]).result,'Push');
 });
+
+test('NBA parlay reconciliation updates stat corrections and preserves grades when evidence is unavailable',async()=>{
+  const {reconcileNbaParlayLeg}=await import('../site/nba-parlay-tracking.mjs');
+  const leg={player:'1',stat:'Rebounds',line:3.5,side:'Over',result:'won',value:4};
+  const box={players:new Map([['1',{values:{Rebounds:3},dnp:false}]])};
+  const corrected=reconcileNbaParlayLeg(leg,box,Date.now());
+  assert.equal(corrected.result,'lost');
+  assert.equal(corrected.value,3);
+  assert.equal(reconcileNbaParlayLeg(corrected,box,Date.now()),corrected);
+  assert.equal(reconcileNbaParlayLeg(leg,null,Date.now()),leg);
+});

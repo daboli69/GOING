@@ -5,7 +5,8 @@ import {fileURLToPath} from 'node:url';
 import {current as S,dateKey,dateAdd} from '../site/ui.mjs';
 import {loadNbaFinals} from './nba-finals.mjs';
 import {parlayData} from '../site/nba.mjs';
-import {captureLegs,gradeNbaParlayLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
+import {captureLegs,reconcileNbaParlayLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
+import {confirmedBacklog} from './health.mjs';
 import {defaults} from '../site/nba-parlay-engine.mjs';
 
 const data=fileURLToPath(new URL('../site/data/',import.meta.url)), out=join(data,'tracker');
@@ -34,23 +35,31 @@ for(const date of [today,dateAdd(today,1)]){
   for(const leg of legs){observeLeg(store,leg);changed.add(month(leg));}
 }
 
-const pending=new Map();
+const hourMs=3600000, weekMs=7*24*hourMs;
+const previous=await read('tracker/parlay-legs-index.json');
+const checks={}, candidates=new Map();
 for(const leg of store.values()){
-  const age=now-Date.parse(leg.tip);
-  if(leg.result||age<2*3600_000)continue;
-  const group=pending.get(leg.game)||[];
-  group.push(leg);pending.set(leg.game,group);
+  const tip=Date.parse(leg.tip), age=now-tip;
+  if(!Number.isFinite(age)||age<2*hourMs)continue;
+  if(age<weekMs&&previous?.finalChecks?.[leg.game])checks[leg.game]=previous.finalChecks[leg.game];
+  if(age>=weekMs&&(leg.result||Number(leg.game.slice(-3))%24!==Math.floor(now/hourMs)%24))continue;
+  const group=candidates.get(leg.game)||[];
+  group.push(leg);
+  candidates.set(leg.game,group);
 }
-// Retry recent games hourly and rotate older unresolved games through the remaining request budget.
-const hour=Math.floor(now/3600_000);
-const games=[...pending].filter(([,legs])=>now-Date.parse(legs[0].tip)<7*86400_000||
-  Number(legs[0].game.slice(-3))%24===hour%24)
-  .sort(([,a],[,b])=>a[0].tip.localeCompare(b[0].tip)).slice(0,32);
-const finals=await loadNbaFinals(games.map(([game])=>game));
-for(const [game,legs] of games)for(const leg of legs){
-  const updated=gradeNbaParlayLeg(leg,finals.get(game),now);
-  if(updated!==leg){store.set(leg.k,updated);changed.add(month(leg));}
+// Give recent games a fresh box score at least hourly as capacity permits. Serve never-checked games first.
+const games=[...candidates].filter(([game])=>now-(checks[game]?.checkedAt??0)>=hourMs)
+  .sort(([a],[b])=>(checks[a]?.checkedAt??0)-(checks[b]?.checkedAt??0)).slice(0,32);
+const finals=await loadNbaFinals(games.map(([game])=>game),{refresh:true});
+for(const [game,legs] of games){
+  const box=finals.get(game);
+  if(now-Date.parse(legs[0].tip)<weekMs)checks[game]={checkedAt:now,confirmed:!!box||!!checks[game]?.confirmed};
+  for(const leg of legs){
+    const updated=reconcileNbaParlayLeg(leg,box,now);
+    if(updated!==leg){store.set(leg.k,updated);changed.add(month(leg));}
+  }
 }
+const gradingBacklog=confirmedBacklog([...store.values()],leg=>!leg.result&&checks[leg.game]?.confirmed,now);
 
 const months=new Map();
 for(const leg of store.values()){
@@ -59,5 +68,5 @@ for(const leg of store.values()){
 }
 for(const key of changed)await save(`parlay-legs-${key}.json`,months.get(key).sort((a,b)=>a.tip.localeCompare(b.tip)||a.k.localeCompare(b.k)));
 await save('parlay-legs-index.json',{updated:new Date(now).toISOString(),months:[...months.keys()].sort(),
-  count:store.size,coverage,filters:defaults});
+  count:store.size,coverage,filters:defaults,finalChecks:checks,gradingBacklog});
 console.log(`NBA parlay tracker: ${store.size} distinct legs, ${games.length} final box scores checked.`);
