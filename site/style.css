@@ -123,3 +123,14 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .prop-range{display:flex;gap:.45rem;border:1px solid var(--line);border-radius:.35rem;padding:.35rem .5rem;font-size:.8rem}
 .prop-range label{white-space:nowrap}
 .prop-range input{width:4.25rem}
+
+.tracker-controls{align-items:flex-end}
+.tracker-controls .field{min-width:0}
+.tracker-controls select{max-width:min(20rem,72vw)}
+.tracker-drill{white-space:normal;text-align:left;line-height:1.25}
+.tracker-roi{position:relative;isolation:isolate;display:grid;place-items:center;min-width:6.5rem;min-height:1.6rem;border-radius:4px;background:var(--cell)}
+.tracker-roi::before{position:absolute;content:"";left:50%;inset-block:3px;border-left:1px solid var(--edge)}
+.tracker-roi>span{position:absolute;z-index:-1;top:3px;bottom:3px;width:var(--roi-size);border-radius:3px;opacity:.32}
+.tracker-roi[data-positive="true"]>span{left:50%;background:var(--green)}
+.tracker-roi[data-positive="false"]>span{right:50%;background:var(--red)}
+.tracker-models{margin-block:1rem}
