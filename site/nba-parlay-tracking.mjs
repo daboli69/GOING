@@ -1,6 +1,8 @@
 import {buildTicket,defaults,evaluate,legKey} from './nba-parlay-engine.mjs';
 import {outcome} from './track-core.mjs';
 
+export const nbaSummaryUrl='https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=';
+
 export function captureLegs(rows,officialRows,now){
   const knownAt=({quote})=>!quote.capturedAt||Date.parse(quote.capturedAt)<=now;
   rows=rows.filter(knownAt);officialRows=officialRows.filter(knownAt);
@@ -26,9 +28,14 @@ export function observeLeg(store,leg){
 }
 
 const labels={Points:'PTS',Threes:'3PT',Rebounds:'REB',Assists:'AST'};
+function finalStatus(summary,id){
+  const game=summary?.header?.competitions?.[0], type=game?.status?.type;
+  if(String(summary?.header?.id)!==String(id)||game?.id!=null&&String(game.id)!==String(id))return null;
+  if(/^STATUS_CANCEL(?:L)?ED$/.test(type?.name||''))return 'canceled';
+  return type?.completed&&/^STATUS_FINAL(?:_|$)/.test(type.name||'')?'final':null;
+}
 export function finalPlayers(summary,id){
-  const type=summary?.header?.competitions?.[0]?.status?.type;
-  if(String(summary?.header?.id)!==String(id)||!type?.completed||!/^STATUS_FINAL(?:_|$)/.test(type.name||''))return null;
+  if(finalStatus(summary,id)!=='final')return null;
   const players=new Map();
   for(const team of summary.boxscore?.players||[])for(const group of team.statistics||[]){
     for(const athlete of group.athletes||[]){
@@ -38,7 +45,7 @@ export function finalPlayers(summary,id){
         const raw=athlete.stats?.[group.labels?.indexOf(label)];
         if(typeof raw==='string'&&(stat==='Threes'?/^\d+-\d+$/:/^\d+$/).test(raw))values[stat]=Number(raw.split('-')[0]);
       }
-      players.set(String(athlete.athlete.id),{values,dnp:athlete.didNotPlay===true});
+      players.set(String(athlete.athlete.id),{values,dnp:athlete.didNotPlay===true||athlete.didNotDress===true});
     }
   }
   return players;
@@ -51,4 +58,17 @@ export function gradeLeg(leg,players,now){
   if(!player.dnp&&!Number.isFinite(value))return leg;
   return {...leg,value:player.dnp?null:value,result:player.dnp?'void':outcome(value,leg.line,leg.side),
     graded:new Date(now).toISOString(),resultSource:player.dnp?'ESPN final · DNP':'ESPN final'};
+}
+
+export function nbaFinalBox(summary,id){
+  if(finalStatus(summary,id)==='canceled')return {canceled:true};
+  const players=finalPlayers(summary,id);
+  return players?.size?{players}:null;
+}
+
+export function gradeNbaParlayLeg(leg,box,now){
+  if(!Object.hasOwn(labels,leg.stat)||!Number.isFinite(leg.line)||!['Over','Under'].includes(leg.side))return leg;
+  if(box?.canceled)
+    return {...leg,value:null,result:'void',graded:new Date(now).toISOString(),resultSource:'ESPN · Canceled'};
+  return gradeLeg(leg,box?.players,now);
 }

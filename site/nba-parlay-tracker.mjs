@@ -31,7 +31,7 @@ const breakdowns={
     'Quote age':l=>l.flags.includes('Stale quote')?'Stale':l.flags.includes('Quote time unknown')?'Unknown':'Within 90 minutes'
 };
 const nba=createTracker({prefix:'parlay-legs',title:'Parlay Leg Tracker',suggested:'up/suggested-parlays.html',markets,prior:5,breakdowns,
-  recent:{key:'last10',label:'L10'},savedTickets:savedParlayTickets,alternates:true,startLabel:'Tip',
+  recent:{key:'last10',label:'L10'},savedTickets:savedParlayTickets,automaticSaved:true,alternates:true,startLabel:'Tip',
   forms:[['L5','last5'],['L10','last10'],['Season','season'],['Home','home'],['Away','away'],['Venue','venue']],
   empty:'Results will appear once the tracker captures priced props before tipoff.',
   coverage:index=>(index.filters?`Default ticket: ${index.filters.legs} legs, one per game, ${index.filters.hit}% minimum hit rate, ${index.filters.sample}-game type sample, ${index.filters.spread} max spread. `:'')+

@@ -34,8 +34,9 @@ test('Suggested Parlays opens with incomplete saved filters and shows usable leg
     const html=parlayPage({rows:[row()],games:[],roster:[]});
     assert.match(html,/data-parlay="legs"[^>]*value="4"/);
     assert.match(html,/Incomplete/);
-    assert.match(html,/result:saved:1/);
-    assert.deepEqual(savedParlayTickets()[0].legs,[leg]);
+    assert.doesNotMatch(html,/result:saved:1/);
+    assert.match(html,/Awaiting final stats/);
+    assert.equal(savedParlayTickets()[0].legs[0].result,'Pending');
     assert.equal(values.get(key),original);
   }finally{
     Object.assign(S,{f,route});
@@ -209,4 +210,55 @@ test('NBA parlay suggestions withhold expired quotes and quotes with no verifiab
     assert.equal(evaluateRows([candidate]).eligible.length,0);
     assert.equal(evaluateRows([candidate]).screened[0].checks['Quote freshness'],'Quote older than two hours or untimestamped');
   }
+});
+
+test('saved NBA tickets settle the exact line and side automatically, including pushes, DNP and canceled games',async()=>{
+  const {createNbaTicketResults}=await import('../site/nba-parlay-results.mjs');
+  const t=Date.parse('2026-11-17T03:30:00Z'), tip='2026-11-17T00:00Z', date='2026-11-16';
+  const prop={game:'42',tip,date,player:'101',name:'Example',stat:'Points',line:9,side:'Over',result:'Miss'};
+  const canceled={...prop,game:'43'}, dnp={...prop,player:'102'}, missing={...prop,player:'103'};
+  const future={...prop,game:'44',tip:'2026-11-18T00:00Z'}, wrong={...prop,game:'45'};
+  let tickets=[null,{id:'old',date,legs:[prop,{...prop,side:'Under',line:10.5},{...prop,line:10},
+    {...prop,stat:'Threes',line:2.5},dnp,canceled,missing,future,wrong]}];
+  const summary=(id,status='STATUS_FINAL')=>({header:{id,competitions:[{id,status:{type:{name:status,completed:status==='STATUS_FINAL'}}}]},
+    boxscore:{players:[{statistics:[{labels:['PTS','3PT','AST','REB'],athletes:[
+      {athlete:{id:'101'},stats:['10','2-7','0','5']},{athlete:{id:'102'},didNotPlay:true,stats:[]}
+    ]}]}]}});
+  const queries=[];
+  const config={read:()=>tickets,write:stored=>{tickets=stored;},fetchSummary:async id=>{
+    queries.push(id);
+    // A ticket was saved while the results request was still pending.
+    if(id==='42')tickets=[...tickets,{id:'new',date,legs:[{...prop,stat:'Assists',line:.5,side:'Under'}]}];
+    return id==='43'?summary(id,'STATUS_CANCELED'):id==='45'?summary('99'):summary(id);
+  }};
+  const results=createNbaTicketResults(config);
+  assert.equal(results.resolve(prop).result,'Pending','legacy manual grades are replaced by official results');
+  assert.equal(await results.refresh(t),true);
+  assert.deepEqual(queries,['42','43','45']);
+  const cache=createNbaTicketResults(config);
+  const settled=tickets[1].legs.map(cache.resolve);
+  assert.deepEqual(settled.map(x=>x.result),['Hit','Hit','Push','Miss','Void','Void','Pending','Pending','Pending']);
+  assert.deepEqual(settled.slice(0,6).map(x=>x.value),[10,10,10,2,null,null]);
+  assert.equal(settled[4].resultSource,'ESPN final · DNP');
+  assert.equal(settled[5].resultSource,'ESPN · Canceled');
+  assert.equal(cache.resolve(tickets[2].legs[0]).value,0);
+  assert.equal(await results.refresh(t+60_000),false,'unfinished or mismatched games are retried later');
+  assert.deepEqual(queries,['42','43','45']);
+});
+
+test('live and postponed NBA games stay pending until ESPN confirms a final',async()=>{
+  const {createNbaTicketResults}=await import('../site/nba-parlay-results.mjs');
+  const now=Date.parse('2026-11-17T04:00:00Z');
+  let tickets=[{id:'saved',date:'2026-11-16',legs:[{game:'42',player:'101',date:'2026-11-16',tip:'2026-11-17T00:00Z',stat:'Points',line:0,side:'Under'}]}];
+  let status='STATUS_IN_PROGRESS';
+  const r=createNbaTicketResults({read:()=>tickets,write:rows=>{tickets=rows;},fetchSummary:async id=>({
+    header:{id,competitions:[{id,status:{type:{name:status,completed:status==='STATUS_FINAL'}}}]},
+    boxscore:{players:[{statistics:[{labels:['PTS'],athletes:[{athlete:{id:'101'},stats:['0']}]}]}]}
+  })});
+  assert.equal(await r.refresh(now),false);
+  status='STATUS_POSTPONED';
+  assert.equal(await r.refresh(now+6*60_000),false);
+  status='STATUS_FINAL';
+  assert.equal(await r.refresh(now+12*60_000),true);
+  assert.equal(r.resolve(tickets[0].legs[0]).result,'Push');
 });

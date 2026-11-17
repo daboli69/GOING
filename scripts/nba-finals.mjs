@@ -1,12 +1,11 @@
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
-import {finalPlayers} from '../site/nba-parlay-tracking.mjs';
-
-const root='https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=';
+import {nbaFinalBox,nbaSummaryUrl} from '../site/nba-parlay-tracking.mjs';
 const cache=new URL('../.cache/nba-finals/',import.meta.url);
 
 export function parseNbaFinal(summary,id){
-  const players=finalPlayers(summary,id);
-  if(!players?.size)return null;
+  const box=nbaFinalBox(summary,id);
+  if(!box||box.canceled)return box;
+  const {players}=box;
   const teams=new Map(summary.header.competitions[0].competitors?.map(t=>[String(t.team?.id),t.team?.abbreviation])||[]);
   const score=summary.plays?.find(p=>p.scoringPlay===true&&Number(p.scoreValue)>0);
   const athlete=String(score?.participants?.[0]?.athlete?.id??'');
@@ -26,7 +25,7 @@ export async function loadNbaFinals(ids){
     const prior=await readFile(file,'utf8').then(JSON.parse).catch(()=>null);
     if(prior?.players?.length&&prior.first){out.set(id,{...prior,players:new Map(prior.players)});return;}
     try{
-      const r=await fetch(root+id,{signal:AbortSignal.timeout(6500)});
+      const r=await fetch(nbaSummaryUrl+id,{signal:AbortSignal.timeout(6500)});
       const data=r.ok?parseNbaFinal(await r.json(),id):null;
       if(data){
         out.set(id,data);
