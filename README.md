@@ -17,6 +17,10 @@ Each section uses its own accent color and the same dashboard typography, boards
 
 ## How the data stays current
 
+**Market Watch.** In GOING UP under Matchups and GOING LONG under Previews. Compare sportsbook moneylines, spreads and totals from ESPN, winner prices from Kalshi, Polymarket and Polymarket US, and GOING’s separate ensemble forecast. Sportsbook win chances remove the vig. Exchange prices are listed by venue. The scheduled Pages workflow runs the pinned Sports Leader MCP server over local stdio in a read-only job. The browser reads the published JSON and shows when each source was captured. Delayed sportsbook snapshots stop contributing to the forecast comparison after 45 minutes. Started games drop off the board at kickoff. No keys, VPS, or AI subscription are needed.
+
+To capture Market Watch locally, clone [Sports Leader MCP](https://github.com/WalrusQuant/sports-leader-mcp) at the commit in `deploy.yml`, run `npm ci --ignore-scripts` and `npm run build` there, then point `SPORTS_LEADER_MCP` at its checkout and run `node scripts/market-watch.mjs` from GOING. The captured files go in `site/data/market-watch/`.
+
 **GOING UP Suggested Parlays.** The builder uses the existing NBA archives, ESPN game lines and injury reports, and captured Kalshi player quotes. It can return a shorter ticket or no ticket when the available data and filters leave too few eligible legs. Combined odds multiply the individual quotes. The adjusted chance uses season win counts plus five wins and five losses per leg before multiplying, with no same-game correlation adjustment. The page checks published prices and injuries about every three minutes while visible and reranks an existing draft as inputs move. Generated tickets, filter settings, and manually logged results are stored in this browser.
 
 **GOING UP First Basket Board.** The 1st Basket page ranks every projected starter on the slate with one formula: P(first basket) = P(his team scores first) × P(he scores | his team scores first) (`site/first-basket.mjs`).

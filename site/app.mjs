@@ -17,6 +17,7 @@ const loaders={
   mlb:()=>Promise.all([import('./yard.mjs'),import('./yard-engine.mjs'),import('./yard-more.mjs')]).then(([y,e,more])=>({page:y.yardPage,player:y.yardPlayer,
     action:y.yardAction,result:y.yardResult,field:y.yardField,input:y.yardInput,engineViews:y.ENGINE_VIEWS,setYardData:e.setYardData,setPrice:more.setPrice})),
   models:()=>import('./models.mjs'),
+  marketWatch:()=>import('./market-watch.mjs'),
   college:()=>import('./college.mjs'),
   ufc:()=>import('./fights.mjs').then(m=>({page:m.fightsPage,load:m.fightsLoad,refresh:m.fightsRefresh})),
   tracker:()=>import('./tracker.mjs'),
@@ -66,7 +67,7 @@ function render(options={}){
   if(S.error)main.innerHTML=box('',empty(S.error)+tools(btn('Try again','retry','')));
   else if(!S.loaded)main.innerHTML=box('',empty(S.route.id==='home'?'Loading today’s slates…':'Loading the slate…'));
   else{
-    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?M.tracker.trackerPage():trackerOf(S.route.id)?M[trackerOf(S.route.id)].parlayTrackerPage():isCollege(S.route.sport)?M.college.collegePage():isModel(S.route.id)?M.models.modelPage():M[S.route.sport].page();}
+    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?M.tracker.trackerPage():trackerOf(S.route.id)?M[trackerOf(S.route.id)].parlayTrackerPage():isCollege(S.route.sport)?M.college.collegePage():isModel(S.route.id)?M.models.modelPage():S.route.id==='market-watch'?M.marketWatch.marketPage(S.markets,S.marketModels):M[S.route.sport].page();}
     catch(e){console.error(e);main.innerHTML=box('',empty('This view could not be rendered.')+tools(btn('Try again','retry','')));}
   }
   const next=main.querySelector('.matchup-row');
@@ -195,6 +196,17 @@ async function load(){
     }));
     if(token!==req)return;
     playArchive=Object.fromEntries(loadSports);render();return;
+  }
+  if(id==='market-watch'){
+    try{
+      await need('marketWatch');
+      const [markets,models]=await Promise.all([M.marketWatch.readMarkets(s),M.marketWatch.readMarketModels(s)]);
+      if(token!==req)return;
+      S.data={};S.markets=markets;S.marketModels=models;S.loaded=true;
+      S.f.marketNext=Date.now()+120000;
+      render();
+    }catch(e){if(token===req)proLoadFailed('Market Watch could not load.');console.error(e);}
+    return;
   }
   if(isModel(id)){
     try{
@@ -700,6 +712,19 @@ async function tickScores(){
   }finally{if(ticking===token)ticking=null;}
 }
 async function tickOpenView(s,token){
+  if(S.route.id==='market-watch'){
+    const now=Date.now();
+    if(navigator.onLine&&now>=S.f.marketNext){
+      const [markets,models]=await Promise.all([M.marketWatch.readMarkets(s),M.marketWatch.readMarketModels(s)]);
+      if(token!==req||document.visibilityState!=='visible')return;
+      S.f.marketNext=now+120000;
+      if(markets)S.markets=markets;
+      if(models)S.marketModels=models;
+    }
+    // Keep the selected matchup unless it has reached kickoff, and age the snapshot labels.
+    render({keepPosition:true});
+    return;
+  }
   if(nflLiveViews.has(S.route.id)){
     await tickNflInputs();
     if(token!==req)return;

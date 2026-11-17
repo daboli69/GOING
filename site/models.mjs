@@ -2,6 +2,9 @@
 // Both feeds are published from the local labs by publishers/publish_models.py; nothing here is computed from betting prices.
 import {current as S,esc,box,grid,metric,logo,team,teamName,teamBanner,table,cell,info,empty,slate,hero,badge,dateKey,dateLabel,round,pct,tools} from './ui.mjs';
 import {signed,heat} from './math.mjs';
+import {href} from './config.mjs';
+
+const marketLink=sport=>'<a href="'+href((sport==='nba'?'up/':'long/')+'market-watch.html')+'">Market Watch</a>';
 
 const ago=iso=>{
   if(!iso)return 'unknown';
@@ -61,7 +64,7 @@ function nflGames(){
 function nflPage(){
   const f=S.model,list=S.games;
   const head=`<h1>Ensemble Forecasts ${info('The champion is the lab’s frozen ensemble of six models (logistic regression, XGBoost, decision tree, random forest and two neural networks). They read the same inputs, so 6-0 agreement is not six independent confirmations.')}</h1>`+
-    `<p class="subtle">${published(f.generated_at)} · champion ${esc(f.source?.champion_version||'')}</p>`;
+    `<p class="subtle">${published(f.generated_at)} · champion ${esc(f.source?.champion_version||'')} · ${marketLink('nfl')}</p>`;
   if(!list.length)return head+box('',empty('No forecasts are published for this week yet.'));
   const rows=list.map(x=>{
     const g=x.raw,fc=g.forecast||{},c=fc.champion||{},p=c.p_home;
@@ -134,7 +137,7 @@ function nbaGames(){
 function nbaPage(){
   const f=S.model,m=f.meta||{},tr=m.track_record||{};
   const head=`<h1>Ensemble Forecasts ${info('Six statistical models trained on past games. The headline win chance is their frozen combination. The models use no betting prices and current injuries do not change the original forecast.')}</h1>`+
-    `<p class="subtle">${published(f.generated_at)} · ${esc(m.evaluation_status||'')}</p>`;
+    `<p class="subtle">${published(f.generated_at)} · ${esc(m.evaluation_status||'')} · ${marketLink('nba')}</p>`;
   const record=grid(3,[metric('Graded games',esc(tr.games??'—')),metric('Picked the winner',tr.accuracy==null?'—':pct(tr.accuracy,1),'',tr.accuracy==null?'':heat(tr.accuracy,.6,.03).replace(' heat','')),
     metric('Average margin miss',tr.margin_miss?.points==null?'—':round(tr.margin_miss.points,1)+' pts')]);
   const picker=S.mdates.length?tools(`<label class="field upper">Saved day <select data-field="mday" aria-label="Saved forecast day">${[...S.mdates].reverse().map(d=>`<option value="${d}" ${d===S.mday?'selected':''}>${esc(dateLabel(d,true))}</option>`).join('')}</select></label>`):'';
