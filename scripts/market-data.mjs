@@ -18,7 +18,10 @@ export function quote(m,market,g){
   const player=m.title?.split(':')[0]?.trim();
   if(!player||player===m.title)return null;
   const yes=Number(m.yes_ask_dollars),no=Number(m.no_ask_dollars);
-  const over=yes>0&&yes<1&&Number(m.yes_ask_size_fp)>0?american(yes):null,under=no>0&&no<1&&Number(m.no_ask_size_fp)>0?american(no):null;
+  // A NO ask is the other side of the YES bid. Kalshi lists its size as yes_bid_size_fp.
+  const yesBid=Number(m.yes_bid_dollars);
+  const noSize=m.no_ask_size_fp??(yesBid>0&&yesBid<1&&Math.abs(no+yesBid-1)<1e-6?m.yes_bid_size_fp:null);
+  const over=yes>0&&yes<1&&Number(m.yes_ask_size_fp)>0?american(yes):null,under=no>0&&no<1&&Number(noSize)>0?american(no):null;
   if(!over&&!under)return null;
   const line=market==='First TD'||market==='First Basket'?.5:m.floor_strike;
   if(line==null||!Number.isFinite(line)||['Anytime Goals','Anytime TD'].includes(market)&&line!==.5)return null;
