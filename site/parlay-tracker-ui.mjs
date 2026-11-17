@@ -120,7 +120,7 @@ function legTable(rows){
 }
 
 function savedResults(){
-  const byKey=new Map(legs.map(leg=>[leg.k,leg]));
+  const byKey=new Map(legs.map(leg=>[legKey(leg),leg]));
   const tickets=opts.savedTickets();
   if(!tickets.length)return '';
   const results=tickets.flatMap(ticket=>ticket.legs.map(leg=>{

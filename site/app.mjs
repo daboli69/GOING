@@ -146,7 +146,8 @@ const nflParlayInputs=(year,id)=>Promise.all([nflModelViews.has(id)?readSnapshot
   .then(([models,extra,weather,availability,projections,tdLog])=>({models,extra,weather,tdLog,injuries:availability?.teams,availability,projections}));
 const injuriesFor=s=>readSnapshot('live/injuries-'+s+'.json').then(x=>object(x)?x:
   readJson(`${ESPN}/${sportPath[s]}/injuries`).then(j=>Array.isArray(j?.injuries)?compactInjuries(j):{}));
-const oddsFor=(s,d)=>readSnapshot('live/odds-'+s+(s==='nfl'?'':'-'+d)+'.json').then(x=>Array.isArray(x)?x:[]);
+const oddsFile=(s,d,id)=>id==='nba-parlays'?'nba-main-lines-'+d+'.json':'odds-'+s+(s==='nfl'?'':'-'+d)+'.json';
+const oddsFor=(s,d,id)=>readSnapshot('live/'+oddsFile(s,d,id)).then(x=>Array.isArray(x)?x:[]);
 const savedGames={};
 function start(){
   S.route=route();S.sort=null;S.error=null;
@@ -246,7 +247,7 @@ async function load(){
     const d=S.day,year=s==='nfl'?S.year:seasonFor(s,d);
     const [,data,dayGames,injuries,odds,lineups,models]=await Promise.all([need(s),dataFor(s,year,{parlays:id==='nba-parlays'||nflDraftViews.has(id)}),
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
-      id==='court'&&d===dateKey()?nbaInjuryReport().then(x=>x??injuriesFor(s)):injuriesFor(s),oddsFor(s,d),
+      id==='court'&&d===dateKey()?nbaInjuryReport().then(x=>x??injuriesFor(s)):injuriesFor(s),oddsFor(s,d,id),
       s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{},
       nflLiveViews.has(id)?nflParlayInputs(year,id):id==='basket'?basketInputs():null]);
     if(token!==req)return;
@@ -602,7 +603,7 @@ async function tickNbaInputs(force=false){
   state.nbaCheckNext=now+interval;
   try{
     const injuriesRequest=S.route.id==='basket'||courtToday?nbaInjuryReport().then(x=>x??readLive('injuries-nba.json')):readLive('injuries-nba.json');
-    const [odds,injuries,slate]=await Promise.all([readLive('odds-nba-'+d+'.json'),injuriesRequest,readLive('slate-nba-'+d+'.json')]);
+    const [odds,injuries,slate]=await Promise.all([readLive(oddsFile('nba',d,S.route.id)),injuriesRequest,readLive('slate-nba-'+d+'.json')]);
     if(token!==req)return;
     if(!force&&(document.visibilityState!=='visible'||isEditing())){state.nbaCheckNext=0;return;}
     const games=mergeNbaSlate(S.games,slate), slateChanged=games!==S.games;

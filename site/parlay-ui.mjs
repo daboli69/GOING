@@ -47,6 +47,7 @@ const baseHints={'Odds range':'Widen the odds range.','Existing tickets':'Allow 
    intro                    HTML under the page title (links)
    afterTicket(data,report,ticket)  optional market screening details
    poolSummary(report,filters)  optional summary of the priced pool shown above the ticket
+   rankByChance             show hit chance and label the scoring weights as tie breakers
    resolveSavedLeg(leg)     enrich saved legs with automatic results when the sport supports it
    singleGame               select the game in the slate, instead of per-game and matchup-exclusion controls
    build                    optional ticket builder
@@ -124,7 +125,7 @@ export function createParlays(opts){
       tools(number('Min. odds','minOdds',toAmerican(cfg.minOdds),-10000,10000,5)+number('Max. odds','maxOdds',toAmerican(cfg.maxOdds),-10000,10000,5)+
         '<span class="subtle">American odds, e.g. -200 to +150</span>')+
       exclusions(data,cfg)+
-      `<details data-parlay-weights ${S.f.parlayWeights?'open':''}><summary>Scoring weights</summary>${tools(Object.entries(weightNames).map(([key,label])=>
+      `<details data-parlay-weights ${S.f.parlayWeights?'open':''}><summary>${opts.rankByChance?'Tie-break weights':'Scoring weights'}</summary>${tools(Object.entries(weightNames).map(([key,label])=>
         number(label,'weight-'+key,cfg.weights[key],0,10,.5)).join(''))}</details>`+
       tools(btn(singleGame?'Generate & save':'Generate','parlayGenerate','','primary')+btn('Regenerate','parlayRegenerate')+
         btn('Reset filters','parlayReset','', 'outline'));
@@ -132,11 +133,11 @@ export function createParlays(opts){
 
   function ticketTable(ticket,locked){
     const sampleLabel=ticket.some(leg=>leg.context?.formSource==='comparable-role')?'Sample hit rate':'Season';
-    return table(['Player','Game','Leg','Quote',opts.recent.label,sampleLabel,'Reasons','Flags',''],ticket.map(leg=>{
+    return table(['Player','Game','Leg','Quote',...(opts.rankByChance?['Est. hit chance']:[]),opts.recent.label,sampleLabel,'Reasons','Flags',''],ticket.map(leg=>{
       const key=legKey(leg), pinned=locked.includes(key);
       return [esc(leg.name+' · '+leg.team),esc(leg.team+' vs '+leg.opp+' · '+et({iso:leg.tip})+' ET'),esc(legText(leg)),
         esc(oddsText(leg.price)+' · '+leg.provider)+`<small class="muted"><br>Last updated ${esc(timeLabel(leg.capturedAt))}</small>`,
-        pct(leg.form[opts.recent.key]?.rate),pct(leg.form.season.rate),tagList(leg.reasons),tagList(leg.flags),
+        ...(opts.rankByChance?[pct(opts.chance(leg),1)]:[]),pct(leg.form[opts.recent.key]?.rate),pct(leg.form.season.rate),tagList(leg.reasons),tagList(leg.flags),
         btn(pinned?'Unlock':'Lock','parlayLock',key,pinned?'on':'outline')+(pinned?'':btn('Swap','parlaySwap',key,'outline'))];
     }),{wrap:'box'});
   }

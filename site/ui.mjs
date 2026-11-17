@@ -117,7 +117,7 @@ function propMatches(p,m){
   const norm=s=>String(s||'').normalize('NFKD').replace(/[^\p{L}\p{N}]/gu,'').toLowerCase();
   const g=gamesFor(p.team);
   return o=>(String(o.id)===String(p.id)||norm(o.player)===norm(p.name))&&[m.toLowerCase(),alias[m]].includes(o.market?.toLowerCase())
-    &&(!o.date||o.date===(current.route.sport==='nfl'?gameDay(g):current.day))&&(!o.a||o.a===g?.a)&&(!o.h||o.h===g?.h);
+    &&(!o.team||o.team===p.team)&&(!o.date||o.date===(current.route.sport==='nfl'?gameDay(g):current.day))&&(!o.a||o.a===g?.a)&&(!o.h||o.h===g?.h);
 }
 export const propQuotes=(p,m,quotes)=>quotes.filter(propMatches(p,m));
 export const propOdds=(p,m)=>current.odds.find(propMatches(p,m));

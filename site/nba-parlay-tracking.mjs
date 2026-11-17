@@ -1,4 +1,4 @@
-import {buildTicket,defaults,evaluate,legKey} from './nba-parlay-engine.mjs';
+import {buildNbaTicket,defaults,evaluate,legKey} from './nba-parlay-engine.mjs';
 import {outcome} from './track-core.mjs';
 
 export const nbaSummaryUrl='https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=';
@@ -7,14 +7,14 @@ export function captureLegs(rows,officialRows,now){
   const knownAt=({quote})=>!quote.capturedAt||Date.parse(quote.capturedAt)<=now;
   rows=rows.filter(knownAt);officialRows=officialRows.filter(knownAt);
   const {eligible}=evaluate(officialRows,defaults,{now});
-  const selected=new Set(buildTicket(eligible,defaults).ticket.map(legKey));
+  const selected=new Set(buildNbaTicket(eligible,defaults).ticket.map(legKey));
   const offered=new Set(officialRows.map(row=>legKey({date:row.date,game:row.game.id,player:row.player.id,
     stat:row.stat,line:row.quote.line,side:'Over'})));
   return evaluate(rows,defaults,{now}).screened.filter(leg=>leg.price!=null&&Number.isFinite(leg.line)&&!leg.checks['Tip time']&&!leg.checks.Quote)
     .map(leg=>{
       const k=legKey(leg);
       const alternate=!offered.has(legKey({...leg,side:'Over'}));
-      return {...leg,k,alternate,decision:leg.cut?'Rejected':selected.has(k)?'Selected':'Eligible',
+      return {...leg,k:leg.provider==='DraftKings'?k+'|DraftKings':k,alternate,decision:leg.cut?'Rejected':selected.has(k)?'Selected':'Eligible',
         observedAt:new Date(now).toISOString(),odds:leg.price};
     });
 }
