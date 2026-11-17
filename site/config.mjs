@@ -13,9 +13,9 @@ export const sections={
 // [title, path relative to BASE, view id]. Titles double as view keys inside the sport modules, so keep them stable.
 export const menus={
   ufc:{Fights:[['Fight Cards','fights/','ufc-cards'],['Ensemble Forecasts','fights/forecasts.html','ufc-forecasts'],['Fighter Stats','fights/fighter-stats.html','ufc-fighters'],['Fight Lines','fights/fight-lines.html','ufc-lines']]},
-  cbb:{Matchups:[['Slate Standouts','cbb/','college-slate'],['Team Stats','cbb/team-stats.html','college-teams'],['Player Leaders','cbb/player-leaders.html','college-players']]},
-  cwb:{Matchups:[['Slate Standouts','cwb/','college-slate'],['Team Stats','cwb/team-stats.html','college-teams'],['Player Leaders','cwb/player-leaders.html','college-players']]},
-  fbs:{Previews:[['Game Previews','fbs/','college-slate'],['Team Stats','fbs/team-stats.html','college-teams'],['Game Lines','fbs/game-lines.html','college-lines']]},
+  cbb:{Matchups:[['Slate Standouts','cbb/','college-slate'],['Market Watch','cbb/market-watch.html','market-watch'],['Team Stats','cbb/team-stats.html','college-teams'],['Player Leaders','cbb/player-leaders.html','college-players']]},
+  cwb:{Matchups:[['Slate Standouts','cwb/','college-slate'],['Market Watch','cwb/market-watch.html','market-watch'],['Team Stats','cwb/team-stats.html','college-teams'],['Player Leaders','cwb/player-leaders.html','college-players']]},
+  fbs:{Previews:[['Game Previews','fbs/','college-slate'],['Team Stats','fbs/team-stats.html','college-teams'],['Game Lines','fbs/game-lines.html','college-lines'],['Market Watch','fbs/market-watch.html','market-watch']]},
   nfl:{
     Models:[['Ensemble Forecasts','long/','nfl-models']],
     Previews:[['Game Previews','long/game-previews.html','nfl-preview'],['Market Watch','long/market-watch.html','market-watch'],['TD Data','long/td-data.html','td'],['Opening Drive Tool','long/opening-drives.html','drives']],
@@ -31,13 +31,13 @@ export const menus={
     Promos:[['King of the Court','up/promo-tools.html','court']]
   },
   nhl:{
-    Previews:[['Game Previews','goal/','nhl-preview'],['Line Matchups','goal/lines.html','nhl-lines']],
+    Previews:[['Game Previews','goal/','nhl-preview'],['Line Matchups','goal/lines.html','nhl-lines'],['Market Watch','goal/market-watch.html','market-watch']],
     Props:[['Best Plays','goal/best.html','nhl-props'],['Shots','goal/shots.html','nhl-props'],['Goals','goal/goals.html','nhl-props'],['Points','goal/points.html','nhl-props'],['Saves','goal/saves.html','nhl-props']],
     Promos:[['King of the Crease','goal/promo-tools.html','crease'],['Icebreaker','goal/promo-tools.html#icebreaker','ice'],['King of the Hat Trick','goal/promo-tools.html#hattrick','hat']]
   },
   mlb:{
     Models:[['HR Board','yard/','yard-board'],['Top Plays','yard/top-plays.html','yard-top'],['Top Picks','yard/top-picks.html','yard-picks'],['Daily Card','yard/daily-card.html','yard-daily'],['Signal Convergence','yard/convergence.html','yard-converge']],
-    Matchups:[['Game Scan','yard/games.html','yard-games'],['Pitchers & Bullpens','yard/pitchers.html','yard-arms'],['Team vs Pitch Mix','yard/pitch-mix.html','yard-pitchmix'],['Split Overlaps','yard/splits.html','yard-splits'],['Target Teams','yard/targets.html','yard-targets'],['Weather & Parks','yard/weather.html','yard-weather']],
+    Matchups:[['Game Scan','yard/games.html','yard-games'],['Market Watch','yard/market-watch.html','market-watch'],['Pitchers & Bullpens','yard/pitchers.html','yard-arms'],['Team vs Pitch Mix','yard/pitch-mix.html','yard-pitchmix'],['Split Overlaps','yard/splits.html','yard-splits'],['Target Teams','yard/targets.html','yard-targets'],['Weather & Parks','yard/weather.html','yard-weather']],
     Props:[['Hits & H+R+RBI','yard/hits.html','yard-hits'],['King of the Bases','yard/total-bases.html','yard-tb'],['Pitcher Strikeouts','yard/strikeouts.html','yard-ks'],['Game Totals','yard/game-totals.html','yard-totals'],['Edge Finder','yard/edge-finder.html','yard-edge'],['Price Research','yard/price-research.html','yard-price'],['Alt Line Finder','yard/alt-lines.html','yard-alt']],
     Parlays:[['Parlays & Jackpots','yard/parlays.html','yard-parlays'],['Parlay Builder','yard/parlay-builder.html','yard-sgp'],['Parlay Scanner','yard/parlay-scanner.html','yard-scanner'],['Ladder Challenge','yard/ladder.html','yard-ladder']],
     Results:[['Model Record','yard/record.html','yard-record'],['HR Calendar','yard/calendar.html','yard-calendar'],['HR Patterns','yard/patterns.html','yard-patterns'],['My Bets','yard/bets.html','yard-bets'],['CLV','yard/clv.html','yard-clv'],['Guide & FAQ','yard/guide.html','yard-guide']]
