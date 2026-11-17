@@ -1,6 +1,7 @@
 import {nbaPropTabs,href} from './config.mjs';
-import {total,mean,round,pct,div,rate,heat,signed,seasonLimit,distanceZone,leaderShares} from './math.mjs';
-import {current as S,esc,box,plain,grid,card,metric,logo,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,person,market,basePlay,propOdds,gameDay,gamesFor,final,dialog,badge,action,local,keep,et} from './ui.mjs';
+import {total,mean,round,pct,div,rate,heat,signed,seasonLimit,distanceZone} from './math.mjs';
+import {current as S,esc,box,plain,grid,card,metric,logo,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,person,market,basePlay,propOdds,gameDay,gamesFor,final,dialog,badge,action,local,keep,et,dateKey} from './ui.mjs';
+import {courtDefense,courtField,courtThresholds,pra} from './nba-court.mjs';
 import {parlayPage,parlayAction} from './nba-parlays.mjs';
 import {openingTables,teamFirst,shotTables,makeEdge,earlyShares,blendShare,scorerShares,fairChances,impliedChance,americanFrom,roundRobin,regression,convictionTier} from './first-basket.mjs';
 import {propQuotes} from './ui.mjs';
@@ -775,33 +776,44 @@ function basket(){
     box('By Player Type: Every Letter Against Tonight’s Defense',table(['Team',...letters],[g.a,g.h].map(t=>[team(t),...letters.map(k=>history(t).filter(x=>x.by[t]?.pts&&type(x.by[t].pts)===k).length)]),{sort:'basket-types'}));
 }
 function kotc(){
-  const target=scheduled().filter(p=>p.min>=12), samples=target.map(p=>{
-    const g=gamesFor(p.team),opp=g.a===p.team?g.h:g.a,av=mean(p.logs,r=>r[6]), def=teamStat(opp).d.ppg;
-    const leagueMean=mean(teams().map(t=>teamStat(t).d.ppg).filter(x=>x!=null)), mod=leagueMean?Math.min(1.15,Math.max(.85,def/leagueMean)):1;
-    const sd=Math.sqrt(mean(p.logs,r=>(r[6]-av)**2)||0);
-    return {...p,g,opp,av,projected:av*mod,sd:Math.max(4,sd),mod};
-  });
-  const prob=leaderShares(samples,x=>x.projected,x=>x.sd);
-  samples.sort((a,b)=>prob.get(b.id)-prob.get(a.id)||b.av-a.av);
-  const cutoff=S.f.more?samples.length:25;
+  const memo=reset(), defense=memo.courtDefense??=courtDefense(players());
+  const current=S.day===dateKey(), reports=current?Object.keys(S.injuries||{}).length:0;
+  const statuses=new Map(current&&reports?teams().map(t=>[t,new Map(nbaInjuryReport(t).map(x=>[nbaName(x.name),x.status]))]):[]);
+  const {rows,excluded}=courtField(players(),current&&!reports?[]:S.games,defense,p=>statuses.get(p.team)?.get(nbaName(p.name)));
+  const cutoff=S.f.more?rows.length:25;
   const defBoard=teams().filter(t=>!S.f.todayTeams||gamesFor(t)).map(t=>{
-    const out=players().flatMap(p=>p.logs.filter(r=>r[3]===t).map(r=>[p,r]));
-    const high=Object.values(out.reduce((m,[p,r])=>{m[r[0]]=Math.max(m[r[0]]||0,r[6]);return m;},{}));
-    return [team(t),gamesFor(t)?'✓':'—',...[40,45,50,55,60].map(n=>high.filter(x=>x>=n).length),round(mean(high)),...['PG','SG','SF','PF','C'].map(k=>round(mean(out.filter(([p])=>p.pos===k),([p,r])=>r[6]))),high.length];
+    const board=defense.teams.get(t);
+    return [team(t),gamesFor(t)?'✓':'—',...(board?.counts||courtThresholds.map(()=>0)),round(board?.top),
+      ...['PG','SG','SF','PF','C'].map(k=>round(board?.rates[k])),board?.gp||0];
   });
-  return `<h1>King of the Court ${info('Lead share estimates the chance of recording the most points across this slate. Ties split the share. This uses season scoring, variation, and opponent points allowed.')}</h1>`+
-    tools(btn('Historical Data','history','NBA')+btn('Save image','export','King of the Court','primary right'))+slate({navOnly:true})+
-    `<p class="subtle">${S.hoops-1}–${String(S.hoops).slice(-2)} regular season · ${Object.values(source().dates||{}).filter(d=>d<S.day).length} games before this slate.</p>`+
-    table(['#','Player','Lead %','Proj','Avg','40+','45+','50+','55+','60+','Opp','Opp Top','VS Pos','Total','Spread'],samples.slice(0,cutoff).map((p,i)=>[i+1,person(p),cell(pct(prob.get(p.id),1),heat(prob.get(p.id),.065,.035)),cell(round(p.projected),heat(p.projected,18,7)),round(p.av),...[40,45,50,55,60].map(n=>{const c=p.logs.filter(r=>r[6]>=n).length;return cell(c,heat(c,1,.5));}),team(p.opp),round(mean(players().flatMap(x=>x.logs.filter(r=>r[3]===p.opp&&x.pos===p.pos)),r=>r[6])),signed((p.mod-1)*100,0)+'%',p.g.odds?.total??'—',esc(p.g.odds?.details??'—')]),{sort:'kotc',cls:'compact'})+
-    tools(btn(S.f.more?'Show less':'Show all '+samples.length,'flip','more'))+box('Defense Board',tools(btn(S.f.todayTeams?'Show All Teams':'Hide Teams Not Playing','flip','todayTeams')+btn('Save image','export','Defense Board','primary'))+
-    table(['Team','Tonight','40+','45+','50+','55+','60+','Top Opp','vs PG','vs SG','vs SF','vs PF','vs C','GP'],defBoard,{sort:'kotc-defense'}))+
+  const coverage=current?reports?'Today’s injury report is applied. Questionable and day-to-day players remain provisional.':
+    'Today’s injury report is unavailable. Lead shares will appear after it loads.':'Availability is unverified for the selected date.';
+  const thresholds=courtThresholds.map(n=>n+'+');
+  return `<h1>King of the Court ${info('PRA is points plus rebounds plus assists. Lead % is the estimated share of 10,000 simulations won across the full field, with ties split.')}</h1>`+
+    tools(btn('Historical Data','history','NBA')+(current?btn('Check injuries','nbaCourtCheck',''):'')+btn('Save image','export','King of the Court','primary right'))+slate({navOnly:true})+
+    `<p class="subtle">${rows.length} players in the PRA field. ${coverage}</p>`+
+    (excluded.length?`<details><summary>${excluded.length} players removed for availability</summary><p class="subtle">${esc(excluded.join(', '))}</p></details>`:'')+
+    table(['#','Player','Lead %','Proj PRA','Avg PRA',...thresholds,'Opp','Opp Top PRA','Vs Pos','Total','Spread'],
+      rows.slice(0,cutoff).map((p,i)=>[i+1,person(p),cell(pct(p.lead,1),heat(p.lead,.065,.035)),cell(round(p.projected),heat(p.projected,26,10)),
+        round(p.av),...p.counts.map(c=>cell(c,heat(c,1,.5))),team(p.opp),round(p.oppTop),signed((p.mod-1)*100,0)+'%',
+        p.g.odds?.total??'—',esc(p.g.odds?.details??'—')]),{sort:'kotc',cls:'compact',empty:'No eligible players to project for this slate.'})+
+    (rows.length>25?tools(btn(S.f.more?'Show less':'Show all '+rows.length,'flip','more')):'')+
+    box('Defense Board',tools(btn(S.f.todayTeams?'Show All Teams':'Hide Teams Not Playing','flip','todayTeams')+btn('Save image','export','Defense Board','primary'))+
+    table(['Team','Tonight',...thresholds,'Top Opp PRA','vs PG','vs SG','vs SF','vs PF','vs C','GP'],defBoard,{sort:'kotc-defense'}),
+    'Position columns show PRA allowed per 48 player minutes.')+
     box('Nightly Leaders',nightly(16)+tools(btn('Show more','history','NBA')))+box('Leader Trends',tools(toggles(['Pregame Rank','Spread & Total'],'trend')+btn('Save image','export','Leader Trends','primary'))+
       (S.f.trend==='Spread & Total'?table(['Game','Spread','Total'],S.games.map(g=>[versus(g),esc(g.odds?.details||'—'),g.odds?.total??'—'])):nightly(8)));
 }
 function nightly(n=40){
   const map=new Map();
-  for(const p of players())for(const r of p.logs)if(!map.has(r[1])||map.get(r[1])[1]<r[6])map.set(r[1],[p,r[6]]);
-  return table(['Day','Nightly Leader','Points'],[...map].sort((a,b)=>b[0].localeCompare(a[0])).slice(0,n).map(([date,[p,pt]])=>[esc(date),person(p),pt]),{sort:'nba-history',cls:'compact'});
+  for(const p of players())for(const r of p.logs){
+    const value=pra(r), best=map.get(r[1]);
+    if(value==null||!(r[5]>0))continue;
+    if(!best||value>best.value)map.set(r[1],{value,players:[p]});
+    else if(value===best.value)best.players.push(p);
+  }
+  return table(['Day','Nightly Leader','PRA'],[...map].sort((a,b)=>b[0].localeCompare(a[0])).slice(0,n)
+    .map(([date,{players,value}])=>[esc(date),cell(players.map(p=>person(p).html).join(' '),'player-cell'),value]),{sort:'nba-history',cls:'compact'});
 }
 function playerShotMatchup(player,opponent){
   const archive=shots(),own=(archive.players[player.id]||[]).filter(eligibleShot);
