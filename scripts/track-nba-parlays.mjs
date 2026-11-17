@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {current as S,dateKey,dateAdd} from '../site/ui.mjs';
 import {loadNbaFinals} from './nba-finals.mjs';
 import {parlayData} from '../site/nba.mjs';
-import {captureLegs,gradeLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
+import {captureLegs,gradeNbaParlayLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
 import {defaults} from '../site/nba-parlay-engine.mjs';
 
 const data=fileURLToPath(new URL('../site/data/',import.meta.url)), out=join(data,'tracker');
@@ -49,7 +49,7 @@ const games=[...pending].filter(([,legs])=>now-Date.parse(legs[0].tip)<7*86400_0
   .sort(([,a],[,b])=>a[0].tip.localeCompare(b[0].tip)).slice(0,32);
 const finals=await loadNbaFinals(games.map(([game])=>game));
 for(const [game,legs] of games)for(const leg of legs){
-  const updated=gradeLeg(leg,finals.get(game)?.players,now);
+  const updated=gradeNbaParlayLeg(leg,finals.get(game),now);
   if(updated!==leg){store.set(leg.k,updated);changed.add(month(leg));}
 }
 

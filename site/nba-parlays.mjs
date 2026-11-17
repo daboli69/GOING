@@ -5,6 +5,7 @@ import {pct} from './math.mjs';
 import {legKey} from './parlay-core.mjs';
 import {defaults,evaluate,markets,nbaLegChance,weights} from './nba-parlay-engine.mjs';
 import {createParlays} from './parlay-ui.mjs';
+import {nbaTicketsKey,resolveNbaTicketLeg} from './nba-parlay-results.mjs';
 export {toAmerican,fromAmerican} from './parlay-ui.mjs';
 
 function fullList(_data,{eligible},ticket){
@@ -28,7 +29,7 @@ function fullList(_data,{eligible},ticket){
 }
 
 const nba=createParlays({
-  settingsKey:'nba-parlay-settings',ticketsKey:'nba-parlay-tickets',liveDraft:true,prefill:false,
+  settingsKey:'nba-parlay-settings',ticketsKey:nbaTicketsKey,liveDraft:true,prefill:false,resolveSavedLeg:resolveNbaTicketLeg,
   engine:{defaults,weights,markets,evaluate},
   weightNames:{form:'Hit rates',matchup:'Matchup',line:'Line vs average',context:'Game context',mix:'Stat variety'},
   fields:[{key:'hit',label:'Min. hit rate %',min:0,max:100},{key:'sample',label:'Min. type sample',min:1,max:30,integer:true},

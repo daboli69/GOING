@@ -22,6 +22,7 @@ const loaders={
   ufc:()=>import('./fights.mjs').then(m=>({page:m.fightsPage,load:m.fightsLoad,refresh:m.fightsRefresh})),
   tracker:()=>import('./tracker.mjs'),
   parlayTracker:()=>import('./nba-parlay-tracker.mjs'),
+  nbaResults:()=>import('./nba-parlay-results.mjs'),
   nflParlayTracker:()=>import('./nfl-parlay-tracker.mjs'),
 };
 const M={};
@@ -34,6 +35,7 @@ const archives=archiveCache();
 let req=0, menu=null, lastDialog=null, resizeTimer, dateHash=location.hash, playArchive={};
 const isMulti=id=>['endzone','ice','hat','crease'].includes(id);
 const isModel=id=>/-models$/.test(id);
+const nbaTicketView=id=>id==='nba-parlays'||id==='nba-parlay-tracker';
 // Path below the site root, e.g. "up/points.html#x"; "index.html" files map to their folder.
 const relPath=()=>decodeURIComponent(location.pathname.startsWith(BASE)?location.pathname.slice(BASE.length):location.pathname.replace(/^\//,'')).replace(/(^|\/)index\.html$/,'$1');
 function route(){
@@ -58,6 +60,9 @@ function header(){
 function render(options={}){
   if(!S.route)return;
   const main=$('#main'),row=main.querySelector('.matchup-row'),scroll=row?.scrollLeft||0,top=window.scrollY;
+  const nbaDetails='details[data-parlay-ticket],details[data-parlay-weights]';
+  const opened=S.route.id==='nba-parlays'&&options.keepPosition?
+    new Set([...main.querySelectorAll(nbaDetails)].filter(x=>x.open).map(x=>x.dataset.parlayTicket??'')):null;
   const injuryDetails=main.querySelector('details[data-nfl-injuries]');
   if(injuryDetails&&S.route.id==='nfl-parlays')S.f.nflInjuriesOpen=injuryDetails.open;
   const active=document.activeElement;
@@ -70,6 +75,7 @@ function render(options={}){
     try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?M.tracker.trackerPage():trackerOf(S.route.id)?M[trackerOf(S.route.id)].parlayTrackerPage():S.route.id==='market-watch'?M.marketWatch.marketPage(S.markets,S.marketModels):isCollege(S.route.sport)?M.college.collegePage():isModel(S.route.id)?M.models.modelPage():M[S.route.sport].page();}
     catch(e){console.error(e);main.innerHTML=box('',empty('This view could not be rendered.')+tools(btn('Try again','retry','')));}
   }
+  if(opened)for(const panel of main.querySelectorAll(nbaDetails))panel.open=opened.has(panel.dataset.parlayTicket??'');
   const next=main.querySelector('.matchup-row');
   if(next){next.scrollLeft=scroll;if(options.scrollGame)next.querySelector('.game.on')?.scrollIntoView({block:'nearest',inline:'nearest'});}
   if(focus){
@@ -193,7 +199,7 @@ async function load(){
     S.loaded=true;render();tickScores();return;
   }
   if(trackerOf(id)){
-    try{await need(trackerOf(id));await M[trackerOf(id)].parlayTrackerLoad();if(token!==req)return;S.loaded=true;render();}
+    try{await need(trackerOf(id));await M[trackerOf(id)].parlayTrackerLoad();if(token!==req)return;S.loaded=true;render();if(nbaTicketView(id))tickScores();}
     catch(e){if(token!==req)return;S.error=failed('The parlay leg record could not load. Try again in a moment.');console.error(e);render();}
     return;
   }
@@ -703,6 +709,7 @@ async function tickScores(){
       return;
     }
     if(!S.loaded)return;
+    if(nbaTicketView(S.route.id)&&navigator.onLine)void tickNbaTicketResults(token);
     if(isModel(S.route.id)){
       if(navigator.onLine)await tickModels(s,token);
       else M.models.updateModelClock();
@@ -710,6 +717,20 @@ async function tickScores(){
     }
     await tickOpenView(s,token);
   }finally{if(ticking===token)ticking=null;}
+}
+async function tickNbaTicketResults(token){
+  const state=S.f;
+  try{
+    await need('nbaResults');
+    if(token!==req)return;
+    const changed=await M.nbaResults.refreshNbaTicketResults();
+    if(token!==req)return;
+    state.nbaResultsDirty=changed||state.nbaResultsDirty;
+    if(state.nbaResultsDirty&&document.visibilityState==='visible'&&!isEditing()){
+      state.nbaResultsDirty=false;
+      render({keepPosition:true});
+    }
+  }catch(e){console.warn('NBA ticket results could not be checked.',e);}
 }
 async function tickOpenView(s,token){
   if(S.route.id==='market-watch'){
@@ -752,6 +773,11 @@ async function tickOpenView(s,token){
 }
 setInterval(tickScores,60000);
 document.addEventListener('visibilitychange',tickScores);
+addEventListener('storage',e=>{
+  if(!S.loaded||!nbaTicketView(S.route.id)||e.key!=='suite:'+M.nbaResults?.nbaTicketsKey)return;
+  S.f.nbaResultsDirty=true;
+  if(document.visibilityState==='visible')void tickNbaTicketResults(req);
+});
 document.documentElement.dataset.theme=local('theme','dark');
 start();
 // Offline support (site/sw.js). Only built deploys register it: their module URLs carry ?v=, the unbuilt site/ does not.

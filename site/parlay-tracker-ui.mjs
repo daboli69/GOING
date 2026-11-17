@@ -31,6 +31,7 @@ export {time};
    recent          {key,label} recent-form record shown in the leg table
    legText(leg)    how a leg reads
    savedTickets()  the user's saved tickets from Suggested Parlays
+   automaticSaved  the sport supplies official results for saved legs
    alternates      whether alternate lines are tracked
    coverage(index) note under the capture coverage table
    detail(leg)     HTML lines for the leg detail dialog
@@ -124,12 +125,19 @@ function savedResults(){
   if(!tickets.length)return '';
   const results=tickets.flatMap(ticket=>ticket.legs.map(leg=>{
     const tracked=byKey.get(legKey(leg));
+    const base=[esc(ticket.date),esc(leg.name),esc(legText(leg)),esc(leg.price)];
+    if(opts.automaticSaved){
+      const graded=leg.result!=='Pending'?leg:tracked;
+      const status=graded===leg?leg.result:result(tracked||{});
+      return [...base,esc(status),esc(graded?.value??'—'),esc(graded?.resultSource||'Awaiting final stats')];
+    }
     const manual=leg.result&&leg.result!=='Pending'?leg.result:null;
-    return [esc(ticket.date),esc(leg.name),esc(legText(leg)),esc(leg.price),
-      esc(manual||result(tracked||{})),esc(manual?'Manual':tracked?.resultSource||'Waiting for matching public result')];
+    return [...base,esc(manual||result(tracked||{})),esc(manual?'Manual':tracked?.resultSource||'Waiting for matching public result')];
   }));
-  return box('Legs on your saved tickets',table(['Date','Player','Leg','Saved quote','Result','Source'],results,
-    {wrap:'box',sort:'parlay-personal'}),'Manual results from Suggested Parlays take priority. Matching public results appear here automatically.');
+  const cols=['Date','Player','Leg','Saved quote','Result',...(opts.automaticSaved?['Actual']:[]),'Source'];
+  const note=opts.automaticSaved?'Legs grade automatically against the line saved on each ticket.':
+    'Manual results from Suggested Parlays take priority. Matching public results appear here automatically.';
+  return box('Legs on your saved tickets',table(cols,results,{wrap:'box',sort:'parlay-personal'}),note);
 }
 
 function page(){
