@@ -16,13 +16,13 @@ export function parseNbaFinal(summary,id){
   return {players,first};
 }
 
-export async function loadNbaFinals(ids){
+export async function loadNbaFinals(ids,{refresh=false}={}){
   await mkdir(cache,{recursive:true});
   const games=[...ids].map(String).filter(id=>/^\d+$/.test(id));
   const out=new Map();
   for(let i=0;i<games.length;i+=5)await Promise.all(games.slice(i,i+5).map(async id=>{
     const file=new URL(id+'.json',cache);
-    const prior=await readFile(file,'utf8').then(JSON.parse).catch(()=>null);
+    const prior=refresh?null:await readFile(file,'utf8').then(JSON.parse).catch(()=>null);
     if(prior?.players?.length&&prior.first){out.set(id,{...prior,players:new Map(prior.players)});return;}
     try{
       const r=await fetch(nbaSummaryUrl+id,{signal:AbortSignal.timeout(6500)});
