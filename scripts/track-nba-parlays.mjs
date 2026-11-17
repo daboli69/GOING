@@ -23,14 +23,13 @@ const archives=new Map(), coverage={};
 for(const date of [today,dateAdd(today,1)]){
   const year=+date.slice(0,4)+(date.slice(5,7)>='10');
   if(!archives.has(year))archives.set(year,Promise.all([read(`nba-${year}.json`),read(`nba-shots-${year}.json`)]));
-  const [[archive,shots],games,odds,alternates,injuries]=await Promise.all([archives.get(year),read(`live/slate-nba-${date}.json`),
-    read(`live/odds-nba-${date}.json`),read(`live/nba-alternate-lines-${date}.json`),read('live/injuries-nba.json')]);
-  coverage[date]={games:games?.length??null,prices:(alternates??odds)?.length??null,legs:0,archive:!!archive};
-  if(!archive||!games?.length||!(alternates?.length||odds?.length))continue;
-  Object.assign(S,{route:{sport:'nba'},day:date,data:{...archive,shots:shots||{}},games,odds:odds||[],injuries:injuries||{}});
+  const [[archive,shots],games,main,alternates,injuries]=await Promise.all([archives.get(year),read(`live/slate-nba-${date}.json`),
+    read(`live/nba-main-lines-${date}.json`),read(`live/nba-alternate-lines-${date}.json`),read('live/injuries-nba.json')]);
+  coverage[date]={games:games?.length??null,prices:(main||alternates)?(main?.length||0)+(alternates?.length||0):null,legs:0,archive:!!archive};
+  if(!archive||!games?.length||!(main?.length||alternates?.length))continue;
+  Object.assign(S,{route:{sport:'nba'},day:date,data:{...archive,shots:shots||{}},games,odds:main||[],injuries:injuries||{}});
   const official=parlayData().rows;
-  const rows=alternates?.length?parlayData(alternates).rows:official;
-  const legs=captureLegs(rows,official,now);
+  const legs=[...captureLegs(official,official,now),...captureLegs(alternates?.length?parlayData(alternates).rows:[],[],now)];
   coverage[date].legs=legs.length;
   for(const leg of legs){observeLeg(store,leg);changed.add(month(leg));}
 }

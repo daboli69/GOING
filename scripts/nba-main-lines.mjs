@@ -1,0 +1,79 @@
+// DraftKings exposes its main Over/Under selections as MainPointLine in its public NBA board.
+import {markets} from '../site/nba-parlay-engine.mjs';
+import {teamCode} from '../site/market-watch-data.mjs';
+
+const base='https://sportsbook-nash.draftkings.com/sites/US-IL-SB/api/sportscontent/controldata/league/leagueSubcategory/v1/markets';
+const categories={Points:['12488','Points O/U'],Rebounds:['12492','Rebounds O/U'],
+  Assists:['12495','Assists O/U'],Threes:['12497','Three Pointers Made O/U']};
+const provider='DraftKings';
+const halfHour=30*60000;
+const openGame=g=>['FUT','PRE'].includes(g.status);
+const team=value=>teamCode('nba',value);
+const price=value=>{
+  const s=String(value??'').replace('−','-').trim();
+  const amount=Number(s);
+  return /^[+-]?\d+$/.test(s)&&Number.isSafeInteger(amount)&&Math.abs(amount)>=100?s:null;
+};
+
+function fixture(event,games,now){
+  if(event?.status!=='NOT_STARTED'||event.leagueId!=='42648')return null;
+  const start=Date.parse(event.startEventDate);
+  if(!(start>now))return null;
+  const code=role=>team(event.participants?.find(t=>t.venueRole===role)?.metadata?.shortName);
+  const away=code('Away'),home=code('Home');
+  if(!away||!home)return null;
+  const candidates=games.filter(g=>openGame(g)&&Date.parse(g.iso)>now&&Math.abs(Date.parse(g.iso)-start)<=halfHour&&
+    team(g.a)===away&&team(g.h)===home);
+  return candidates.length===1?candidates[0]:null;
+}
+
+export function draftKingsMainLines(payload,stat,games,now=Date.now()){
+  const category=categories[stat];
+  if(!category||!Array.isArray(payload?.markets)||!Array.isArray(payload.events)||!Array.isArray(payload.selections))return null;
+  const [id,type]=category, events=new Map(payload.events.map(e=>[e.id,fixture(e,games,now)]));
+  if(payload.markets.length&&!payload.markets.some(m=>m.subcategoryId===id&&m.marketType?.name===type))return null;
+  const selections=new Map();
+  for(const offer of payload.selections){
+    if(!Array.isArray(offer?.tags)||!offer.tags.includes('MainPointLine')||offer.isSuspended||!['Over','Under'].includes(offer.outcomeType))continue;
+    const list=selections.get(offer.marketId)||[];
+    list.push(offer);selections.set(offer.marketId,list);
+  }
+  const capturedAt=new Date(now).toISOString(), rows=new Map();
+  for(const m of payload.markets){
+    const g=events.get(m.eventId);
+    if(!g||m.isSuspended||m.subcategoryId!==id||m.marketType?.name!==type)continue;
+    const picks=selections.get(m.id)||[];
+    if(picks.length!==2||picks[0].outcomeType===picks[1].outcomeType)continue;
+    const over=picks.find(x=>x.outcomeType==='Over'), under=picks.find(x=>x.outcomeType==='Under');
+    const person=offer=>offer.participants?.find(p=>p.type==='Player');
+    const a=person(over),b=person(under),line=over.points;
+    if(!a?.name||!a.id||a.id!==b?.id||a.venueRole!==b?.venueRole||!Number.isFinite(line)||line<0||line!==under.points)continue;
+    const playerTeam=a.venueRole==='HomePlayer'?g.h:a.venueRole==='AwayPlayer'?g.a:null;
+    if(!playerTeam)continue;
+    const o=price(over.displayOdds?.american),u=price(under.displayOdds?.american);
+    if(!o||!u)continue;
+    const key=g.id+'|'+a.id;
+    rows.set(key,rows.has(key)?null:{player:a.name,team:playerTeam,market:stat,line,date:g.date,a:g.a,h:g.h,over:o,under:u,provider,capturedAt});
+  }
+  return [...rows.values()].filter(Boolean);
+}
+
+function url(id){
+  const u=new URL(base);
+  u.search=new URLSearchParams({isBatchable:'false',templateVars:'42648,'+id,
+    eventsQuery:`$filter=leagueId eq '42648' AND clientMetadata/Subcategories/any(s: s/Id eq '${id}')`,
+    marketsQuery:`$filter=clientMetadata/subCategoryId eq '${id}' AND tags/all(t: t ne 'SportcastBetBuilder')`,include:'Events',entity:'events'});
+  return u;
+}
+
+export async function readDraftKingsMainLines(games,{read=fetch}={}){
+  if(!games.length)return {quotes:[],failed:[]};
+  const results=await Promise.all(markets.map(async market=>{
+    try{
+      const r=await read(url(categories[market][0]),{signal:AbortSignal.timeout(6500)});
+      const rows=r.ok?draftKingsMainLines(await r.json(),market,games):null;
+      return {market,rows};
+    }catch{return {market,rows:null};}
+  }));
+  return {quotes:results.flatMap(r=>r.rows||[]),failed:results.filter(r=>!r.rows).map(({market})=>({market}))};
+}

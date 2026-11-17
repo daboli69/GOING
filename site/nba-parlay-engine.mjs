@@ -12,6 +12,7 @@ const active=g=>['FUT','PRE'].includes(g.status);
 const typed=stat=>stat==='Points'||stat==='Threes';
 
 export const nbaLegChance=leg=>clamp(adjustedLegChance(leg)+(leg.context?.lineup?.adjustment??0),0,1);
+export const buildNbaTicket=(legs,cfg,options={})=>buildTicket(legs,cfg,{...options,rules:{...options.rules,rank:nbaLegChance}});
 
 export function assess(row,side,cfg,context){
   const {quote,player,game,stat,avg,form,reads}=row;

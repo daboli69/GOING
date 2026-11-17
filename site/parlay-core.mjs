@@ -46,12 +46,14 @@ export function buildTicket(eligible,cfg,{locked=[],avoid=new Set(),excluded=new
     add(leg);
   }
   while(ticket.length<cfg.legs){
-    let best, bestScore=-Infinity;
+    let best, bestScore=-Infinity,bestRank=rules.rank?-Infinity:0;
     for(const leg of eligible){
       const key=legKey(leg);
       if(!fits(leg)||excluded.has(key))continue;
-      const score=leg.score-cfg.weights.mix*(counts.get(leg.stat)||0)-(avoid.has(key)?1000:0);
-      if(score>bestScore){best=leg;bestScore=score;}
+      const avoided=avoid.has(key);
+      const score=leg.score-cfg.weights.mix*(counts.get(leg.stat)||0)-(avoided?1000:0);
+      const rank=rules.rank?rules.rank(leg)-(avoided?2:0):0;
+      if(rank>bestRank||rank===bestRank&&score>bestScore){best=leg;bestScore=score;bestRank=rank;}
     }
     if(!best)break;
     add(best);

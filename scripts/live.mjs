@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { ESPN,sportPath,scoreboard,nhlSlate,compactInjuries } from '../site/feeds.mjs';
 import { lineupUrl,parseLineups } from './lineups.mjs';
 import { publicQuotes } from './market-data.mjs';
+import { readDraftKingsMainLines } from './nba-main-lines.mjs';
 import { recentLines } from './lines-data.mjs';
 import { pruneShiftCache,shiftReader } from './nhl-shifts.mjs';
 import { kickoffHour,nflWeather } from './weather.mjs';
@@ -37,26 +38,25 @@ async function backup(file,label){
   return old;
 }
 const gameKey=g=>[g.date,g.a,g.h].join('|');
+async function writeOdds(name,rows,failed,games,byLine=false){
+  const active=new Set(games.map(gameKey)), now=Date.now();
+  if(failed.length){
+    const key=q=>[gameKey(q),q.player,q.market,byLine?q.line:''].join('|');
+    const current=new Set(rows.map(key)), old=await read('live/'+name);
+    for(const q of Array.isArray(old)?old:[]){
+      const stamp=Date.parse(q.capturedAt);
+      const affected=failed.some(x=>x.market===q.market&&(!x.game||gameKey(x.game)===gameKey(q)));
+      if(affected&&active.has(gameKey(q))&&!current.has(key(q))&&stamp<=now&&now-stamp<=120*60000)rows.push(q);
+    }
+  }
+  await save(name,rows);
+}
 async function saveOdds(s,games,file,alternateFile){
-  let failed=[];
-  let alternate=[];
+  let failed=[], alternate=[];
   const quotes=await publicQuotes(s,games,{onFailure:markets=>{failed=markets;},onAlternates:rows=>{alternate=rows;}});
   if(failed.length)note.push('prices '+s+' ('+[...new Set(failed.map(x=>x.market))].sort().join(', ')+')');
-  const active=new Set(games.map(gameKey)), now=Date.now();
-  const write=async (name,rows,byLine=false)=>{
-    if(failed.length){
-      const key=q=>[gameKey(q),q.player,q.market,byLine?q.line:''].join('|');
-      const current=new Set(rows.map(key)), old=await read('live/'+name);
-      for(const q of Array.isArray(old)?old:[]){
-        const stamp=Date.parse(q.capturedAt);
-        const affected=failed.some(x=>x.market===q.market&&(!x.game||gameKey(x.game)===gameKey(q)));
-        if(affected&&active.has(gameKey(q))&&!current.has(key(q))&&stamp<=now&&now-stamp<=120*60000)rows.push(q);
-      }
-    }
-    await save(name,rows);
-  };
-  await write(file,quotes);
-  if(alternateFile)await write(alternateFile,alternate,true);
+  await writeOdds(file,quotes,failed,games);
+  if(alternateFile)await writeOdds(alternateFile,alternate,failed,games,true);
 }
 
 await rm(tmp,{recursive:true,force:true});await mkdir(tmp,{recursive:true});
@@ -87,15 +87,25 @@ await Promise.all(Object.keys(sportPath).map(async s=>{
 
 // Public player prices (read-only exchange quotes) for today and tomorrow, and the NFL week ahead.
 const upcoming=g=>['FUT','PRE'].includes(g.status);
-for(const s of ['nba','nhl'])for(const d of [today,add(today,1)]){
+const priceDays=[today,add(today,1)];
+const pricedGames=(s,d)=>(slates[s][d]||[]).filter(g=>upcoming(g)&&Date.parse(g.iso)>Date.now()).map(g=>({...g,date:d}));
+const draftKings=readDraftKingsMainLines(priceDays.flatMap(d=>pricedGames('nba',d)));
+for(const s of ['nba','nhl'])for(const d of priceDays){
   const file='odds-'+s+'-'+d+'.json', alternate=s==='nba'?'nba-alternate-lines-'+d+'.json':null;
   if(!slates[s][d]){
     await backup(file,'prices '+s+' '+d);
     if(alternate)await backup(alternate,'alt prices '+s+' '+d);
     continue;
   }
-  const games=slates[s][d].filter(g=>upcoming(g)&&Date.parse(g.iso)>Date.now()).map(g=>({...g,date:d}));
+  const games=pricedGames(s,d);
   await saveOdds(s,games,file,alternate);
+}
+const main=await draftKings;
+if(main.failed.length)note.push('DraftKings NBA main lines ('+main.failed.map(x=>x.market).join(', ')+')');
+for(const d of priceDays){
+  const file='nba-main-lines-'+d+'.json';
+  if(!slates.nba[d])await backup(file,'DraftKings NBA main lines '+d);
+  else await writeOdds(file,main.quotes.filter(q=>q.date===d),main.failed,pricedGames('nba',d));
 }
 const schedule=await read('nfl-schedule.json')||[];
 const nflUpcoming=upcomingNflGames(schedule,Date.now()).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));

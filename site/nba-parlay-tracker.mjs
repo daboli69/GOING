@@ -35,7 +35,7 @@ const nba=createTracker({prefix:'parlay-legs',title:'Parlay Leg Tracker',suggest
   forms:[['L5','last5'],['L10','last10'],['Season','season'],['Home','home'],['Away','away'],['Venue','venue']],
   empty:'Results will appear once the tracker captures priced props before tipoff.',
   coverage:index=>(index.filters?`Default ticket: ${index.filters.legs} legs, one per game, ${index.filters.hit}% minimum hit rate, ${index.filters.sample}-game type sample, ${index.filters.spread} max spread. `:'')+
-    'Alternate lines are tracked for comparison. Each line and side counts once at its last observed pregame quote.',
+    'DraftKings main lines are used for new builder tickets. Kalshi lines are tracked for comparison at their last observed pregame quote.',
   detail:l=>{
     const c=l.context||{}, d=c.typeEdge;
     return `<p>${notes(['Season avg '+round(l.avg),'L10 avg '+round(l.recentAvg),'Spread '+round(c.spread),'Total '+round(c.total),
