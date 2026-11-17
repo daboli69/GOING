@@ -8,6 +8,18 @@ import {createParlays} from './parlay-ui.mjs';
 import {nbaTicketsKey,resolveNbaTicketLeg} from './nba-parlay-results.mjs';
 export {toAmerican,fromAmerican} from './parlay-ui.mjs';
 
+function poolSummary({eligible,screened},cfg){
+  const games=new Set(eligible.map(leg=>leg.game)).size;
+  const sides=cfg.side==='Both'?['Over','Under']:[cfg.side];
+  const quotes=sides.map(side=>{
+    const fresh=screened.filter(leg=>leg.side===side&&!leg.checks.Quote&&!leg.checks['Quote freshness']&&!leg.checks['Tip time']).length;
+    const qualified=eligible.filter(leg=>leg.side===side).length;
+    return fresh?`${qualified} of ${fresh} ${side} quotes qualify`:`No fresh ${side} quotes`;
+  });
+  return [...quotes,`${games} qualifying ${games===1?'game':'games'}`].join(' · ')+
+    (cfg.perGame&&games>0&&games<cfg.legs?`. One leg per game limits this ticket to at most ${games}.`:'');
+}
+
 function fullList(_data,{eligible},ticket){
   if(!eligible.length)return box('Full List',empty('No priced legs pass the current filters.'));
   const onTicket=new Set(ticket.map(legKey));
@@ -39,7 +51,7 @@ const nba=createParlays({
   nav:()=>slate({navOnly:true,date:true}),
   intro:()=>tools(`<a class="pill" href="${href('up/parlay-tracker.html')}">Parlay Leg Tracker</a>`+
     btn('Check for updates','nbaParlayCheck','')),
-  afterTicket:fullList,
+  afterTicket:fullList,poolSummary,
   chance:nbaLegChance,
   chanceNote:'Sample-adjusted season rates with lineup context',
   recent:{key:'last10',label:'L10'},

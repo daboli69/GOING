@@ -46,6 +46,7 @@ const baseHints={'Odds range':'Widen the odds range.','Existing tickets':'Allow 
    nav()                    the slate navigation shown above the filters
    intro                    HTML under the page title (links)
    afterTicket(data,report,ticket)  optional market screening details
+   poolSummary(report,filters)  optional summary of the priced pool shown above the ticket
    resolveSavedLeg(leg)     enrich saved legs with automatic results when the sport supports it
    singleGame               select the game in the slate, instead of per-game and matchup-exclusion controls
    build                    optional ticket builder
@@ -231,7 +232,7 @@ export function createParlays(opts){
     const intro=typeof opts.intro==='function'?opts.intro(data):opts.intro;
     return `<h1>${esc(opts.title||'Suggested Parlays')}</h1>${intro||''}`+opts.nav()+
       box('Filters',controls(data,cfg))+
-      box('Suggested ticket',(opts.liveDraft?`<p class="subtle">Last evaluated ${esc(timeLabel(state.evaluatedAt))} · ${report.eligible.length} eligible priced legs</p>`:'')+
+      box('Suggested ticket',(opts.liveDraft?`<p class="subtle">Last evaluated ${esc(timeLabel(state.evaluatedAt))} · ${esc(opts.poolSummary?.(report,cfg)??report.eligible.length+' eligible priced legs')}</p>`:'')+
         (state.message?`<p class="subtle" role="status">${esc(state.message)}</p>`:'')+
         shortage(data,cfg,report,activeDraft(state)?ticket.length:ticket.length||preview.length)+
         (ticket.length?ticketTable(ticket,state.locked)+(ticket.length>=2?(opts.ticketSummary||mathSummary)(ticket):''):empty(activeDraft(state)?'No suggested legs match the current filters.':'Generate a ticket from the eligible legs.')))+

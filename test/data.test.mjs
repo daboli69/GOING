@@ -60,6 +60,16 @@ test('exchange prices require quoted size and keep the exact event and line',()=
   assert.equal(list[0].provider,'Kalshi');
   assert.equal(list[0].line,.5);
 });
+test('Kalshi NO ask size is backed by the matching YES bid',()=>{
+  const game={a:'POR',h:'MIN',date:'2026-11-17'};
+  const market={title:'Example Player: 4+ rebounds',status:'active',floor_strike:3.5,
+    yes_ask_dollars:'.45',yes_ask_size_fp:'20',yes_bid_dollars:'.40',yes_bid_size_fp:'10.50',no_ask_dollars:'.60'};
+  assert.equal(quote(market,'Rebounds',game).under,'-150');
+  assert.equal(quote({...market,yes_bid_size_fp:'0'},'Rebounds',game).under,null);
+  assert.equal(quote({...market,no_ask_size_fp:'0'},'Rebounds',game).under,null);
+  assert.equal(quote({...market,yes_bid_dollars:'.30'},'Rebounds',game).under,null);
+  assert.equal(quote({...market,no_ask_dollars:'1'},'Rebounds',game).under,null);
+});
 test('line matchups count only the time when all players share the ice',()=>{
   assert.deepEqual(together([[[0,25]],[[10,30]],[[15,35]]]),[[15,25]]);
   const names=['One Player','Two Player','Three Player'];
