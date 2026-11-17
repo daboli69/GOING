@@ -61,3 +61,60 @@ test('market comparisons use published ensemble probabilities and reject unmatch
   assert.equal(marketForecast('nfl',{generated_at:checked,games:[nflRow]},nflGame),.6);
   assert.equal(marketForecast('nfl',{generated_at:checked,games:[nflRow,nflRow]},nflGame),null);
 });
+
+
+test('college capture pages through the full slate and matches prices to schools in reversed market order',async()=>{
+  const hof={id:'2275',abbrev:'HOF',name:'Pride',displayName:'Hofstra Pride'};
+  const mur={id:'93',abbrev:'MUR',name:'Racers',displayName:'Murray State Racers'};
+  const first={...event,competitors:[{homeAway:'home',team:mur},{homeAway:'away',team:hof}]};
+  const second={...first,id:'123',status:{state:'post'}};
+  const exchangeCalls=[];
+  const snap=await captureMarket('cbb',async (tool,args)=>{
+    if(tool==='get_scoreboard'){
+      assert.equal(args.league,'mens-college-basketball');
+      assert.equal(args.groups,'50');
+      return args.offset===1?{events:[second],page:{offset:1,total:2}}:{events:[first],page:{offset:0,total:2}};
+    }
+    exchangeCalls.push(args.eventId);
+    return {...data([
+      {venue:'kalshi',status:'ok',events:[{away:{code:'MURR',name:'Murray St.'},home:{code:'HOF',name:'Hofstra'},
+        markets:[{outcome:'MURR',yesAsk:.85},{outcome:'HOF',yesAsk:.16}]}]},
+      {venue:'polymarket_us',status:'ok',events:[{long:{code:'murst',name:'Murray State Racers',mid:.845},short:{code:'hofst',name:'Hofstra Pride',mid:.155}}]}
+    ]),game:{startUtc:iso,away:{id:hof.id,location:'Hofstra'},home:{id:mur.id,location:'Murray State'}}};
+  },null,{now:()=>now});
+  assert.deepEqual(exchangeCalls,[game.id]);
+  const [g]=snap.games;
+  assert.deepEqual([g.aId,g.hId],[hof.id,mur.id]);
+  assert.deepEqual(g.exchanges.map(x=>[x.away??null,x.home??null]),[[.16,.85],[null,null],[.155,.845]]);
+  const forecast={updated:checked,games:[{id:g.id,away:hof,home:mur,start:iso,forecast:{pHome:.63}}]};
+  assert.equal(marketForecast('cbb',forecast,g),.63);
+  assert.equal(marketForecast('cbb',forecast,{...g,hId:'123'}),null);
+});
+
+test('NHL uses sport-specific team codes and baseball doubleheaders keep each sportsbook line on its game',async()=>{
+  const hockey={...event,competitors:[{homeAway:'away',team:{abbrev:'LA',name:'Kings'}},{homeAway:'home',team:{abbrev:'BOS',name:'Bruins'}}]};
+  const nhl=await captureMarket('nhl',async tool=>tool==='get_scoreboard'?{events:[hockey]}:data([
+    {venue:'polymarket_us',status:'ok',events:[{long:{code:'lak',mid:.4},short:{code:'bos',mid:.6}}]}
+  ]),null,{now:()=>now});
+  assert.equal(nhl.games[0].a,'LAK');
+  assert.equal(nhl.games[0].exchanges[2].away,.4);
+
+  const baseball={...event,competitors:[{homeAway:'away',team:{abbrev:'ARI'}},{homeAway:'home',team:{abbrev:'SD'}}]};
+  const doubleheader=await captureMarket('mlb',async tool=>{
+    assert.equal(tool,'get_scoreboard');
+    return {events:[baseball,{...baseball,id:'456',date:'2026-11-18T03:00:00.000Z'}]};
+  },null,{now:()=>now});
+  for(const g of doubleheader.games){
+    assert.match(g.exchangeNote,/doubleheader/);
+    assert.deepEqual(g.exchanges,[]);
+    assert.equal(g.books[0].total,215.5);
+  }
+  const firstGame=doubleheader.games[0];
+  const forecast={generated_at:checked,game_projections:[
+    {away:'AZ',home:'SD',time:iso,home_wp:.51},{away:'AZ',home:'SD',time:'2026-11-18T03:00:00Z',home_wp:.62}
+  ]};
+  assert.equal(marketForecast('mlb',forecast,firstGame),.51);
+  assert.equal(marketForecast('mlb',forecast,doubleheader.games[1]),.62);
+  forecast.game_projections[1].time=iso;
+  assert.equal(marketForecast('mlb',forecast,firstGame),null);
+});

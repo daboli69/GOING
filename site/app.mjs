@@ -67,7 +67,7 @@ function render(options={}){
   if(S.error)main.innerHTML=box('',empty(S.error)+tools(btn('Try again','retry','')));
   else if(!S.loaded)main.innerHTML=box('',empty(S.route.id==='home'?'Loading today’s slates…':'Loading the slate…'));
   else{
-    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?M.tracker.trackerPage():trackerOf(S.route.id)?M[trackerOf(S.route.id)].parlayTrackerPage():isCollege(S.route.sport)?M.college.collegePage():isModel(S.route.id)?M.models.modelPage():S.route.id==='market-watch'?M.marketWatch.marketPage(S.markets,S.marketModels):M[S.route.sport].page();}
+    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?M.tracker.trackerPage():trackerOf(S.route.id)?M[trackerOf(S.route.id)].parlayTrackerPage():S.route.id==='market-watch'?M.marketWatch.marketPage(S.markets,S.marketModels):isCollege(S.route.sport)?M.college.collegePage():isModel(S.route.id)?M.models.modelPage():M[S.route.sport].page();}
     catch(e){console.error(e);main.innerHTML=box('',empty('This view could not be rendered.')+tools(btn('Try again','retry','')));}
   }
   const next=main.querySelector('.matchup-row');
@@ -170,6 +170,17 @@ async function load(){
     catch(e){if(token!==req)return;S.error=failed('The pick record could not load. Try again in a moment.');console.error(e);render();}
     return;
   }
+  if(id==='market-watch'){
+    try{
+      await need('marketWatch');
+      const [markets,models]=await Promise.all([M.marketWatch.readMarkets(s),M.marketWatch.readMarketModels(s)]);
+      if(token!==req)return;
+      S.data={};S.markets=markets;S.marketModels=models;S.loaded=true;
+      S.f.marketNext=Date.now()+120000;
+      render();
+    }catch(e){if(token===req)proLoadFailed('Market Watch could not load.');console.error(e);}
+    return;
+  }
   if(isCollege(s)||s==='ufc'){
     let data;
     try{
@@ -196,17 +207,6 @@ async function load(){
     }));
     if(token!==req)return;
     playArchive=Object.fromEntries(loadSports);render();return;
-  }
-  if(id==='market-watch'){
-    try{
-      await need('marketWatch');
-      const [markets,models]=await Promise.all([M.marketWatch.readMarkets(s),M.marketWatch.readMarketModels(s)]);
-      if(token!==req)return;
-      S.data={};S.markets=markets;S.marketModels=models;S.loaded=true;
-      S.f.marketNext=Date.now()+120000;
-      render();
-    }catch(e){if(token===req)proLoadFailed('Market Watch could not load.');console.error(e);}
-    return;
   }
   if(isModel(id)){
     try{

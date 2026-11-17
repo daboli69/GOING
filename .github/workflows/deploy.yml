@@ -145,16 +145,8 @@ jobs:
           path: site/data/market-watch
 
       - name: Recover missing Market Watch snapshots
-        run: |
-          mkdir -p site/data/market-watch
-          for sport in nba nfl; do
-            file="site/data/market-watch/$sport.json"
-            if [ ! -s "$file" ] && curl --silent --show-error --fail --max-time 7 \
-                "https://goingplaybook.com/data/market-watch/$sport.json" -o "$file.tmp"; then
-              mv "$file.tmp" "$file"
-            fi
-            rm -f "$file.tmp"
-          done
+        continue-on-error: true
+        run: node scripts/market-watch.mjs --restore
 
       - name: Restore live snapshots
         uses: actions/cache/restore@v6
