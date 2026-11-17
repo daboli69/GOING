@@ -1,6 +1,6 @@
 import {american} from '../site/math.mjs';
-const host='https://external-api.kalshi.com/trade-api/v2/';
-const series={
+export const host='https://external-api.kalshi.com/trade-api/v2/';
+export const series={
   nfl:{Receiving:'KXNFLRECYDS',Rushing:'KXNFLRSHYDS',Passing:'KXNFLPASSYDS','Anytime TD':'KXNFLTD','First TD':'KXNFLFIRSTTD',
     Receptions:'KXNFLREC','Rush Attempts':'KXNFLRSHATT','Pass Attempts':'KXNFLPASSATT',Completions:'KXNFLPASSCOMP'},
   nba:{Points:'KXNBAPTS',Threes:'KXNBA3PT',Assists:'KXNBAAST',Rebounds:'KXNBAREB','First Basket':'KXNBAFIRSTBASKET'},
@@ -8,7 +8,7 @@ const series={
 };
 const months='JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC'.split(' ');
 const aliases={nfl:{LA:['LA','LAR'],WAS:['WAS','WSH'],JAX:['JAX','JAC']},nba:{WSH:['WAS','WSH'],UTAH:['UTA','UTAH'],GS:['GS','GSW'],NY:['NY','NYK'],SA:['SA','SAS'],NO:['NO','NOP']},nhl:{TBL:['TB','TBL'],LAK:['LA','LAK'],NJD:['NJ','NJD'],SJS:['SJ','SJS'],UTA:['UTA','UTAH']}};
-const norm=t=>String(t||'').normalize('NFKD').replace(/[^\p{L}\p{N}]/gu,'').toLowerCase();
+export const marketName=t=>String(t||'').normalize('NFKD').replace(/[^\p{L}\p{N}]/gu,'').toLowerCase();
 export function eventSuffixes(s,g){
   const [y,m,d]=g.date.split('-'),codes=t=>aliases[s]?.[t]||[t];
   return codes(g.a).flatMap(a=>codes(g.h).map(h=>y.slice(2)+months[+m-1]+d+a+h));
@@ -30,14 +30,14 @@ export function quote(m,market,g){
 export function chooseQuotes(rows,byLine=false){
   const top=new Map();
   for(const row of rows){
-    const key=[row.date,row.a,row.h,norm(row.player),row.market,byLine?row.line:''].join('|');
+    const key=[row.date,row.a,row.h,marketName(row.player),row.market,byLine?row.line:''].join('|');
     const prev=top.get(key);
     const score=x=>(x.yes!=null&&x.no!=null?3:0)-Math.abs((x.yes??1-x.no)-.5)*4+.08*Math.log1p(x.volume);
     if(!prev||score(row)>score(prev))top.set(key,row);
   }
   return [...top.values()].map(({volume,yes,no,...x})=>x);
 }
-async function readListing(u,read,key='markets'){
+export async function readListing(u,read,key='markets'){
   for(let i=0;i<2;i++){
     let delay=400;
     try{
@@ -57,7 +57,7 @@ async function readListing(u,read,key='markets'){
   return null;
 }
 
-async function readInParallel(items,run){
+export async function readInParallel(items,run){
   let i=0;
   await Promise.all(Array.from({length:Math.min(3,items.length)},async()=>{
     while(i<items.length)await run(items[i++]);

@@ -4,6 +4,7 @@ import {allowedRanks,buildTicket,defaults,evaluate,legKey,nbaLegChance,record,ti
 import {lineupEffect,rotationTeammates,teammateSplits} from '../site/nba-lineup-splits.mjs';
 import {captureLegs,finalPlayers,gradeLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
 import {chooseQuotes} from '../scripts/market-data.mjs';
+import {gradeNbaPropSettlement,loadNbaPropSettlements} from '../scripts/nba-prop-settlement.mjs';
 import {parlayPage,savedParlayTickets} from '../site/nba-parlays.mjs';
 import {current as S} from '../site/ui.mjs';
 
@@ -20,6 +21,28 @@ function row(overrides={}){
 }
 const over={...defaults,side:'Over'};
 const evaluateRows=(rows,cfg=over,taken=new Set())=>evaluate(rows,cfg,{now,taken});
+
+test('NBA settlement fallback matches the finalized contract and excludes nonbinary payouts from simulated returns',async()=>{
+  const leg={game:'1',date:'2026-11-12',name:'Nikola Jović',stat:'Points',line:9.5,provider:'Kalshi',side:'Over'};
+  const legs=[leg,{...leg,line:14.5},{...leg,line:19.5},{...leg,line:24.5},{...leg,stat:'Assists',provider:'DraftKings'}];
+  const event='KXNBAPTS-26NOV12DETCHI';
+  const market=(line,result,more={})=>({event_ticker:event,title:'Nikola Jovic: '+(line+.5)+'+ points',
+    floor_strike:line,status:'finalized',result,...more});
+  let calls=0;
+  const settlements=await loadNbaPropSettlements(legs,new Map([['1',{a:'DET',h:'CHI'}]]),async url=>{
+    calls++;
+    assert.equal(url.searchParams.get('event_ticker'),event);
+    return {ok:true,json:async()=>({cursor:'',markets:[
+      market(9.5,'scalar'),market(14.5,'no'),market(19.5,'yes',{status:'open'}),
+      market(24.5,'yes',{event_ticker:'OTHER'}),market(29.5,'yes')
+    ]})};
+  });
+  assert.equal(calls,1);
+  assert.equal(gradeNbaPropSettlement(leg,settlements,now).result,'void');
+  assert.equal(gradeNbaPropSettlement(legs[1],settlements,now).result,'lost');
+  assert.equal(gradeNbaPropSettlement({...legs[1],side:'Under'},settlements,now).result,'won');
+  for(const pending of legs.slice(2))assert.equal(gradeNbaPropSettlement(pending,settlements,now),pending);
+});
 
 test('Suggested Parlays opens with incomplete saved filters and shows usable legs without rewriting storage',()=>{
   const key='suite:nba-parlay-tickets';

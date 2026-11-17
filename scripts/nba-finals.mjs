@@ -6,14 +6,17 @@ export function parseNbaFinal(summary,id){
   const box=nbaFinalBox(summary,id);
   if(!box||box.canceled)return box;
   const {players}=box;
-  const teams=new Map(summary.header.competitions[0].competitors?.map(t=>[String(t.team?.id),t.team?.abbreviation])||[]);
+  const competitors=summary.header.competitions[0].competitors||[];
+  const teams=new Map(competitors.map(t=>[String(t.team?.id),t.team?.abbreviation]));
   const score=summary.plays?.find(p=>p.scoringPlay===true&&Number(p.scoreValue)>0);
   const athlete=String(score?.participants?.[0]?.athlete?.id??'');
   const team=teams.get(String(score?.team?.id));
   const total=Number(score?.awayScore)+Number(score?.homeScore);
   const first=team&&players.has(athlete)&&!players.get(athlete).dnp&&[1,2,3].includes(Number(score?.scoreValue))&&
     total===Number(score.scoreValue)?{athlete,team}:null;
-  return {players,first};
+  const a=competitors.find(t=>t.homeAway==='away')?.team?.abbreviation;
+  const h=competitors.find(t=>t.homeAway==='home')?.team?.abbreviation;
+  return {players,first,a,h};
 }
 
 export async function loadNbaFinals(ids,{refresh=false}={}){

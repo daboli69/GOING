@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {current as S,dateKey,dateAdd} from '../site/ui.mjs';
 import {loadNbaFinals} from './nba-finals.mjs';
+import {gradeNbaPropSettlement,loadNbaPropSettlements} from './nba-prop-settlement.mjs';
 import {parlayData} from '../site/nba.mjs';
 import {captureLegs,reconcileNbaParlayLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
 import {confirmedBacklog} from './health.mjs';
@@ -48,16 +49,34 @@ for(const leg of store.values()){
   candidates.set(leg.game,group);
 }
 // Give recent games a fresh box score at least hourly as capacity permits. Serve never-checked games first.
-const games=[...candidates].filter(([game])=>now-(checks[game]?.checkedAt??0)>=hourMs)
-  .sort(([a],[b])=>(checks[a]?.checkedAt??0)-(checks[b]?.checkedAt??0)).slice(0,32);
+const dueAt=([game,legs])=>{
+  const check=checks[game];
+  if(check?.confirmed&&!check.contractChecked&&legs.some(leg=>!leg.result&&leg.provider==='Kalshi'))return 0;
+  return check?.checkedAt??0;
+};
+const games=[...candidates].filter(game=>now-dueAt(game)>=hourMs).sort((a,b)=>dueAt(a)-dueAt(b)).slice(0,32);
 const finals=await loadNbaFinals(games.map(([game])=>game),{refresh:true});
+const unresolved=[];
 for(const [game,legs] of games){
   const box=finals.get(game);
-  if(now-Date.parse(legs[0].tip)<weekMs)checks[game]={checkedAt:now,confirmed:!!box||!!checks[game]?.confirmed};
+  if(now-Date.parse(legs[0].tip)<weekMs)checks[game]={...checks[game],checkedAt:now,confirmed:!!box||!!checks[game]?.confirmed};
   for(const leg of legs){
     const updated=reconcileNbaParlayLeg(leg,box,now);
     if(updated!==leg){store.set(leg.k,updated);changed.add(month(leg));}
+    if(box&&!updated.result&&updated.provider==='Kalshi'){
+      unresolved.push(updated);
+      if(checks[game])checks[game].contractChecked=true;
+    }
   }
+}
+const settlements=await loadNbaPropSettlements(unresolved,finals);
+let marketGrades=0;
+for(const leg of unresolved){
+  const updated=gradeNbaPropSettlement(leg,settlements,now);
+  if(updated===leg)continue;
+  store.set(leg.k,updated);
+  changed.add(month(leg));
+  marketGrades++;
 }
 const gradingBacklog=confirmedBacklog([...store.values()],leg=>!leg.result&&checks[leg.game]?.confirmed,now);
 
@@ -69,4 +88,4 @@ for(const leg of store.values()){
 for(const key of changed)await save(`parlay-legs-${key}.json`,months.get(key).sort((a,b)=>a.tip.localeCompare(b.tip)||a.k.localeCompare(b.k)));
 await save('parlay-legs-index.json',{updated:new Date(now).toISOString(),months:[...months.keys()].sort(),
   count:store.size,coverage,filters:defaults,finalChecks:checks,gradingBacklog});
-console.log(`NBA parlay tracker: ${store.size} distinct legs, ${games.length} final box scores checked.`);
+console.log(`NBA parlay tracker: ${store.size} distinct legs, ${games.length} final box scores checked, ${marketGrades} legs graded from finalized Kalshi contracts.`);
