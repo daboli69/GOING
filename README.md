@@ -93,7 +93,7 @@ Data for the engine comes from the nflverse play-by-play (with expected pass rat
 
 The NBA and NFL pages share `parlay-ui.mjs` and `parlay-tracker-ui.mjs`.
 
-**Parlay Leg Tracker.** Each Pages refresh archives the priced NBA legs the builder can match, including available alternate thresholds and both quoted sides. It records every applicable screening rule, the default ticket's selection, and the first and latest pregame observations for each line and side. Final ESPN box scores grade hits, misses, pushes and confirmed DNPs. Missing final results stay pending. Compare rules by hit rate, hypothetical flat-stake ROI, and the subset where only one rule failed. Results start with the first successful capture. Empty quote feeds cannot be backfilled from box scores.
+**Parlay Leg Tracker.** Each Pages refresh archives the priced NBA legs the builder can match, including available alternate thresholds and both quoted sides. It records every applicable screening rule, the default ticket's selection, and the first and latest pregame observations for each line and side. Final ESPN box scores grade hits, misses, pushes and confirmed DNPs. When a final box score leaves a Kalshi leg unresolved, the tracker looks for the finalized contract and treats nonbinary settlements as void in simulated returns. Results without a verified grade stay pending. Compare rules by hit rate, hypothetical flat-stake ROI, and the subset where only one rule failed. Results start with the first successful capture. Empty quote feeds cannot be backfilled from box scores.
 
 Two sources feed the site, and neither commits data to `main`.
 
