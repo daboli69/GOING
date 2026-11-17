@@ -155,7 +155,7 @@ function start(){
   if(S.route.id==='nfl-sgp'||S.route.id==='nfl-preview')S.f.requestedNflGame=new URLSearchParams(location.search).get('game');
   if(S.route.id==='tracker'){
     const league=new URLSearchParams(location.search).get('sport')?.toLowerCase();
-    if(isCollege(league)||league==='ufc')S.f.sport=league.toUpperCase();
+    if(league&&Object.hasOwn(sections,league))S.f.sport=league.toUpperCase();
   }
   S.loaded=false;
   S.lineStats={};
@@ -342,6 +342,10 @@ function updateField(k,v){
   if(k==='offense')S.f.player=null;
   if(k==='pricing')S.f.touchedPricing=true;
   S.f[k]=v;
+  if(S.route.id==='tracker'){
+    S.f.trackerHistoryLimit=40;
+    if(k.startsWith('tracker'))S.sort=null;
+  }
   if(S.route.id==='myplays'&&lastDialog==='wheel'&&$('#dialog').open){wheel(false);return;}
   render();
 }

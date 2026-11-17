@@ -1,121 +1,201 @@
-// Pick Tracker page: every pick the site offered before games started, graded against final results.
-import {current as S,esc,box,grid,metric,table,cell,info,empty,tools,btn,select,badge,team,dateAdd,today,round,pct} from './ui.mjs';
+// Research views over the public pick record.
+import {current as S,esc,box,grid,metric,table,cell,info,empty,tools,btn,action,select,dateAdd,dateKey,round,pct,local,keep,toast} from './ui.mjs';
+import {href,viewDefaults,sections} from './config.mjs';
 import {heat,signed} from './math.mjs';
-import {toolLabel,isModelTool,blank,add,rate,roi,breakeven,brier,units,impliedProb} from './track-core.mjs';
+import {toolLabel,isModelTool,rate,roi,breakeven,brier,units} from './track-core.mjs';
 import {isCollege,collegePickLabel} from './college-core.mjs';
 import {trackerFeed} from './tracker-feed.mjs';
+import {trackerDimensions,filterDimensions,trackerLabel,trackerRows,trackerScope,trackerStats,trackerGroups,uniqueTrackerPicks} from './tracker-explore.mjs';
 
 const feed=trackerFeed('picks','index');
-let picks=[],index={},notice='';
+const savedView='tracker-view';
+const periods=['All recorded','Last 7 days','Last 30 days','Custom'];
+const orders=['Decisions','ROI','Hit rate'];
+const samples=['0','5','10','25','50','100'];
+const results=['Graded','All','Hit','Miss','Push','Void','Pending'];
+const resultName={won:'Hit',lost:'Miss',push:'Push',void:'Void'};
+let memberships=[],index={},notice='';
+
 export async function trackerLoad(){
-  ({index,rows:picks,notice}=await feed());
+  const data=await feed();
+  ({index,notice}=data);
+  memberships=trackerRows(data.rows);
+}
+function settings(f){
+  const defaults=viewDefaults.tracker;
+  const saved={...defaults};
+  for(const [key,value] of Object.entries(defaults)){
+    if(typeof f?.[key]===typeof value)saved[key]=f[key];
+  }
+  if(!Object.hasOwn(trackerDimensions,saved.trackerGroup))saved.trackerGroup=defaults.trackerGroup;
+  if(!Object.hasOwn(trackerDimensions,saved.trackerSplit))saved.trackerSplit='';
+  return saved;
+}
+function dates(f){
+  const today=dateKey();
+  if(f.window==='Last 7 days')return {from:dateAdd(today,-6),to:today};
+  if(f.window==='Last 30 days')return {from:dateAdd(today,-29),to:today};
+  return f.window==='Custom'?{from:f.trackerFrom,to:f.trackerTo}:{};
 }
 export function trackerAction(act,v){
-  if(act==='tool'){S.f.tool=S.f.tool===v?null:v;return true;}
-  return false;
+  if(act==='trackerMoreHistory'){
+    S.f.trackerHistoryLimit=(S.f.trackerHistoryLimit||40)+40;
+    return true;
+  }
+  if(act==='trackerDrill'){
+    const pairs=JSON.parse(v), f=S.f;
+    f.trackerPrevious=settings(f);
+    for(const [key,value] of pairs){
+      if(key==='week'&&/^\d{4}-\d\d-\d\d$/.test(value)){
+        const {from,to}=dates(f), end=dateAdd(value,6);
+        f.window='Custom';
+        f.trackerFrom=from&&from>value?from:value;
+        f.trackerTo=to&&to<end?to:end;
+      }else if(filterDimensions.includes(key))f[key]=value;
+    }
+  }else if(act==='trackerBack'&&S.f.trackerPrevious){
+    S.f=S.f.trackerPrevious;
+  }else if(act==='trackerReset'){
+    S.f=settings({});
+  }else if(act==='trackerSave'){
+    try{keep(savedView,settings(S.f));toast('Tracker view saved in this browser.');}
+    catch{toast('Could not save the tracker view.');}
+  }else if(act==='trackerRestore'){
+    S.f=settings(local(savedView,{}));
+  }else return false;
+  S.f.trackerHistoryLimit=40;
+  S.sort=null;
+  return true;
 }
 const ago=iso=>{if(!iso)return 'not yet';const m=Math.round((Date.now()-Date.parse(iso))/60000);return m<2?'just now':m<90?m+' min ago':m<36*60?Math.round(m/60)+' h ago':Math.round(m/1440)+' days ago';};
-const since={'Last 7 days':7,'Last 30 days':30};
-// Each pick counts once per tool that offered it; with "leaned toward" on, only where that tool's own numbers favoured the side.
-function memberships(){
-  const f=S.f,from=since[f.window]?dateAdd(today,-since[f.window]):'';
-  const out=[];
-  for(const p of picks){
-    if(f.sport!=='All'&&p.sport!==f.sport.toLowerCase()||p.date<from)continue;
-    if(f.kind==='Model picks'&&p.kind!=='model'||f.kind==='Prop picks'&&p.kind!=='prop'||f.kind==='Game picks'&&p.kind!=='game')continue;
-    if(f.market&&f.market!=='All markets'&&p.market!==f.market)continue;
-    for(const [t,m] of Object.entries(p.tools)){
-      if(f.lean&&m.lean!==true)continue;
-      out.push({p,t,m});
-    }
-  }
-  return out;
-}
-const record=s=>`${s.won}-${s.lost}${s.push?'-'+s.push:''}`;
+const record=s=>`${s.won}–${s.lost}${s.push?' · '+s.push+' pushes':''}${s.void?' · '+s.void+' void':''}`;
 const unitsText=x=>x==null?'—':signed(x,1)+'u';
-const pickOdds=p=>esc(p.odds??'—')+((isCollege(p.sport)||p.sport==='ufc')&&p.odds!=null&&p.provider?` <span class="muted">${esc(p.provider)}</span>`:'');
 const captureTime=iso=>new Date(iso).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
-const collegeCapture=({p,m})=>[
-  p.at?esc(captureTime(p.at)):'—',
-  esc(p.version??'—'),
-  p.proj==null?'—':p.market==='Spread'?signed(p.proj,1):round(p.proj,1),
-  m.edge==null?'—':round(m.edge,1)+' pts'
-];
-// Hit rate is judged against the break-even rate implied by the prices actually captured.
-const hitCell=s=>{const r=rate(s),b=breakeven(s);return r==null?cell('—','none'):cell(pct(r,1),b==null?heat(r,.5,.04):heat(r-b,0,.03));};
-const roiCell=s=>{const r=roi(s);return r==null?cell('—','none'):cell(signed(r*100,1)+'%',heat(r,0,.05));};
-const brierCell=s=>{const b=brier(s);return b==null?'—':round(b,3);};
+const brierCell=s=>brier(s)==null?'—':round(brier(s),3);
+const hitCell=s=>{
+  const hit=rate(s), even=breakeven(s);
+  return hit==null?cell('—','none'):cell(pct(hit,1),even==null?'':heat(hit-even,0,.03));
+};
+
+function dimensionOptions(rows,key,selected){
+  const values=new Set(rows.map(trackerDimensions[key].value));
+  if(selected)values.add(selected);
+  return [['','All'],...[...values].map(v=>[v,trackerLabel(key,v)]).sort((a,b)=>a[1].localeCompare(b[1]))];
+}
+const checkbox=(label,key,value)=>`<label class="field"><input type="checkbox" data-field="${key}" ${value?'checked':''}> ${label}</label>`;
+const dateField=(label,key,value)=>`<label class="field">${label} <input type="date" data-field="${key}" aria-label="${label}" value="${esc(value)}"></label>`;
+
+function filters(f,options){
+  const advanced=filterDimensions.slice(3);
+  const controls=tools([
+    select('League','sport',[['','All leagues'],...Object.values(sections).map(({league})=>league)]),
+    select('Pick category','kind',[['','All picks'],'Model picks','Prop picks','Game picks']),
+    select('Market','market',dimensionOptions(options,'market',f.market)),
+    select('Period','window',periods),
+    `<button type="button" class="pill outline" aria-expanded="${f.trackerAdvanced}" ${action('flip','trackerAdvanced')}>${f.trackerAdvanced?'Fewer filters':'More filters'}</button>`
+  ].join(''),'tracker-controls');
+  const customDates=f.window==='Custom'?tools(dateField('From','trackerFrom',f.trackerFrom)+dateField('Through','trackerTo',f.trackerTo),'tracker-controls'):'';
+  const extra=f.trackerAdvanced?tools(advanced.map(key=>select(trackerDimensions[key].label,key,dimensionOptions(options,key,f[key]))).join('')+
+    checkbox('Only sides the tool leaned toward','lean',f.lean),'tracker-controls'):'';
+  const active=advanced.filter(key=>f[key]).map(key=>btn(esc(trackerLabel(key,f[key]))+' ×','set',key+':','outline')).join('');
+  return box('Filters',controls+customDates+extra+tools(active+
+    (f.trackerPrevious?btn('Back to comparison','trackerBack',''):'')+
+    btn('Reset','trackerReset','','outline')+btn('Save view','trackerSave','','outline')+
+    (local(savedView,null)?btn('Restore saved view','trackerRestore','','outline'):'')+
+    (f.lean&&!f.trackerAdvanced?'<span class="subtle">Tool leans only</span>':''),
+    'tracker-controls'),'Combine filters to inspect the same slice in the summary, comparison, and pick history.');
+}
+
+function comparison(rows,f){
+  const dims=[f.trackerGroup];
+  if(f.trackerSplit&&f.trackerSplit!==f.trackerGroup)dims.push(f.trackerSplit);
+  const dimensionOptions=Object.entries(trackerDimensions).map(([key,{label}])=>[key,label]);
+  const controls=tools(select('Group by','trackerGroup',dimensionOptions)+
+    select('Then by','trackerSplit',[['','None'],...dimensionOptions])+
+    select('Rank by','trackerOrder',orders)+select('Minimum decisions','trackerMin',samples.map(n=>[n,n==='0'?'Any sample':n])), 'tracker-controls');
+  const groups=trackerGroups(rows,dims,Number(f.trackerMin),f.trackerOrder);
+  const maxRoi=Math.max(.01,...groups.map(({stats})=>Math.abs(roi(stats)??0)));
+  const body=table([dims.map(key=>trackerDimensions[key].label).join(' / '),'Decisions','Priced','Record','Hit rate','Break-even','Units','ROI','Waiting'],
+    groups.map(({values,stats:s})=>{
+      const label=values.map((v,i)=>trackerLabel(dims[i],v)).join(' · ');
+      const result=roi(s);
+      const bar=result==null?'—':`<div class="tracker-roi" data-positive="${result>=0}" style="--roi-size:${Math.abs(result)/maxRoi*50}%">
+        <span aria-hidden="true"></span><strong>${signed(result*100,1)}%</strong></div>`;
+      return [cell(btn(esc(label),'trackerDrill',JSON.stringify(dims.map((key,i)=>[key,values[i]])),'outline tracker-drill')),
+        s.won+s.lost,s.stake,esc(record(s)),hitCell(s),pct(breakeven(s),1),unitsText(s.stake?s.units:null),bar,s.pending];
+    }),{sort:'tracker-comparison',limit:20,wrap:'box',empty:'No groups match these filters and sample size.'});
+  return box('Compare results',controls+body,
+    'Select a group to filter the tracker to it. ROI uses one unit per priced win or loss. A pick can appear in several tool rows and counts once within each row.');
+}
+
+function describe(p){
+  if(p.sport==='ufc')return `${esc(p.player)} to win <span class="muted">vs ${esc(p.opponent)}</span>`;
+  if(isCollege(p.sport)){
+    const pick=esc(collegePickLabel(p))+(p.market==='Winner'?' to win':' '+(p.market==='Spread'?signed(p.line,1):esc(p.line)));
+    return `${pick} <span class="muted">· ${esc(p.awayName)} vs ${esc(p.homeName)}</span>`;
+  }
+  if(p.kind==='model')return `${esc(p.side)} to win <span class="muted">vs ${esc(p.side===p.h?p.a:p.h)}</span>`;
+  return `${esc(p.player)} <span class="muted">${esc(p.side)} ${esc(p.line)} ${esc(p.market)}</span>`;
+}
+
+function history(picks,rows,f){
+  const toolsByPick=new Map();
+  for(const {p,t} of rows){
+    if(!toolsByPick.has(p.k))toolsByPick.set(p.k,new Set());
+    toolsByPick.get(p.k).add(toolLabel(t));
+  }
+  const current=picks.filter(({p})=>f.trackerResult==='All'||(f.trackerResult==='Graded'?!!p.result:(resultName[p.result]??'Pending')===f.trackerResult))
+    .sort((a,b)=>String(b.p.start||b.p.date).localeCompare(String(a.p.start||a.p.date)));
+  const limit=f.trackerHistoryLimit||40;
+  const body=table(['Date','League','Pick','Tools','Price','Chance','Result','Actual','Units','Captured','Model version'],current.slice(0,limit).map(({p,m})=>{
+    const source=trackerDimensions.provider.value({p}),u=source==='Unpriced'?null:units(p.result,p.odds);
+    return [esc(p.date),esc(p.sport.toUpperCase()),cell(describe(p)),esc([...toolsByPick.get(p.k)].join(' · ')),
+      source==='Unpriced'?'—':esc(p.odds+' · '+source),pct(m.prob,1),cell(resultName[p.result]??'Pending',p.result==='won'?'good heat':p.result==='lost'?'bad heat':''),
+      esc(p.value??'—'),u==null?'—':unitsText(u),p.at?esc(captureTime(p.at)):'—',esc(p.version??'—')];
+  }),{wrap:'box',empty:'No picks match this result filter.'});
+  const more=current.length>limit?tools(btn('Show '+Math.min(40,current.length-limit)+' more','trackerMoreHistory','','outline')+
+    `<span class="subtle">${limit.toLocaleString()} of ${current.length.toLocaleString()}</span>`):'';
+  return box('Pick history',tools(select('History result','trackerResult',results)+`<span class="subtle">${current.length.toLocaleString()} matching picks</span>`,'tracker-controls')+body+more);
+}
+
+function modelChecks(rows,picks){
+  const models=trackerGroups(rows.filter(r=>isModelTool(r.t)),['tool'],0,'Decisions');
+  const modelTable=table(['Model','Decisions','Record','Hit rate','Brier','Log loss'],models.map(({values:[t],stats:s})=>[
+    esc(toolLabel(t)),s.won+s.lost,esc(record(s)),hitCell(s),brierCell(s),s.brierN?round(s.ll/s.brierN,3):'—'
+  ]),{sort:'tracker-models',cls:'compact'});
+  const bins=Array.from({length:10},()=>({p:0,y:0,n:0}));
+  for(const {p,m} of picks){
+    if(!Number.isFinite(m.prob)||m.prob<0||m.prob>1||!['won','lost'].includes(p.result))continue;
+    const bin=bins[Math.min(9,Math.floor(m.prob*10))];
+    bin.p+=m.prob;bin.y+=Number(p.result==='won');bin.n++;
+  }
+  const calibration=bins.some(b=>b.n)?box('Calibration',calChart(bins)+table(['Stated chance','Picks','Average stated','Happened'],
+    bins.flatMap((b,i)=>b.n?[[`${i*10}–${i*10+10}%`,b.n,pct(b.p/b.n,1),cell(pct(b.y/b.n,1),heat(b.y/b.n-b.p/b.n,0,.05))]]:[]),
+    {cls:'compact'}),'Reliable probability estimates sit near the diagonal.'):empty('Calibration appears once picks with recorded chances have results.');
+  return `<details class="details tracker-models"><summary>Model comparison and calibration</summary>
+    ${models.length?box('Models head to head',modelTable,'Lower Brier scores and log loss indicate better probability estimates.'):''}${calibration}</details>`;
+}
 
 export function trackerPage(){
-  const f=S.f;
-  const college=isCollege(f.sport.toLowerCase()),ufc=f.sport==='UFC';
-  const captureCols=college?['Captured','Version','Projection','Gap vs line']:ufc?['Captured','Version']:[];
-  const capture=r=>college?collegeCapture(r):ufc?[r.p.at?esc(captureTime(r.p.at)):'—',esc(r.p.version??'—')]:[];
-  const head=`<h1>Pick Tracker ${info('Each refresh captures model forecasts and priced picks before play starts. The tracker grades college picks from final scores and UFC winner forecasts from confirmed bout results. UFC draws push and no contests are voided. Missing college and UFC results stay pending. Units assume a 1-unit stake at the recorded price.')}</h1>`+
-    (index.updated?`<p class="subtle">Updated ${ago(index.updated)} · ${index.picks??0} picks recorded · ${index.graded??0} graded · ${index.pending??0} waiting on results</p>`:'')+
-    (notice?`<p class="subtle" role="status">${esc(notice)}</p>`:'');
-  if(!picks.length)return notice?head:head+box('',empty('No picks recorded yet. The tracker records picks before games start.'));
-  const markets=['All markets',...new Set(picks.map(p=>p.market))].sort((a,b)=>a==='All markets'?-1:b==='All markets'?1:a.localeCompare(b));
-  const filters=tools(['All','NBA','NFL','NHL','MLB','CBB','CWB','FBS','UFC'].map(s=>btn(s,'set','sport:'+s,f.sport===s?'on':'')).join('')+
-    select('Picks','kind',['All picks','Model picks','Prop picks','Game picks'])+select('Market','market',markets)+select('Window','window',['Last 7 days','Last 30 days','Season'])+
-    `<label class="field"><input type="checkbox" data-field="lean" ${f.lean?'checked':''}> Only sides the tool leaned toward</label>`);
-  const rows=memberships(),scoped=f.tool?rows.filter(r=>r.t===f.tool):rows;
-
-  // Headline: each pick once.
-  const seen=new Map();for(const r of scoped)if(!seen.has(r.p.k)||seen.get(r.p.k).m.prob==null&&r.m.prob!=null)seen.set(r.p.k,r);
-  const all=blank();for(const {p,m} of seen.values())add(all,p,m.prob);
-  const be=breakeven(all);
-  const metrics=grid(5,[metric('Graded picks',all.n,record(all)+(all.void?` · ${all.void} void`:'')),
-    metric('Hit rate',rate(all)==null?'—':pct(rate(all),1),be==null?'':'Break-even at captured prices '+pct(be,1),rate(all)==null||be==null?'':heat(rate(all)-be,0,.03).replace(' heat','')),
-    metric('Units',unitsText(all.priced?all.units:null),roi(all)==null?'':'ROI '+signed(roi(all)*100,1)+'%',roi(all)==null?'':heat(roi(all),0,.05).replace(' heat','')),
-    metric('Brier score',brierCell(all),all.brierN?`${all.brierN} picks with a stated chance · lower is better`:'No stated chances in this view'),
-    metric('Waiting on results',all.pending)]);
-
-  // By tool, with rated tools split by rating.
-  const groups=new Map();
-  const bump=(key,label,p,m)=>{if(!groups.has(key))groups.set(key,{key,label,s:blank()});add(groups.get(key).s,p,m.prob);};
-  for(const {p,t,m} of rows){bump(t,toolLabel(t),p,m);if(m.rating)bump(t+'|'+m.rating,toolLabel(t)+' · '+m.rating,p,m);}
-  const list=[...groups.values()].sort((a,b)=>a.key.split('|')[0].localeCompare(b.key.split('|')[0])||(a.key.includes('|')-b.key.includes('|'))||b.s.n-a.s.n);
-  const byTool=table(['Tool','Graded','Record','Hit rate','Break-even','Units','ROI','Brier','Waiting'],list.map(({key,label,s})=>({act:key.includes('|')?'':'tool',v:key,
-    cls:(key.includes('|')?'dim ':'clickable ')+(f.tool===key?'selection':''),cells:[cell(esc(label)),s.n,record(s),hitCell(s),breakeven(s)==null?'—':pct(breakeven(s),1),unitsText(s.priced?s.units:null),roiCell(s),brierCell(s),s.pending]})),
-    {sort:'tracker-tools',wrap:'box',empty:'No picks match these filters.'});
-
-  // Head to head for the ensemble members.
-  const models=list.filter(x=>isModelTool(x.key)&&!x.key.includes('|'));
-  const h2h=models.length?box('Models head to head',table(['Model','Graded','Record','Picked the winner','Brier','Log loss'],models.map(({label,s})=>[esc(label),s.n,record(s),hitCell(s),brierCell(s),s.brierN?round(s.ll/s.brierN,3):'—']),{sort:'tracker-models',cls:'compact'}),
-    'Each model’s own pick for every game. Brier and log loss reward honest probabilities: a confident wrong pick costs more than a cautious one. Lower is better for both.'):'';
-
-  // Calibration: stated chance against how often it happened.
-  const bins=Array.from({length:10},()=>({p:0,y:0,n:0}));
-  for(const {p,m} of seen.values())if(m.prob!=null&&p.result&&!['push','void'].includes(p.result)){const b=bins[Math.min(9,Math.floor(m.prob*10))];b.p+=m.prob;b.y+=p.result==='won'?1:0;b.n++;}
-  const cal=bins.some(b=>b.n)?box('Calibration',calChart(bins)+table(['Stated chance','Picks','Average stated','Happened'],bins.map((b,i)=>b.n?[`${i*10}–${i*10+10}%`,b.n,pct(b.p/b.n,1),cell(pct(b.y/b.n,1),heat(b.y/b.n-b.p/b.n,0,.05))]:null).filter(Boolean),{cls:'compact'}),
-    'Picks grouped by the chance the tool gave them. On a well-calibrated tool, picks given 60% win about 60% of the time, so the dots sit on the diagonal.'):'';
-
-  // By market.
-  const mk=new Map();for(const {p,m} of seen.values()){if(!mk.has(p.market))mk.set(p.market,blank());add(mk.get(p.market),p,m.prob);}
-  const byMarket=table(['Market','Graded','Record','Hit rate','Units','ROI'],[...mk].sort((a,b)=>b[1].n-a[1].n).map(([k,s])=>[esc(k),s.n,record(s),hitCell(s),unitsText(s.priced?s.units:null),roiCell(s)]),{sort:'tracker-markets',cls:'compact'});
-
-  const describe=p=>{
-    if(p.sport==='ufc')return `${esc(p.player)} to win <span class="muted">vs ${esc(p.opponent)}</span>`;
-    if(isCollege(p.sport)){
-      const pick=esc(collegePickLabel(p))+(p.market==='Winner'?' to win':' '+(p.market==='Spread'?signed(p.line,1):esc(p.line)));
-      return `${pick} <span class="muted">· ${esc(p.awayName)} vs ${esc(p.homeName)}</span>`;
-    }
-    return p.kind==='model'?`${team(p.side)} to win <span class="muted">vs ${esc(p.side===p.h?p.a:p.h)}</span>`:`${esc(p.player)} <span class="muted">${esc(p.side)} ${esc(p.line)} ${esc(p.market)}</span>`;
-  };
-  const toolsOf=({p})=>[...new Set(Object.entries(p.tools)
-    .filter(([t,m])=>(!f.tool||t===f.tool)&&(!f.lean||m.lean===true))
-    .map(([t])=>toolLabel(t).split(' · ').slice(1).join(' · ')))].join(', ');
-  const done=[...seen.values()].filter(r=>r.p.result).sort((a,b)=>b.p.start.localeCompare(a.p.start)).slice(0,f.more?400:40);
-  const recent=table(['Date','League','Pick','Tools','Odds','Chance','Result','Actual','Units',...captureCols],done.map(r=>{const p=r.p,u=p.odds==null?null:units(p.result,p.odds);return [esc(p.date),p.sport.toUpperCase(),cell(describe(p)),esc(toolsOf(r)),pickOdds(p),r.m.prob==null?'—':pct(r.m.prob),
-    cell(esc(p.result),p.result==='won'?'good heat':p.result==='lost'?'bad heat':''),esc(p.value??'—'),u==null?'—':signed(u,2),...capture(r)];}),{sort:'tracker-recent',wrap:'box',empty:'Nothing graded in this view yet.'});
-  const waiting=[...seen.values()].filter(r=>!r.p.result).sort((a,b)=>a.p.start.localeCompare(b.p.start));
-  const pending=waiting.length?`<details class="details"><summary>Waiting on results (${waiting.length})</summary>`+table(['Starts','League','Pick','Tools','Odds','Chance',...captureCols],waiting.slice(0,200).map(r=>[esc(captureTime(r.p.start)),r.p.sport.toUpperCase(),cell(describe(r.p)),esc(toolsOf(r)),pickOdds(r.p),r.m.prob==null?'—':pct(r.m.prob),...capture(r)]),{cls:'compact'})+'</details>':'';
-
-  return head+filters+(f.tool?tools(`<span class="subtle">Showing ${esc(toolLabel(f.tool))}</span>`+btn('Show every tool','tool',f.tool)):'')+metrics+
-    box('By tool',byTool,'Click a tool to focus every number on this page on it. Rated tools also show each rating on its own row. Hit rate is coloured against the break-even rate of the prices captured, not against 50%.')+
-    h2h+(cal||box('Calibration',empty('Calibration appears once tools that state a chance have graded picks.')))+box('By market',byMarket)+
-    box('Recent results',recent+(done.length>=40?tools(btn(f.more?'Show fewer':'Show more','flip','more')):''))+pending;
+  const f=S.f, range=dates(f);
+  const head=`<h1>Pick Tracker ${info('The tracker records pregame picks and grades them from reported results. ROI uses the price at capture and a flat one-unit stake per priced win or loss.')}</h1>`+
+    (index.updated?`<p class="subtle">Updated ${ago(index.updated)} · ${(index.picks??0).toLocaleString()} picks recorded</p>`:'')+
+    (notice?`<p class="subtle" role="status">${esc(notice)}</p>`:'')+
+    tools(`<a class="pill outline" href="${href('up/parlay-tracker.html')}">NBA parlay legs</a><a class="pill outline" href="${href('long/parlay-tracker.html')}">NFL parlay legs</a>`);
+  if(!memberships.length)return head+(notice?'':box('',empty('No picks recorded yet.')));
+  const options=trackerScope(memberships,{sport:f.sport,kind:f.kind},range);
+  const scoped=trackerScope(options,f);
+  const picks=uniqueTrackerPicks(scoped), all=trackerStats(picks), even=breakeven(all);
+  const metrics=grid(5,[
+    metric('Decided picks',all.won+all.lost,record(all)),
+    metric('Hit rate',pct(rate(all),1),even==null?'':'Captured break-even '+pct(even,1)),
+    metric('Net units',unitsText(all.stake?all.units:null),all.stake+' priced decisions'),
+    metric('ROI',roi(all)==null?'—':signed(roi(all)*100,1)+'%',all.stake?'Flat 1-unit stake':'Awaiting priced results'),
+    metric('Pending',all.pending,all.brierN?'Brier '+brierCell(all):'')
+  ]);
+  const controls=head+filters(f,options);
+  if(range.from&&range.to&&range.from>range.to)return controls+box('',empty('The From date must be on or before the Through date.'));
+  return controls+metrics+comparison(scoped,f)+history(picks,scoped,f)+modelChecks(scoped,picks);
 }
 function calChart(bins){
   const W=380,H=220,pad=30,X=v=>pad+v*(W-2*pad),Y=v=>H-pad-v*(H-2*pad);
