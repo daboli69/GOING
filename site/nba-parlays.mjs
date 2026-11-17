@@ -13,8 +13,10 @@ function poolSummary({eligible,screened},cfg){
   const sides=cfg.side==='Both'?['Over','Under']:[cfg.side];
   const quotes=sides.map(side=>{
     const fresh=screened.filter(leg=>leg.side===side&&!leg.checks.Quote&&!leg.checks['Quote freshness']&&!leg.checks['Tip time']).length;
-    const qualified=eligible.filter(leg=>leg.side===side).length;
-    return fresh?`${qualified} of ${fresh} ${side} quotes qualify`:`No fresh ${side} quotes`;
+    const qualified=eligible.filter(leg=>leg.side===side);
+    const matchups=new Set(qualified.map(leg=>leg.game)).size;
+    const matchupText=cfg.side==='Both'&&matchups?` across ${matchups} ${matchups===1?'game':'games'}`:'';
+    return fresh?`${qualified.length} of ${fresh} ${side} quotes qualify${matchupText}`:`No fresh ${side} quotes`;
   });
   return [...quotes,`${games} qualifying ${games===1?'game':'games'}`].join(' · ')+
     (cfg.perGame&&games>0&&games<cfg.legs?`. One leg per game limits this ticket to at most ${games}.`:'');
@@ -51,7 +53,7 @@ const nba=createParlays({
   nav:()=>slate({navOnly:true,date:true}),
   intro:()=>tools(`<a class="pill" href="${href('up/parlay-tracker.html')}">Parlay Leg Tracker</a>`+
     btn('Check for updates','nbaParlayCheck',''))+
-    '<p class="subtle">DraftKings main lines · Qualifying legs are ranked by estimated hit chance.</p>',
+    '<p class="subtle">DraftKings main lines · Qualifying legs are ranked by estimated hit chance. Both includes an Over and an Under when they fit the same ticket.</p>',
   afterTicket:fullList,poolSummary,
   chance:nbaLegChance,
   chanceNote:'Sample-adjusted season rates with lineup context',
