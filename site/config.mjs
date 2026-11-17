@@ -18,14 +18,14 @@ export const menus={
   fbs:{Previews:[['Game Previews','fbs/','college-slate'],['Team Stats','fbs/team-stats.html','college-teams'],['Game Lines','fbs/game-lines.html','college-lines']]},
   nfl:{
     Models:[['Ensemble Forecasts','long/','nfl-models']],
-    Previews:[['Game Previews','long/game-previews.html','nfl-preview'],['TD Data','long/td-data.html','td'],['Opening Drive Tool','long/opening-drives.html','drives']],
+    Previews:[['Game Previews','long/game-previews.html','nfl-preview'],['Market Watch','long/market-watch.html','market-watch'],['TD Data','long/td-data.html','td'],['Opening Drive Tool','long/opening-drives.html','drives']],
     Props:[['Best Plays','long/best-plays.html','nfl-best'],['Receiving','long/player-props.html#receiving','nfl-props'],['Rushing','long/player-props.html#rushing','nfl-props'],['Passing','long/player-props.html#passing','nfl-props'],['TD Board','long/td-board.html','nfl-tdboard']],
     Parlays:[['Suggested Parlays','long/suggested-parlays.html','nfl-parlays'],['Same-Game Parlays','long/same-game-parlays.html','nfl-sgp'],['NFL Leg Tracker','long/parlay-tracker.html','nfl-parlay-tracker']],
     Promos:[['King of the Endzone','long/promo-tools.html','endzone']]
   },
   nba:{
     Models:[['Ensemble Forecasts','up/','nba-models']],
-    Matchups:[['Slate Standouts','up/standouts.html','standouts'],['League Stats Chart','up/league.html','league'],['Matchup Keys','up/matchup-keys.html','keys'],['Zone Matchup Targets','up/zones.html','zones'],['Player Types','up/types.html','types'],['Shot Charts','up/shot-charts.html','shotcharts']],
+    Matchups:[['Slate Standouts','up/standouts.html','standouts'],['League Stats Chart','up/league.html','league'],['Matchup Keys','up/matchup-keys.html','keys'],['Market Watch','up/market-watch.html','market-watch'],['Zone Matchup Targets','up/zones.html','zones'],['Player Types','up/types.html','types'],['Shot Charts','up/shot-charts.html','shotcharts']],
     Props:[['All Props','up/all-props.html','nba-props'],['Points','up/points.html','nba-props'],['Threes','up/threes.html','nba-props'],['Assists','up/assists.html','nba-props'],['Rebounds','up/rebounds.html','nba-props'],['Assist Spots','up/assist-spots.html','nba-props'],['1st Basket','up/first-basket.html','basket']],
     Parlays:[['Suggested Parlays','up/suggested-parlays.html','nba-parlays'],['Parlay Leg Tracker','up/parlay-tracker.html','nba-parlay-tracker']],
     Promos:[['King of the Court','up/promo-tools.html','court']]

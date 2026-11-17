@@ -33,7 +33,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  market-watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    outputs:
+      artifact: ${{ steps.snapshot.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: WalrusQuant/sports-leader-mcp
+          ref: 19c34bf530b1334fdbd67a9acc624d17b3c5bf76 # v0.9.0
+          path: .cache/sports-leader-mcp
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Build Sports Leader MCP
+        working-directory: .cache/sports-leader-mcp
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Capture market snapshots
+        run: node scripts/market-watch.mjs
+        env:
+          SPORTS_LEADER_MCP: .cache/sports-leader-mcp
+      - name: Stage market snapshots
+        id: snapshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: market-watch
+          path: site/data/market-watch/*.json
+          retention-days: 1
+          if-no-files-found: ignore
+
   deploy:
+    needs: market-watch
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment:
@@ -94,6 +135,26 @@ jobs:
             .cache
             site/data/*.json
           key: archive-v1-${{ github.run_id }}
+
+      - name: Add Market Watch snapshots
+        if: needs.market-watch.outputs.artifact != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: market-watch
+          path: site/data/market-watch
+
+      - name: Recover missing Market Watch snapshots
+        run: |
+          mkdir -p site/data/market-watch
+          for sport in nba nfl; do
+            file="site/data/market-watch/$sport.json"
+            if [ ! -s "$file" ] && curl --silent --show-error --fail --max-time 7 \
+                "https://goingplaybook.com/data/market-watch/$sport.json" -o "$file.tmp"; then
+              mv "$file.tmp" "$file"
+            fi
+            rm -f "$file.tmp"
+          done
 
       - name: Restore live snapshots
         uses: actions/cache/restore@v6
