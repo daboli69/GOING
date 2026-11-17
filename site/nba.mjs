@@ -779,22 +779,30 @@ function kotc(){
   const memo=reset(), defense=memo.courtDefense??=courtDefense(players());
   const current=S.day===dateKey(), reports=current?Object.keys(S.injuries||{}).length:0;
   const statuses=new Map(current&&reports?teams().map(t=>[t,new Map(nbaInjuryReport(t).map(x=>[nbaName(x.name),x.status]))]):[]);
-  const {rows,excluded}=courtField(players(),current&&!reports?[]:S.games,defense,p=>statuses.get(p.team)?.get(nbaName(p.name)));
+  const {rows,excluded}=courtField(players(),current&&!reports?[]:S.games,defense,{
+    statusFor:p=>statuses.get(p.team)?.get(nbaName(p.name)),
+    scoringType:(p,opp)=>{
+      const letter=type(p.id);
+      return letter==='—'?null:{type:letter,typeDeltas:defenseLogs('Points',letter,6,true).deltas.get(opp)};
+    }
+  });
   const cutoff=S.f.more?rows.length:25;
   const defBoard=teams().filter(t=>!S.f.todayTeams||gamesFor(t)).map(t=>{
     const board=defense.teams.get(t);
     return [team(t),gamesFor(t)?'✓':'—',...(board?.counts||courtThresholds.map(()=>0)),round(board?.top),
-      ...['PG','SG','SF','PF','C'].map(k=>round(board?.rates[k])),board?.gp||0];
+      ...['PG','SG','SF','PF','C'].map(k=>round(board?.rates[k]?.pra)),board?.gp||0];
   });
   const coverage=current?reports?'Today’s injury report is applied. Questionable and day-to-day players remain provisional.':
     'Today’s injury report is unavailable. Lead shares will appear after it loads.':'Availability is unverified for the selected date.';
   const thresholds=courtThresholds.map(n=>n+'+');
   return `<h1>King of the Court ${info('PRA is points plus rebounds plus assists. Lead % is the estimated share of 10,000 simulations won across the full field, with ties split.')}</h1>`+
     tools(btn('Historical Data','history','NBA')+(current?btn('Check injuries','nbaCourtCheck',''):'')+btn('Save image','export','King of the Court','primary right'))+slate({navOnly:true})+
-    `<p class="subtle">${rows.length} players in the PRA field. ${coverage}</p>`+
+    `<p class="subtle">${rows.length} players in the PRA field. ${coverage} Matchup boosts add up to 1.0 PRA before simulation.</p>`+
     (excluded.length?`<details><summary>${excluded.length} players removed for availability</summary><p class="subtle">${esc(excluded.join(', '))}</p></details>`:'')+
-    table(['#','Player','Lead %','Proj PRA','Avg PRA',...thresholds,'Opp','Opp Top PRA','Vs Pos','Total','Spread'],
+    table(['#','Player','Lead %','Proj PRA','Matchup Boost','Avg PRA',...thresholds,'Opp','Opp Top PRA','Vs Pos','Total','Spread'],
       rows.slice(0,cutoff).map((p,i)=>[i+1,person(p),cell(pct(p.lead,1),heat(p.lead,.065,.035)),cell(round(p.projected),heat(p.projected,26,10)),
+        cell((p.type?'Type '+esc(p.type):'Type unavailable')+(p.matchup.boost?
+          `<details class="court-boost"><summary>+${round(p.matchup.boost)} PRA</summary><small class="muted">Base ${round(p.base)} PRA · ${esc(p.matchup.reasons.join(' · '))}</small></details>`:'<br>—')),
         round(p.av),...p.counts.map(c=>cell(c,heat(c,1,.5))),team(p.opp),round(p.oppTop),signed((p.mod-1)*100,0)+'%',
         p.g.odds?.total??'—',esc(p.g.odds?.details??'—')]),{sort:'kotc',cls:'compact',empty:'No eligible players to project for this slate.'})+
     (rows.length>25?tools(btn(S.f.more?'Show less':'Show all '+rows.length,'flip','more')):'')+
