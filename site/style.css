@@ -72,6 +72,7 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .parlay-pool-row{display:flex;justify-content:space-between;gap:8px}
 .parlay-pool-row>strong{white-space:nowrap;font-variant-numeric:tabular-nums}
 .parlay-pool li p{margin:4px 0 0}
+.court-boost small{display:block;width:22ch;white-space:normal;text-align:left}
 .standout-card>h3,.standout-context{display:flex;align-items:center;gap:8px}
 .standout-team{display:inline-grid;grid-template-columns:22px 2.4em;flex:none;align-items:center;gap:5px;
   font:700 13px/1 var(--heading);letter-spacing:.04em;white-space:nowrap;color:var(--fg)}
