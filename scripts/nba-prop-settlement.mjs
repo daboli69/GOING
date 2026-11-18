@@ -5,7 +5,7 @@ const key=(game,stat,name,line)=>JSON.stringify([game,stat,marketName(name),line
 const eligible=leg=>leg.provider==='Kalshi'&&stats.has(leg.stat)&&Number.isFinite(leg.line)&&marketName(leg.name);
 
 export async function loadNbaPropSettlements(legs,finals,read=fetch){
-  const events=new Map(), settlements=new Map();
+  const events=new Map(), settlements=new Map(), failed=new Set();
   for(const leg of legs){
     const box=finals.get(leg.game);
     if(!eligible(leg)||!box?.a||!box.h||!/^\d{4}-\d\d-\d\d$/.test(leg.date))continue;
@@ -19,7 +19,7 @@ export async function loadNbaPropSettlements(legs,finals,read=fetch){
     const url=new URL('markets',host);
     url.search=new URLSearchParams({event_ticker:event,limit:'1000'});
     const listing=await readListing(url,read);
-    if(!listing||listing.cursor!=='')return;
+    if(!listing||listing.cursor!==''){failed.add(game);return;}
     for(const market of listing.markets){
       if(market.event_ticker!==event||!['finalized','settled'].includes(market.status)||!['yes','no','scalar'].includes(market.result))continue;
       const colon=market.title?.indexOf(':');
@@ -30,7 +30,7 @@ export async function loadNbaPropSettlements(legs,finals,read=fetch){
       settlements.set(id,previous&&previous!==market.result?'ambiguous':market.result);
     }
   });
-  return settlements;
+  return {settlements,failed};
 }
 
 export function gradeNbaPropSettlement(leg,settlements,now){
