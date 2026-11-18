@@ -29,7 +29,8 @@ test('NBA settlement fallback matches the finalized contract and excludes nonbin
   const market=(line,result,more={})=>({event_ticker:event,title:'Nikola Jovic: '+(line+.5)+'+ points',
     floor_strike:line,status:'finalized',result,...more});
   let calls=0;
-  const settlements=await loadNbaPropSettlements(legs,new Map([['1',{a:'DET',h:'CHI'}]]),async url=>{
+  const finals=new Map([['1',{a:'DET',h:'CHI'}]]);
+  const {settlements,failed}=await loadNbaPropSettlements(legs,finals,async url=>{
     calls++;
     assert.equal(url.searchParams.get('event_ticker'),event);
     return {ok:true,json:async()=>({cursor:'',markets:[
@@ -38,10 +39,15 @@ test('NBA settlement fallback matches the finalized contract and excludes nonbin
     ]})};
   });
   assert.equal(calls,1);
+  assert.equal(failed.size,0);
   assert.equal(gradeNbaPropSettlement(leg,settlements,now).result,'void');
   assert.equal(gradeNbaPropSettlement(legs[1],settlements,now).result,'lost');
   assert.equal(gradeNbaPropSettlement({...legs[1],side:'Under'},settlements,now).result,'won');
   for(const pending of legs.slice(2))assert.equal(gradeNbaPropSettlement(pending,settlements,now),pending);
+  const partial=await loadNbaPropSettlements([leg],finals,
+    async()=>({ok:true,json:async()=>({cursor:'more',markets:[market(9.5,'scalar')]})}));
+  assert.deepEqual([...partial.failed],['1']);
+  assert.equal(gradeNbaPropSettlement(leg,partial.settlements,now),leg);
 });
 
 test('Suggested Parlays opens with incomplete saved filters and shows usable legs without rewriting storage',()=>{

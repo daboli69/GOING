@@ -51,7 +51,7 @@ for(const leg of store.values()){
 // Give recent games a fresh box score at least hourly as capacity permits. Serve never-checked games first.
 const dueAt=([game,legs])=>{
   const check=checks[game];
-  if(check?.confirmed&&!check.contractChecked&&legs.some(leg=>!leg.result&&leg.provider==='Kalshi'))return 0;
+  if(check?.confirmed&&!check.settlementChecked&&legs.some(leg=>!leg.result&&leg.provider==='Kalshi'))return 0;
   return check?.checkedAt??0;
 };
 const games=[...candidates].filter(game=>now-dueAt(game)>=hourMs).sort((a,b)=>dueAt(a)-dueAt(b)).slice(0,32);
@@ -63,15 +63,13 @@ for(const [game,legs] of games){
   for(const leg of legs){
     const updated=reconcileNbaParlayLeg(leg,box,now);
     if(updated!==leg){store.set(leg.k,updated);changed.add(month(leg));}
-    if(box&&!updated.result&&updated.provider==='Kalshi'){
-      unresolved.push(updated);
-      if(checks[game])checks[game].contractChecked=true;
-    }
+    if(box&&!updated.result&&updated.provider==='Kalshi')unresolved.push(updated);
   }
 }
-const settlements=await loadNbaPropSettlements(unresolved,finals);
+const {settlements,failed}=await loadNbaPropSettlements(unresolved,finals);
 let marketGrades=0;
 for(const leg of unresolved){
+  if(checks[leg.game])checks[leg.game].settlementChecked=!failed.has(leg.game);
   const updated=gradeNbaPropSettlement(leg,settlements,now);
   if(updated===leg)continue;
   store.set(leg.k,updated);
@@ -89,3 +87,4 @@ for(const key of changed)await save(`parlay-legs-${key}.json`,months.get(key).so
 await save('parlay-legs-index.json',{updated:new Date(now).toISOString(),months:[...months.keys()].sort(),
   count:store.size,coverage,filters:defaults,finalChecks:checks,gradingBacklog});
 console.log(`NBA parlay tracker: ${store.size} distinct legs, ${games.length} final box scores checked, ${marketGrades} legs graded from finalized Kalshi contracts.`);
+if(failed.size)console.log(`NBA prop settlements: lookup incomplete for ${failed.size} games. Pending legs will retry on the next refresh.`);
