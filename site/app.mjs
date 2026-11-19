@@ -16,6 +16,7 @@ const loaders={
   nhl:()=>import('./nhl.mjs').then(m=>({page:m.nhlPage,player:m.nhlPlayer,action:m.nhlAction,result:m.nhlResult})),
   mlb:()=>Promise.all([import('./yard.mjs'),import('./yard-engine.mjs'),import('./yard-more.mjs')]).then(([y,e,more])=>({page:y.yardPage,player:y.yardPlayer,
     action:y.yardAction,result:y.yardResult,field:y.yardField,input:y.yardInput,engineViews:y.ENGINE_VIEWS,setYardData:e.setYardData,setPrice:more.setPrice})),
+  gta:()=>import('./gta-special.mjs'),
   models:()=>import('./models.mjs'),
   marketWatch:()=>import('./market-watch.mjs'),
   college:()=>import('./college.mjs'),
@@ -72,7 +73,7 @@ function render(options={}){
   if(S.error)main.innerHTML=box('',empty(S.error)+tools(btn('Try again','retry','')));
   else if(!S.loaded)main.innerHTML=box('',empty(S.route.id==='home'?'Loading today’s slates…':'Loading the slate…'));
   else{
-    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='myplays'?myPlays():S.route.id==='tracker'?M.tracker.trackerPage():trackerOf(S.route.id)?M[trackerOf(S.route.id)].parlayTrackerPage():S.route.id==='market-watch'?M.marketWatch.marketPage(S.markets,S.marketModels):isCollege(S.route.sport)?M.college.collegePage():isModel(S.route.id)?M.models.modelPage():M[S.route.sport].page();}
+    try{main.innerHTML=S.route.id==='home'?homePage():S.route.id==='gta-special'?M.gta.gtaPage(S.gta):S.route.id==='myplays'?myPlays():S.route.id==='tracker'?M.tracker.trackerPage():trackerOf(S.route.id)?M[trackerOf(S.route.id)].parlayTrackerPage():S.route.id==='market-watch'?M.marketWatch.marketPage(S.markets,S.marketModels):isCollege(S.route.sport)?M.college.collegePage():isModel(S.route.id)?M.models.modelPage():M[S.route.sport].page();}
     catch(e){console.error(e);main.innerHTML=box('',empty('This view could not be rendered.')+tools(btn('Try again','retry','')));}
   }
   if(opened)for(const panel of main.querySelectorAll(nbaDetails))panel.open=opened.has(panel.dataset.parlayTicket??'');
@@ -171,6 +172,11 @@ async function load(){
   if(id==='home'){
     try{await homeLoad();}catch(e){console.error(e);}
     if(token!==req)return;S.loaded=true;render();return;
+  }
+  if(id==='gta-special'){
+    try{await need('gta');const data=await M.gta.loadGta();if(token!==req)return;S.gta=data;S.loaded=true;render();}
+    catch(e){if(token!==req)return;S.error='The frozen research snapshot could not load.';console.error(e);render();}
+    return;
   }
   if(id==='tracker'){
     try{await need('tracker');await M.tracker.trackerLoad();if(token!==req)return;S.loaded=true;render();}
@@ -342,6 +348,10 @@ function updateField(k,v){
   if(k==='offense')S.f.player=null;
   if(k==='pricing')S.f.touchedPricing=true;
   S.f[k]=v;
+  if(S.route.id==='gta-special'){
+    if(k==='gtaSport')S.f.gtaMarket='';
+    S.f.gtaLimit=30;
+  }
   if(S.route.id==='tracker'){
     S.f.trackerHistoryLimit=40;
     if(k.startsWith('tracker'))S.sort=null;
@@ -467,6 +477,7 @@ document.addEventListener('click',e=>{
   if(act==='info'){dialog('How to read this','<p class="subtle">'+esc(v)+'</p>');return;}
   if(act==='step'){changePeriod(+v);return;}
   if(act==='retry'){S.error=null;load();return;}
+  if(act==='gtaMore'&&S.route.id==='gta-special'){S.f.gtaLimit=(S.f.gtaLimit||30)+30;render();return;}
   if(act==='nflParlayCheck'){if(S.loaded&&nflLiveViews.has(S.route.id))tickNflInputs(true);return;}
   if(act==='nbaParlayCheck'){if(S.loaded&&S.route.id==='nba-parlays')tickNbaInputs(true);return;}
   if(act==='nbaCourtCheck'){if(S.loaded&&S.route.id==='court'&&S.day===dateKey())tickNbaInputs(true);return;}

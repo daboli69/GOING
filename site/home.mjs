@@ -1,4 +1,5 @@
 // GOING landing: one door per sport, each carrying today's real slate and model numbers.
+import {gtaVisible} from './gta-event.mjs';
 import {sections,menus,href} from './config.mjs';
 import {esc,get,dataURL,pct,dateLabel,today,sportWordmark} from './ui.mjs';
 
@@ -7,6 +8,7 @@ export async function homeLoad(){
   if(loading)return loading;
   const feeds={live:'live/manifest.json',models:'models/summary.json',yard:'yard/summary.json',
     college:'college/summary.json',ufc:'fights/summary.json'};
+  if(gtaVisible())feeds.gta='gta-special-status.json';
   nextCheck=(Math.floor(Date.now()/60000)+5)*60000;
   loading=Promise.all(Object.entries(feeds).map(async ([key,path])=>[key,await get(dataURL(path),null)]))
     .then(rows=>{
@@ -49,6 +51,8 @@ export function tickHomeClocks(){
     time.textContent=clockLabel(ms,now);
     time.nextElementSibling.textContent=elapsed(ms,now);
   }
+  const featured=document.querySelector('[data-gta-featured]');
+  if(featured&&!gtaVisible(now,summary.gta))featured.hidden=true;
   const status=document.querySelector('[data-snapshot-status]');
   const message=snapshotNotice(summary.live,now);
   if(status&&status.textContent!==message){status.textContent=message;status.hidden=!message;}
@@ -103,5 +107,6 @@ export function homePage(){
   }).join('');
   const introClock=clock('Live snapshot',summary.live?.updated,now);
   return `<section class="going-intro"><div><h1 class="going-title"><img class="going-wordmark" src="${href('brand/going-wordmark.svg')}" width="461" height="100" alt="GOING"></h1><p class="lede">Ensemble models and matchup dashboards for basketball, football, hockey, baseball and UFC.</p></div><div class="going-update">${introClock}<p class="tiny" data-snapshot-status ${status?'':'hidden'}>${esc(status)}</p></div></section>`+
+    (gtaVisible(now,summary.gta)?`<nav class="tools gta-featured" aria-label="Featured research" data-gta-featured><a class="pill primary" href="${href('gta6-special.html')}">🎮 GTA 6 SPECIAL</a></nav>`:'')+
     `<div class="doors">${doors}</div>`;
 }
