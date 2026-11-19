@@ -61,6 +61,7 @@ test('postgame scores use one representative line and leave unfinished games unr
   assert.equal(scored.representative,1);
   assert.equal(scored.games,1);
   assert.ok(Math.abs(scored.brier[1]-.16)<1e-8);
+  assert.equal(scorePredictions([{row,result:null},sample[1]]).representative,0);
 });
 
 test('final results produce a completion marker and save the graded research encrypted',async t=>{

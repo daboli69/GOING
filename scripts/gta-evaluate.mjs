@@ -42,14 +42,17 @@ export function gradeTotal(final,row){
 }
 export function scorePredictions(graded){
   const byGame=new Map(), representative=new Map();
+  let scored=0;
   for(const gradedRow of graded){
-    const {row,result}=gradedRow;
-    if(row.prob==null||!['won','lost'].includes(result))continue;
+    const {row}=gradedRow;
+    if(row.prob==null)continue;
     const id=[row.sport,row.game,row.id??row.subject,row.market,row.provider].join('|');
     const prior=representative.get(id);
     if(!prior||Math.abs(breakEven(row.odds)-.5)<Math.abs(breakEven(prior.row.odds)-.5))representative.set(id,gradedRow);
   }
   for(const {row,result} of representative.values()){
+    if(!['won','lost'].includes(result))continue;
+    scored++;
     const y=Number(result==='won');
     const p=stress(row).map(s=>Math.max(1e-6,Math.min(1-1e-6,s.prob)));
     const id=key(row.sport,row.game), values=byGame.get(id)||[];
@@ -59,7 +62,7 @@ export function scorePredictions(graded){
   const average=x=>x.reduce((sum,v)=>sum+v,0)/x.length;
   const blocks=[...byGame.values()].map(rows=>[0,1,2].map(i=>[0,1].map(metric=>average(rows.map(row=>row[i][metric])))));
   const scores=metric=>[0,1,2].map(i=>blocks.length?average(blocks.map(b=>b[i][metric])):null);
-  return {games:byGame.size,representative:representative.size,brier:scores(0),logLoss:scores(1),
+  return {games:byGame.size,representative:scored,brier:scores(0),logLoss:scores(1),
     brierDeltaInterval:[0,2].map(i=>gameInterval(blocks.map(b=>b[i][0]-b[1][0])))};
 }
 
@@ -167,6 +170,7 @@ if(process.argv[1]&&pathToFileURL(resolve(process.argv[1])).href===import.meta.u
         result=await evaluate(snapshot,{publicStatus,privateArchive:process.env.GTA_PRIVATE_ARCHIVE,publicKey});
       }
     }
-    console.log(result??'Waiting for every frozen event to finish.');
+    if(mode==='private')console.log(result);
+    else console.log(typeof result==='string'?result:result?.complete?'Encrypted evaluation ready.':'Waiting for every frozen event to finish.');
   }
 }
