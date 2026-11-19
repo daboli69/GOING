@@ -21,7 +21,7 @@ export const menus={
     Previews:[['Game Previews','long/game-previews.html','nfl-preview'],['Market Watch','long/market-watch.html','market-watch'],['TD Data','long/td-data.html','td'],['Opening Drive Tool','long/opening-drives.html','drives']],
     Props:[['Best Plays','long/best-plays.html','nfl-best'],['Receiving','long/player-props.html#receiving','nfl-props'],['Rushing','long/player-props.html#rushing','nfl-props'],['Passing','long/player-props.html#passing','nfl-props'],['TD Board','long/td-board.html','nfl-tdboard']],
     Parlays:[['Suggested Parlays','long/suggested-parlays.html','nfl-parlays'],['Same-Game Parlays','long/same-game-parlays.html','nfl-sgp'],['NFL Leg Tracker','long/parlay-tracker.html','nfl-parlay-tracker']],
-    Promos:[['King of the Endzone','long/promo-tools.html','endzone']]
+    Promos:[['King of the Endzone','long/promo-tools.html','endzone'],['Fanatics TD Jackpot','long/fanatics-td-jackpot.html','nfl-td-jackpot']]
   },
   nba:{
     Models:[['Ensemble Forecasts','up/','nba-models']],
@@ -55,6 +55,7 @@ export const routes=[
 export const viewDefaults={
   td:{view:'Season TDs'},'nfl-preview':{view:'Full Preview',scheme:'Raw Stats'},drives:{view:'Opening Drive',window:'Season'},'nfl-best':{view:'Receiving',rating:'All Ratings',gameFilter:'All games'},
   keys:{view:'Summary',window:'Season'},standouts:{cat:'All',window:'Season'},league:{window:'Season'},
+  'nfl-td-jackpot':{jackpotDefense:'rush',jackpotOpp:''},
   'nfl-tdboard':{tdMarket:'Anytime TD',tdPos:'All',tdMinEdge:'4',tdMinOdds:'',tdMaxOdds:'',tdMinRz:'0',tdMinSnap:'0',tdMaxSpread:'20',tdMinTotal:'0',
     tdWeather:'Any',tdNoQ:'No',tdDue:'No',tdDst:'Yes',tdHold:'20',tdShow:'Top 40',tdLegs:'3',tdPerGame:'Yes',tdStack:'No'},
   basket:{fbMinEdge:'2',fbRatio:'1.2',fbHold:'30',fbRR:'3',fbBy:'2',fbShow:'Top 30'},

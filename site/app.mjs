@@ -133,9 +133,9 @@ const basketInputs=()=>Promise.all([nbaInjuryReport(),
   get(dataURL('tracker/first-basket-backtest.json'),null)])
   .then(([injuries,live,backtest])=>({injuries,fbLog:{live,backtest:backtest?.games||[]}}));
 const nflDraftViews=new Set(['nfl-parlays','nfl-sgp']);
-const nflLiveViews=new Set([...nflDraftViews,'nfl-tdboard','nfl-props','nfl-best','nfl-preview']);
+const nflLiveViews=new Set([...nflDraftViews,'nfl-tdboard','nfl-td-jackpot','nfl-props','nfl-best','nfl-preview']);
 const nflProjectionViews=new Set([...nflDraftViews,'nfl-props']);
-const nflModelViews=new Set([...nflDraftViews,'nfl-tdboard']);
+const nflModelViews=new Set([...nflDraftViews,'nfl-tdboard','nfl-td-jackpot']);
 const nflParlayInputs=(year,id)=>Promise.all([nflModelViews.has(id)?readSnapshot('models/nfl.json',25000):null,
   nflModelViews.has(id)?readSnapshot('nfl-extra-'+year+'.json',25000):null,
   nflModelViews.has(id)?readSnapshot('live/weather-nfl.json'):null,readSnapshot('live/nfl-availability.json'),
@@ -467,7 +467,7 @@ document.addEventListener('click',e=>{
   if(act==='info'){dialog('How to read this','<p class="subtle">'+esc(v)+'</p>');return;}
   if(act==='step'){changePeriod(+v);return;}
   if(act==='retry'){S.error=null;load();return;}
-  if(act==='nflParlayCheck'){if(S.loaded&&nflDraftViews.has(S.route.id))tickNflInputs(true);return;}
+  if(act==='nflParlayCheck'){if(S.loaded&&nflLiveViews.has(S.route.id))tickNflInputs(true);return;}
   if(act==='nbaParlayCheck'){if(S.loaded&&S.route.id==='nba-parlays')tickNbaInputs(true);return;}
   if(act==='nbaCourtCheck'){if(S.loaded&&S.route.id==='court'&&S.day===dateKey())tickNbaInputs(true);return;}
   if(isModel(S.route.id)&&M.models?.modelAction(act,v)){render();return;}
@@ -645,6 +645,7 @@ async function tickNflInputs(force=false){
   state.nflParlayRemaining=remaining;
   if(!force&&(!games.length||state.nflParlayNext>now)){
     if(draft&&(kickoffChanged||deadlineChanged)){M.nfl.action('parlayRefreshDraft','');render({keepPosition:true});}
+    if(id==='nfl-td-jackpot'&&kickoffChanged)render({keepPosition:true});
     return;
   }
   state.nflParlayChecking=true;
