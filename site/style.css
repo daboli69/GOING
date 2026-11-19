@@ -134,3 +134,7 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .tracker-roi[data-positive="true"]>span{left:50%;background:var(--green)}
 .tracker-roi[data-positive="false"]>span{right:50%;background:var(--red)}
 .tracker-models{margin-block:1rem}
+
+.jackpot-price{width:7.5rem}
+.jackpot-edit small{display:block;margin-top:4px}
+.jackpot-edit input[aria-invalid=true]{border-color:var(--red)}
