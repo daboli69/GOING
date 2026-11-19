@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {jackpotCandidates,jackpotPrice,jackpotTickets,sundayBeforeKickoff,tdDefenseProfile} from '../site/nfl-td-jackpot.mjs';
+import {findJackpotTickets,jackpotCandidates,jackpotLegKey,jackpotLegs,jackpotPrice,jackpotReplacements,jackpotTicketKey,sundayBeforeKickoff,tdDefenseProfile} from '../site/nfl-td-jackpot.mjs';
 
+import {tdBoardData} from '../site/nfl.mjs';
+import {current as S} from '../site/ui.mjs';
+
+const jackpotTickets=(rows,source)=>findJackpotTickets(jackpotLegs(rows,source));
 const now=Date.parse('2026-11-21T18:00Z');
 const sunday={id:'2026_11_BUF_MIA',date:'2026-11-22',time:'20:20',a:'BUF',h:'MIA'};
 const row=(id,game=sunday,anytime=.3)=>({id,p:{name:'Player '+id},team:game.a,game,anytime});
@@ -69,4 +73,60 @@ test('defensive weakness counts only earlier completed offensive TDs and keeps r
   assert.deepEqual(allowed.counts,{rush:3,goalLine:3,pass:3,redZonePass:3,RB:0,WR:0,TE:3});
   assert.equal(allowed.metrics.TE.rank,1);
   assert.equal(teams.get('BUF').counts.pass,0);
+});
+
+test('blocking and regeneration exclude players or existing combinations from both price pools',()=>{
+  const players=['a','b','c','d','e'].map(id=>({...row(id,fixture(id)),fanatics:{over:'+200'},reference:{over:'+200'}}));
+  const prefs={blocked:new Set(['a'])};
+  for(const source of ['fanatics','reference']){
+    const pool=jackpotLegs(players,source,prefs);
+    const initial=findJackpotTickets(pool,{limit:1});
+    const keys=new Set(initial.map(t=>jackpotTicketKey(t.legs)));
+    const newTickets=findJackpotTickets(pool,{skip:keys});
+    assert.equal(newTickets.length,3);
+    for(const ticket of newTickets){
+      assert.ok(!keys.has(jackpotTicketKey(ticket.legs)));
+      assert.ok(ticket.legs.every(leg=>leg.row.id!=='a'));
+    }
+  }
+});
+
+test('swap keeps two legs and only offers eligible players that preserve +2000',()=>{
+  const p=(id,game,over,chance,status)=>({...row(id,fixture(game),chance),status,fanatics:{over}});
+  const rows=[p('a','1',200,.7),p('b','2',200,.6),p('c','3',200,.5),p('value','4',250,.4),
+    p('cheap','5',100,.4),p('same-game','2',250,.4),p('doubtful','6',250,.4,'Doubtful'),p('questionable','7',250,.4,'Questionable')];
+  const pool=jackpotLegs(rows,'fanatics');
+  const [ticket]=findJackpotTickets(pool);
+  const old=jackpotLegKey(ticket.legs[2]);
+  const choices=jackpotReplacements(ticket,old,pool);
+  assert.deepEqual(choices.map(({leg,ticket})=>[leg.row.id,ticket.legs.map(l=>l.row.id)]),[['value',['a','b','value']]]);
+  assert.equal(jackpotReplacements(ticket,old,jackpotLegs(rows,'fanatics',{minimum:.45})).length,0);
+  const optIn=jackpotLegs(rows,'fanatics',{questionable:true});
+  assert.ok(optIn.some(leg=>leg.row.id==='questionable'));
+  assert.ok(!optIn.some(leg=>leg.row.id==='doubtful'));
+});
+
+test('TD Board gives the remaining rushers a larger share when official inactives override general injuries',()=>{
+  const previous={...S};
+  try{
+    const team=sunday.a;
+    const rush=(id,td=false)=>Object.assign([],{0:team,1:'run',3:3,6:1,7:'Touchdown',8:td?team:null,9:td?id:null,12:id});
+    const past={...sunday,id:'2026_10_BUF_MIA',week:10,date:'2026-11-15',sa:20,sh:7};
+    Object.assign(S,{route:{sport:'nfl'},year:2026,week:11,f:{},games:[{...sunday,total:45,spread:0}],extra:null,
+      odds:[],models:null,weather:null,data:{
+        schedule:[past],events:{[past.id]:[rush('starter'),rush('starter',true),rush('backup')]},
+        players:{starter:['Lead Back','RB'],backup:['Backup Back','RB']}
+      },
+      injuries:{'Buffalo Bills':[{name:'Lead Back',status:'Questionable'}]},
+      nflAvailability:null
+    });
+    const before=tdBoardData().rows.find(r=>r.id==='backup');
+    S.nflAvailability={games:{[sunday.id]:{BUF:[{name:'Lead Back',status:'Inactive'}]}}};
+    const refreshed=tdBoardData().rows;
+    const after=refreshed.find(r=>r.id==='backup');
+    assert.ok(!refreshed.some(r=>r.id==='starter'));
+    assert.ok(after.anytime>before.anytime);
+    assert.deepEqual(after.availability.missing.map(x=>x.name),['Lead Back']);
+    assert.equal(after.availability.inactivesPosted,true);
+  }finally{Object.assign(S,previous);}
 });

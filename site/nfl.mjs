@@ -5,7 +5,7 @@ import {allowedRanks,clamp,format as fmt} from './parlay-core.mjs';
 import {markets as parlayMarkets,tdMarkets,badWeather} from './nfl-parlay-engine.mjs';
 import {bucket,isRush,offenseTd,bucketRates,impliedPoints,impliedTds,rushShare,anytime,firstTdChance,shrink,log5,tdRegression,tdSettings} from './nfl-td.mjs';
 import {tdBoardPage,tdBoardAction} from './nfl-td-board.mjs';
-import {tdJackpotPage} from './nfl-td-jackpot-page.mjs';
+import {tdJackpotPage,tdJackpotAction} from './nfl-td-jackpot-page.mjs';
 import {nflParlayPage,nflParlayAction} from './nfl-parlays.mjs';
 import {nflSgpPage,nflSgpAction} from './nfl-sgp.mjs';
 import {defenseProfiles,similarDefenseGames} from './nfl-sgp-engine.mjs';
@@ -607,8 +607,8 @@ export function tdBoardData(){
   }
   const sum=(o,k)=>Object.values(o).reduce((a,x)=>a+x[k],0);
   const lgRushShare=(()=>{const r=Object.values(T).reduce((a,t)=>a+t.rushTd,0),q=Object.values(T).reduce((a,t)=>a+t.passTd,0);return r+q?r/(r+q):.42;})();
-  const lgDrive=(()=>{const d=Object.values(T).reduce((a,t)=>a+t.drives,0);return d?Object.values(T).reduce((a,t)=>a+t.tdDrives,0)/d:.23;})();
-  const lgOpen=openN?openTd/openN:.21, lgRz=(()=>{const n=Object.values(T).reduce((a,t)=>a+t.rz[1],0);return n?Object.values(T).reduce((a,t)=>a+t.rz[0],0)/n:.55;})();
+  const lgDrive=(()=>{const d=Object.values(T).reduce((a,t)=>a+t.drives,0);const scored=Object.values(T).reduce((a,t)=>a+t.tdDrives,0);return d&&scored?scored/d:.23;})();
+  const lgOpen=openN?openTd/openN:.21, lgRz=(()=>{const n=Object.values(T).reduce((a,t)=>a+t.rz[1],0);const scored=Object.values(T).reduce((a,t)=>a+t.rz[0],0);return n&&scored?scored/n:.55;})();
   const dst=firstGames?(dstFirst+2)/(firstGames+40):.04;
   // Defense by role, adjusted for schedule: expected TDs it allowed to a role against what those offenses usually
   // generate for that role, shrunk (2 expected TDs of prior) and capped.
@@ -635,12 +635,22 @@ export function tdBoardData(){
       // Red-zone TD rate allowed against league, square-rooted and capped: the total already prices most of the matchup.
       const rzAllowed=shrink(oi.aRz[0],oi.aRz[1],8,lgRz), rzFactor=Math.max(.9,Math.min(1.1,(rzAllowed/lgRz)**.5));
       const teamTd=impliedTds(implied)*rzFactor, rs=rushShare(info.rushTd,info.passTd,lgRushShare,script,bad);
-      const report=gameInjuries(g,t),statusOf=name=>report.find(x=>nflName(x.name)===nflName(name))?.status;
+      const {report,oppReport,inactivesPosted,hasReport}=nflInjuryContext(S.nflAvailability,S.injuries,g,t,opp,teamName);
+      const statuses=new Map(report.map(row=>[nflName(row.name),row.status]));
+      const statusOf=name=>statuses.get(nflName(name));
       const recent=new Set(info.games.slice(-3)), last4=info.games.slice(-4);
-      const cands=Object.values(P).filter(pl=>pl.team===t&&Object.keys(pl.games).some(id=>recent.has(id))&&!scratched.includes(pl.id)&&!outNow(statusOf(getPlayer(pl.id).name)));
+      const rotation=Object.values(P).filter(pl=>pl.team===t&&Object.keys(pl.games).some(id=>recent.has(id)));
+      const out=pl=>outNow(statusOf(getPlayer(pl.id).name));
+      const cands=rotation.filter(pl=>!scratched.includes(pl.id)&&!out(pl));
       const perGame=(pl,ids,k)=>{const l=ids.filter(id=>pl.games[id]);return l.length?l.reduce((a,id)=>a+pl.games[id][k],0)/l.length:0;};
       const blend=(pl,k)=>{const all=Object.keys(pl.games);return .4*perGame(pl,all,k)+.6*(last4.some(id=>pl.games[id])?perGame(pl,last4,k):perGame(pl,all,k));};
       const xr=new Map(cands.map(pl=>[pl.id,blend(pl,'xr')])), xc=new Map(cands.map(pl=>[pl.id,blend(pl,'xc')])), vol=new Map(cands.map(pl=>[pl.id,blend(pl,'v')]));
+      const missing=rotation.filter(out).flatMap(pl=>{
+        const rush=blend(pl,'xr'),receiving=blend(pl,'xc');
+        const p=getPlayer(pl.id);
+        return blend(pl,'v')>=2?[{name:p.name,rush,receiving}]:[];
+      });
+      const defenseOut=oppReport.filter(r=>outNow(r.status)&&/^(CB|DB|S|FS|SS|LB|OLB|ILB|MLB|DL|DE|DT|NT|EDGE)$/i.test(r.pos||''));
       const sR=[...xr.values()].reduce((a,b)=>a+b,0)||1, sC=[...xc.values()].reduce((a,b)=>a+b,0)||1, sV=[...vol.values()].reduce((a,b)=>a+b,0)||1;
       const W=tdSettings.opportunityWeight;
       const gl=cands.filter(pl=>pos(pl.id)==='RB').map(pl=>[pl,Object.values(pl.games).reduce((a,gm)=>a+(gm.b['rush 1-2']||0)+(gm.b['rush 3-5']||0),0)]).sort((a,b)=>b[1]-a[1])[0];
@@ -662,7 +672,9 @@ export function tdBoardData(){
           rushShare:xr.get(pl.id)/sR,recShare:xc.get(pl.id)/sC,volShare:vol.get(pl.id)/sV,rzShare:rzTeam?rzMine/rzTeam:null,snaps:snapList.length?mean(snapList):null,
           counts:{in5:count('rush 1-2')+count('rush 3-5'),in10:count('rush 1-2')+count('rush 3-5')+count('rush 6-10'),t10:count('target 1-10')+count('target end zone'),
             t20:count('target 1-10')+count('target 11-20')+count('target end zone'),ez:count('target end zone')},
-          games:played.length,td:pl.td,xtd:xSeason,regression:tdRegression(pl.td,xSeason),goalLine:gl&&gl[0]===pl&&gl[1]>=2,
+          recentTD:{hits:last4.filter(id=>pl.tdGames[id]).length,games:last4.filter(id=>pl.games[id]).length},
+          availability:{hasReport,inactivesPosted,missing:missing.filter(x=>xr.get(pl.id)>0&&x.rush>0||xc.get(pl.id)>0&&x.receiving>0),defenseOut},
+          scoring:{implied,fromLines,badWeather:bad},games:played.length,td:pl.td,xtd:xSeason,regression:tdRegression(pl.td,xSeason),goalLine:gl&&gl[0]===pl&&gl[1]>=2,
           openShare:openTotal?(openAll[pl.id]||0)/openTotal:0,status:/questionable|doubtful/i.test(statusOf(pp.name)||'')?statusOf(pp.name):null,
           quotes:{any:propQuotes(pp,'Anytime TD',S.odds)[0]||null,first:propQuotes(pp,'First TD',S.odds)[0]||null}};
       });
@@ -697,6 +709,7 @@ export function nflAction(act,v,target){
   }
   if(S.route.id==='nfl-parlays'&&act.startsWith('parlay'))return nflParlayAction(act,v,nflParlayData(),target);
   if(S.route.id==='nfl-sgp'&&act.startsWith('parlay'))return nflSgpAction(act,v,nflSameGameData(),target);
+  if(S.route.id==='nfl-td-jackpot'&&act.startsWith('tdJackpot'))return tdJackpotAction(act,v,tdBoardData());
   if(S.route.id==='nfl-tdboard'&&act.startsWith('td'))return tdBoardAction(act,v,tdBoardData());
   if(act==='pickplayers'){const [a,h]=matchup();dialog('Pick players',grid(2,[tdPlayers(a),tdPlayers(h)]),true);return true;}
   return false;

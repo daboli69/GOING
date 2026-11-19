@@ -138,3 +138,7 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .jackpot-price{width:7.5rem}
 .jackpot-edit small{display:block;margin-top:4px}
 .jackpot-edit input[aria-invalid=true]{border-color:var(--red)}
+
+.jackpot-legs{padding-inline-start:1.25rem;margin:0}
+.jackpot-legs>li+li{margin-top:.75rem}
+.jackpot-legs .tools{margin-top:.35rem}
