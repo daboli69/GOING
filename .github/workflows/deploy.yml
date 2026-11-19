@@ -283,6 +283,22 @@ jobs:
           git -c user.name="GOING tracker" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "Pick record $(date -u +%Y-%m-%dT%H:%MZ)"
           git push -q origin HEAD:refs/heads/tracker
 
+      - name: Check GTA 6 special outcomes
+        id: gta-evaluation
+        continue-on-error: true
+        run: node scripts/gta-evaluate.mjs publish-status
+        env:
+          GTA_PRIVATE_ARCHIVE: ${{ runner.temp }}/going-gta6-evaluation.enc
+
+      - name: Preserve encrypted GTA 6 evaluation
+        if: hashFiles('site/data/gta-special-status.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: gta6-encrypted-evaluation
+          path: ${{ runner.temp }}/going-gta6-evaluation.enc
+          retention-days: 90
+          if-no-files-found: ignore
+
       - name: Check feed health
         run: node scripts/health.mjs
 

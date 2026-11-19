@@ -48,6 +48,7 @@ export const mlbTeams={AZ:['Arizona Diamondbacks',109,'a71930'],ATL:['Atlanta Br
 export const routes=[
   {group:'',title:'GOING',path:'',id:'home',sport:'going'},
   ...Object.entries(menus).flatMap(([sport,groups])=>Object.entries(groups).flatMap(([group,entries])=>entries.map(([title,path,id])=>({group,title,path,id,sport})))),
+  {group:'',title:'GTA 6 Special',path:'gta6-special.html',id:'gta-special',sport:'going'},
   {group:'',title:'My Plays',path:'plays.html',id:'myplays',sport:'going'},
   {group:'',title:'Pick Tracker',path:'tracker.html',id:'tracker',sport:'going'}
 ];
@@ -62,6 +63,7 @@ export const viewDefaults={
   zones:{zoneMarket:'Threes',zoneView:'Best & Worst Spots',minimum:'0'},types:{view:'The 12 Types',typeFilter:'All',typeDefense:'Points'},
   'nba-props':{position:'All',pricing:'Every Player',allGames:true,gameFilter:'All games'},court:{trend:'Pregame Rank'},
   'nhl-props':{allGames:true,side:'Best side',skater:'All skaters',status:'All games',edge:'0',pricing:'All players',zoneMatch:'Everyone'},
+  'gta-special':{gtaSport:'',gtaMarket:'',gtaClass:'',gtaScope:'Player',gtaMove:'3'},
   myplays:{when:'Everything',playType:'Every Type',grade:'All'},
   tracker:{sport:'',kind:'',market:'',side:'',provider:'',priceBand:'',tool:'',rating:'',window:'All recorded',lean:true,
     trackerFrom:'',trackerTo:'',trackerGroup:'sport',trackerSplit:'market',trackerOrder:'Decisions',trackerMin:'0',
