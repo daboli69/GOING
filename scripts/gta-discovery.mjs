@@ -1,8 +1,6 @@
 import {nbaLegChance} from '../site/nba-parlay-engine.mjs';
-import {nhlResearchUnders} from '../site/nhl.mjs';
-import {current as S} from '../site/ui.mjs';
 import {kickoff,nflName} from '../site/nfl-availability.mjs';
-import {breakEven,classify,gtaDate,gtaQuoteAge,gtaStart,poissonUnder,returnOnDecision,stress} from '../site/gta-event.mjs';
+import {breakEven,classify,gtaDate,gtaQuoteAge,gtaStart,returnOnDecision,stress} from '../site/gta-event.mjs';
 
 export const nbaFiles=['live/nba-main-lines-'+gtaDate,'live/odds-nba-'+gtaDate,'live/nba-alternate-lines-'+gtaDate];
 export const leagues=['nba','nfl','nhl','mlb','cbb','cwb','fbs','ufc'];
@@ -104,49 +102,39 @@ function fixtures(input){
 const scheduled=(g,at)=>eventDay(g.start)===gtaDate&&time(g.start)>at&&!['FINAL','OFF','LIVE','CRIT','CANCELED','POSTPONED','IN','POST'].includes(String(g.status||'').toUpperCase());
 export function discover(input,at){
   const slate=fixtures(input), offers=[], baseline=new Map();
-  const addBase=(k,v)=>baseline.set(k,baseline.has(k)?null:v);
-  for(const sport of ['nba','nfl'])for(const l of input[sport]){
-    if(l.date!==gtaDate||l.side!=='Under'||l.result||!(time(l.capturedAt)<=time(l.observedAt)&&time(l.observedAt)<=at&&time(l.observedAt)<time(l.tip)))continue;
-    const form=l.form?.season;
-    addBase(key(sport,l.game,l.name,l.stat,l.line,l.provider,l.price,l.capturedAt),{
-      id:String(l.player),team:l.team,prob:sport==='nba'?nbaChance(l):prob(l.chance),
-      projection:l.projection??null,model:sport==='nba'?'nba-form':'nfl-form',
-      push:Number.isInteger(l.line)?null:0,modelAt:l.observedAt,unavailable:!!l.checks?.Availability,
-      sample:form?.n??null
+  for(const leg of input.nba){
+    if(leg.date!==gtaDate||leg.provider!=='DraftKings'||leg.alternate!==false||leg.side!=='Under'||leg.result||
+      !(time(leg.capturedAt)<=time(leg.observedAt)&&time(leg.observedAt)<=at&&time(leg.observedAt)<time(leg.tip)))continue;
+    const exact=key('nba',leg.game,leg.name,leg.stat,leg.line,leg.provider,leg.price,leg.capturedAt);
+    const record=value=>value?{hits:value.hits,n:value.n,pushes:value.pushes??0}:null;
+    baseline.set(exact,baseline.has(exact)?null:{
+      id:String(leg.player),team:leg.team,prob:nbaChance(leg),model:'nba-form',
+      projection:leg.projection??null, push:Number.isInteger(leg.line)?null:0,modelAt:leg.observedAt,
+      unavailable:!!leg.checks?.Availability,
+      injuryFlag:(leg.flags||[]).find(flag=>/day.to.day|questionable|doubtful|game.time decision/i.test(flag))??null,
+      history:{season:record(leg.form?.season),recent:record(leg.form?.last10)}
     });
   }
-  if(input.nhl&&time(input.manifest?.archive_updated)<=at){
-    const previous={...S};
-    try{
-      Object.assign(S,{route:{sport:'nhl'},day:gtaDate,today:gtaDate,ice:2026,data:{...input.nhl,shots:input.shots},games:slate.nhl,odds:list(input.nhlQuotes)});
-      for(const {game,player,market,quote,projection} of nhlResearchUnders()){
-        const qualified=projection!=null?poissonUnder(projection,quote.line):null;
-        addBase(key('nhl',game.id,player.name,market,quote.line,quote.provider,quote.under,quote.capturedAt),{
-          id:String(player.id),team:player.team,prob:prob(qualified?.prob),push:qualified?.push??null,projection,model:'nhl-poisson',
-          unavailable:market==='Saves',starterUnverified:market==='Saves',
-          modelAt:new Date(at).toISOString(),sample:player.gp??null
-        });
-      }
-    }finally{Object.assign(S,previous);}
-  }
-  for(const sport of ['nba','nfl','nhl']){
-    const seen=new Map();
-    for(const q of list(input[sport+'Quotes'])){
-      if(q.date!==gtaDate||!validOdds(q.under)||typeof q.line!=='number'||!Number.isFinite(q.line))continue;
-      const matches=slate[sport].filter(g=>g.a===q.a&&g.h===q.h&&scheduled(g,at));
-      const atQuote=time(q.capturedAt);
-      if(matches.length!==1||!(atQuote<=at&&at-atQuote<=gtaQuoteAge))continue;
-      const g=matches[0], k=key(sport,g.id,q.player,q.market,q.line,q.provider,q.under,q.capturedAt);
-      const id=[g.id,playerKey(sport,q.player),q.market,q.line,q.provider].join('|');
-      const old=seen.get(id);
-      if(old&&time(old.quoteAt)>=atQuote)continue;
-      const matching=baseline.get(k);
-      seen.set(id,{sport,kind:'Player',game:String(g.id),matchup:g.a+' @ '+g.h,start:g.start,subject:q.player,
-        market:q.market,line:q.line,odds:+q.under,quoteAt:q.capturedAt,provider:q.provider,liquidity:null,
-        executable:!!q.provider,...matching});
+  // DraftKings is the sportsbook main-line feed. Exchange threshold listings do not attest to a main line.
+  const mainLines=new Map();
+  for(const q of list(input.nbaQuotes)){
+    if(q.provider!=='DraftKings'||q.date!==gtaDate||!validOdds(q.under)||!Number.isFinite(q.line))continue;
+    const matches=slate.nba.filter(g=>g.a===q.a&&g.h===q.h&&scheduled(g,at));
+    const quoteTime=time(q.capturedAt);
+    if(matches.length!==1||!(quoteTime<=at&&at-quoteTime<=gtaQuoteAge))continue;
+    const g=matches[0], id=[g.id,playerKey('nba',q.player),q.market,q.provider].join('|');
+    const prior=mainLines.get(id);
+    if(prior?.at>quoteTime)continue;
+    // Two distinct lines at the same timestamp cannot both be the normal line for that player and stat.
+    if(prior?.at===quoteTime){
+      if(prior.offer?.line!==q.line||prior.offer?.odds!==+q.under)prior.offer=null;
+      continue;
     }
-    offers.push(...seen.values());
+    const exact=key('nba',g.id,q.player,q.market,q.line,q.provider,q.under,q.capturedAt);
+    mainLines.set(id,{at:quoteTime,offer:{sport:'nba',kind:'Player',game:String(g.id),matchup:g.a+' @ '+g.h,start:g.start,subject:q.player,
+      market:q.market,line:q.line,odds:+q.under,provider:q.provider,quoteAt:q.capturedAt,mainLine:true,...baseline.get(exact)}});
   }
+  offers.push(...[...mainLines.values()].map(entry=>entry.offer).filter(Boolean));
   for(const sport of leagues){
     for(const g of slate[sport]){
       if(!scheduled(g,at))continue;
@@ -160,10 +148,10 @@ export function discover(input,at){
         modelAt:projection==null?null:input[sport].updated,liquidity:null,executable:!!book.provider});
     }
   }
-  const reliability=historyMetrics(input);
+  const reliability=historyMetrics({...input,nba:input.nba.filter(r=>r.provider==='DraftKings'&&r.alternate===false),nfl:[],picks:[]});
   const rows=offers.map(row=>{
     const cohort=group(row.sport,row.market,row.provider);
-    const test=reliability[cohort],classification=classify(row,test);
+    const classification=classify(row);
     return {...row,cohort,classification,baselineEV:row.prob==null?null:returnOnDecision(row.prob,row.odds)*(1-(row.push??0)),
       stressRange:stress(row).map(r=>r.prob)};
   });

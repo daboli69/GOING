@@ -169,9 +169,9 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
   .board.gta-board td:nth-child(1),.board.gta-board td:last-child{grid-column:1 / -1}
   .board.gta-board td:nth-child(n+2)::before{display:block;color:var(--sub);font-size:.72rem;font-weight:700;margin-bottom:3px}
   .board.gta-board td:nth-child(2)::before{content:"Price at capture"}
-  .board.gta-board td:nth-child(3)::before{content:"GOING baseline"}
-  .board.gta-board td:nth-child(4)::before{content:"Estimated EV"}
-  .board.gta-board td:nth-child(5)::before{content:"Lift to break-even"}
+  .board.gta-board td:nth-child(3)::before{content:"GOING Under chance"}
+  .board.gta-board td:nth-child(4)::before{content:"Season Under"}
+  .board.gta-board td:nth-child(5)::before{content:"Recent Under"}
   .board.gta-board td:nth-child(6)::before{content:"Scenario sensitivity"}
   .board.gta-board td:nth-child(6){grid-column:1 / -1}
 }

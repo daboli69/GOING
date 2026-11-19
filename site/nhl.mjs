@@ -111,22 +111,6 @@ function propModel(p,m,g){
   const proj=avg==null?null:(.82*avg+.18*(recent??avg))*base;
   return {avg,proj,recent,opp:o,match:base};
 }
-// The one-day experiment uses the same projections as the prop page for every matched quote.
-export function nhlResearchUnders(){
-  const rows=[];
-  for(const p of people()){
-    const game=gamesFor(p.team);
-    if(!game)continue;
-    for(const market of mlist){
-      if((market==='Saves')!==p.goal)continue;
-      const quote=propOdds(p,market);
-      if(quote?.under==null)continue;
-      const {proj}=propModel(p,market,game);
-      rows.push({game,player:p,market,quote,projection:proj});
-    }
-  }
-  return rows;
-}
 function propsPage(){
   const name=mNames[S.route.title],best=name==='Best Plays',goals=name==='Anytime Goals',saves=name==='Saves',shots=name==='Shots on Goal',adv=S.f.advanced;
   const pricing=S.f.pricing||'All players', conf=S.f.confirm||'All players',status=S.f.status||'All games';

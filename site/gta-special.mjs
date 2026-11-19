@@ -1,4 +1,4 @@
-import {gtaClasses,gtaQuoteAge,gtaVisible,breakEven,stress} from './gta-event.mjs';
+import {gtaClasses,gtaDate,gtaQuoteAge,gtaVisible,stress} from './gta-event.mjs';
 import {current as S,box,btn,cell,dataURL,dateLabel,empty,esc,get,grid,metric,pct,round,select,table,tools} from './ui.mjs';
 import {href,sections} from './config.mjs';
 
@@ -26,46 +26,67 @@ const sources=[
 ];
 
 export async function loadGta(){
-  const [snapshot,status]=await Promise.all([get(href('gta-special-snapshot.json'),null),get(dataURL('gta-special-status.json'),null)]);
-  return {snapshot,status};
+  const [snapshot,status,latest]=await Promise.all([get(href('gta-special-snapshot.json'),null),get(dataURL('gta-special-status.json'),null),
+    gtaVisible()?get(dataURL('live/nba-main-lines-'+gtaDate+'.json'),null):null]);
+  return {snapshot,status,latest};
 }
-function rank(rows,snapshot){
+function rank(rows){
   return [...rows].sort((a,b)=>strengths[b.classification]-strengths[a.classification]||
-    (snapshot.reliability[b.cohort]?.matched??0)-(snapshot.reliability[a.cohort]?.matched??0)||
-    (b.baselineEV??-Infinity)-(a.baselineEV??-Infinity)||a.subject.localeCompare(b.subject));
+    (b.prob??-Infinity)-(a.prob??-Infinity)||
+    (b.history?.recent?.hits??-1)-(a.history?.recent?.hits??-1)||a.subject.localeCompare(b.subject));
 }
-function rowNote(row,snapshot){
-  if(row.starterUnverified)return 'Goalie starter unverified';
+function rowNote(row){
   if(row.unavailable)return 'Availability check failed';
+  if(row.injuryFlag)return row.injuryFlag;
   if(row.prob==null)return row.projection==null?'No matched GOING probability':'Projection only';
-  const cohort=snapshot.reliability[row.cohort];
-  if(row.classification==='supported')return 'Positive baseline after calibration screen';
-  if(row.classification==='sensitive')return 'Stress test crosses the quoted break-even';
-  return cohort?.games?'Insufficient independent validation':'No comparable graded cohort';
+  if(row.classification==='supported')return 'GOING estimate and recent results favor the Under';
+  if(row.classification==='sensitive')return 'Hypothetical stress test crosses 50%';
+  return 'Below the historical support threshold';
 }
+function record(sample){
+  return sample?.n?sample.hits+'/'+sample.n+' · '+pct(sample.hits/sample.n,0):'—';
+}
+const mainKey=(matchup,player,market,book)=>JSON.stringify([matchup,player,market,book]);
+function mainBoard(latest,now){
+  const map=new Map();
+  for(const q of Array.isArray(latest)?latest:[]){
+    const captured=Date.parse(q.capturedAt);
+    if(q.date!==gtaDate||q.provider!=='DraftKings'||!Number.isFinite(q.line)||!Number.isInteger(+q.under)||Math.abs(+q.under)<100||!(captured<=now&&now-captured<=gtaQuoteAge))continue;
+    const id=mainKey(q.a+' @ '+q.h,q.player,q.market,q.provider);
+    const old=map.get(id);
+    if(!old||captured>old.captured)map.set(id,{captured,line:q.line});
+    else if(captured===old.captured&&q.line!==old.line)old.line=null;
+  }
+  return map;
+}
+const currentQuote=(row,board)=>row.mainLine?board.get(mainKey(row.matchup,row.subject,row.market,row.provider)):null;
+const moved=(row,board)=>Number.isFinite(currentQuote(row,board)?.line)&&currentQuote(row,board).line!==row.line;
 const pricesStale=row=>Date.now()-Date.parse(row.quoteAt)>gtaQuoteAge;
-function priceText(row){
+function priceText(row,board){
   const state=Date.parse(row.start)<=Date.now()?'Game started':pricesStale(row)?'Price aged out':'Frozen price';
-  return `<strong>${esc(odds(row.odds))}</strong> <small>${esc(row.provider||'Unknown book')}<br>${esc(time(row.quoteAt))}<br>${state}</small>`;
+  const latest=currentQuote(row,board);
+  const line=moved(row,board)?'<br>Main line moved to '+esc(latest.line):
+    row.mainLine&&latest?.line===row.line?'<br>Main line confirmed '+esc(time(new Date(latest.captured).toISOString())):'';
+  return `<strong>${esc(odds(row.odds))}</strong> <small>${esc(row.provider||'Unknown book')}<br>${esc(time(row.quoteAt))}<br>${state}${line}</small>`;
 }
 function scenario(row,step){
   const values=stress(row,step);
   if(!values.length)return '—';
-  const display=v=>pct(v.prob,1)+(v.projected==null?'':' · '+round(v.projected,2)+' projected')+' · '+pct(v.ev,1)+' EV';
+  const display=v=>pct(v.prob,1)+(v.projected==null?'':' · '+round(v.projected,2)+' projected');
   return `<small>Lower ${display(values[0])}<br>Higher ${display(values[2])}</small>`;
 }
-function rankings(rows,snapshot,step){
-  return table(['Market','Price at capture','GOING baseline','Est. EV','Lift to break-even','Scenario sensitivity','Evidence'],
+function rankings(rows,step,board){
+  return table(['Market','Price at capture','GOING Under chance','Season Under','Recent Under','Scenario sensitivity','Evidence'],
     rows.map(row=>[
       cell(`<strong>${esc(row.subject)}</strong><br><small>${esc(sportName(row.sport)+' · '+row.market+' Under '+row.line)}<br>${esc(row.matchup+' · '+time(row.start))}</small>`,'gta-subject'),
-      cell(priceText(row),'gta-price'),
+      cell(priceText(row,board),'gta-price'),
       cell(row.prob==null&&!Number.isFinite(row.projection)?'—':
         pct(row.prob,1)+(row.projection!=null?'<br><small>'+round(row.projection,2)+' projected</small>':'')+
         '<br><small>'+esc(models[row.model]||'')+(row.modelAt?'<br>'+esc(time(row.modelAt)):'')+'</small>'),
-      cell(row.baselineEV==null?'—':pct(row.baselineEV,1)+(row.push==null?'<br><small>per non-push</small>':'')),
-      cell(row.prob==null?'—':pp(Math.max(0,breakEven(row.odds)-row.prob))),
+      cell(record(row.history?.season)),
+      cell(record(row.history?.recent)),
       cell(scenario(row,step)),
-      cell('<strong>'+gtaClasses[row.classification]+'</strong><br><small>'+esc(rowNote(row,snapshot))+'</small>')
+      cell('<strong>'+gtaClasses[row.classification]+'</strong><br><small>'+esc(rowNote(row))+'</small>')
     ]),{wrap:'box',cls:'gta-board',empty:'No markets meet the current filters.'});
 }
 
@@ -84,7 +105,7 @@ function diagnostics(snapshot){
   });
   return box('Statistical evidence and uncertainty',
     '<p>Calibration uses previously settled pregame Under forecasts, one representative line per player, game, market and provider. Games receive equal weight. The interval resamples games, and markets still share players, dates and teams.</p>'+
-    '<p>A baseline recommendation needs positive value after a conservative calibration adjustment, at least 30 independent games with paired prices across four weeks, and Brier score at least as good as the paired market. Quotes and fees can change.</p>'+
+    '<p>Data-supported means the Under hit at least 65% of eight or more season decisions and at least 60% of five or more recent decisions, with a GOING estimate of 57% or higher. Questionable, doubtful and day-to-day players are held out. The samples overlap and describe past games. The estimates remain provisional.</p>'+
     table(['Cohort','Offers','Games','Paired games','Observed minus forecast','95% game-bootstrap interval','Matched Brier · GOING / market'],rows,{wrap:'box'})+
     '<p class="subtle">Placebo check on November 12 found zero directly quoted, settled Under forecasts that met the screen. A half-point outcome-only check yielded 85 NHL observations in two games. That sample is too small to estimate a release effect or validate returns.</p>');
 }
@@ -95,7 +116,7 @@ function research(){
     '<p>Sleep loss is a plausible mechanism. Small gaming experiments studied different populations and exposures. Travel, short rest, injuries, late lineup changes, pace and ordinary variance all offer competing explanations. Reduced defensive effort could increase an opponent’s scoring. Golden State and Memphis also played the previous night, and Indianapolis and Houston were on an ordinary Thursday short week. The dashboard assigns no player-specific exposure score.</p>')+
     box('Research sources','<ul>'+sources.map(([name,date,url])=>`<li><a href="${url}" target="_blank" rel="noopener">${esc(name)}</a> · ${date}</li>`).join('')+'</ul>');
 }
-export function gtaPage({snapshot,status}){
+export function gtaPage({snapshot,status,latest}){
   const heading='<h1>🎮 GTA 6 Special</h1>';
   if(!gtaVisible(Date.now(),status))return heading+box('',empty('The November 19 research window has closed.'));
   if(!snapshot?.rows?.length)return heading+box('',empty('The frozen research snapshot is unavailable.'));
@@ -103,20 +124,25 @@ export function gtaPage({snapshot,status}){
   const step=Number(S.f.gtaMove)||3;
   const bySport=snapshot.rows.filter(r=>!sport||r.sport===sport);
   const marketOptions=[...new Set(bySport.map(r=>r.market))].sort();
-  const rows=rank(bySport.filter(r=>(!market||r.market===market)&&(!level||r.classification===level)&&r.kind===scope),snapshot);
-  const recommendation=snapshot.rows.filter(r=>r.classification==='supported'&&Date.parse(r.start)>Date.now()&&!pricesStale(r));
+  const rows=rank(bySport.filter(r=>(!market||r.market===market)&&(!level||r.classification===level)&&r.kind===scope));
+  const now=Date.now(),board=mainBoard(latest,now);
+  const supported=snapshot.rows.filter(r=>r.classification==='supported'&&Date.parse(r.start)>now);
+  const recommendation=supported.filter(r=>!board.size||currentQuote(r,board)?.line===r.line);
   const limit=S.f.gtaLimit||30;
   const filters=tools(select('Sport','gtaSport',[['','All sports'],...Object.entries(sections).map(([k,v])=>[k,v.league])])+
     select('Market','gtaMarket',[['','All markets'],...marketOptions])+select('Scope','gtaScope',scopes)+
     select('Evidence','gtaClass',classOptions)+select('Scenario size','gtaMove',moves),'tracker-controls');
   return heading+`<p class="subtle">November 19, 2026 · frozen ${esc(time(snapshot.frozenAt))}. Forecasts and quotes stay fixed at capture.
     ${snapshot.lastSupplementAt?' Game-total supplement frozen '+esc(time(snapshot.lastSupplementAt))+'.':''}</p>`+
-    grid(3,[metric('Priced unders',countFmt.format(snapshot.rows.length)),metric('Markets with probabilities',countFmt.format(snapshot.rows.filter(r=>r.prob!=null).length)),metric('Documented pregame sessions','0 found')])+
-    box('Best Under Discoveries',recommendation.length?rankings(rank(recommendation,snapshot).slice(0,12),snapshot,step):empty('No data-supported Under recommendations at the available prices.'))+
+    grid(3,[metric('Main lines scanned',countFmt.format(snapshot.rows.length)),metric('Markets with probabilities',countFmt.format(snapshot.rows.filter(r=>r.prob!=null).length)),metric('Data-supported Unders',countFmt.format(snapshot.rows.filter(r=>r.classification==='supported').length))])+
+    box('Best Under Discoveries',
+      '<p class="subtle">'+(board.size?supported.length-recommendation.length+' qualifying lines moved or are missing from the latest board. The full rankings retain their original numbers.':
+        'The current main-line feed is unavailable. The numbers below are verified as of the pregame capture.')+'</p>'+
+      (recommendation.length?rankings(rank(recommendation),step,board):empty('No upcoming main-line Unders met the historical support threshold.')))+
     box(scope+' Under Rankings',filters+
-      '<p class="subtle">Lowest output, unchanged baseline and higher output are hypothetical stress tests. The table shows baseline odds and EV, plus the lower and higher cases. Scenario size is a percentage change to the NHL count projection and a percentage-point change to the modeled chance elsewhere.</p>'+
-      '<p class="subtle">An event-sensitive row crosses break-even under the standard size-3 stress test with at least a 2.5-point probability change. No GTA adjustment is used in the baseline. Liquidity was unavailable for the captured quotes.</p>'+
-      (scope==='Team'&&!snapshot.rows.some(r=>r.kind==='Team')?empty('No timestamped standalone team Under prices were available in the scanned feeds.'):rankings(rows.slice(0,limit),snapshot,step))+(rows.length>limit?tools(btn('Show more markets','gtaMore','','outline')+
+      '<p class="subtle">Player props use the DraftKings main lines captured before tipoff. NFL and NHL player props lack a verified sportsbook main line in this snapshot. The game table includes posted main totals.</p>'+
+      '<p class="subtle">Rankings favor the highest estimated Under hit chance. The same main line is applied to the season and recent game results. The lower- and higher-output scenarios are hypothetical and use zero GTA adjustment for rankings.</p>'+
+      (scope==='Team'&&!snapshot.rows.some(r=>r.kind==='Team')?empty('No timestamped standalone team Under prices were available in the scanned feeds.'):rankings(rows.slice(0,limit),step,board))+(rows.length>limit?tools(btn('Show more markets','gtaMore','','outline')+
         `<span class="subtle">${limit.toLocaleString()} of ${rows.length.toLocaleString()}</span>`):''))+
     coverage(snapshot)+diagnostics(snapshot)+research();
 }
