@@ -640,12 +640,13 @@ async function tickNflInputs(force=false){
   const games=upcomingNflGames(S.games,now);
   const remaining=games.map(g=>g.id).join('|'),kickoffChanged=state.nflParlayRemaining!==remaining;
   const since=state.nflParlayChecked??now;
-  const deadlineChanged=draft&&nflDeadlineChanged(S.odds,games,since,now);
+  const jackpot=id==='nfl-td-jackpot';
+  const deadlineChanged=(draft||jackpot)&&nflDeadlineChanged(S.odds,games,since,now);
   state.nflParlayChecked=now;
   state.nflParlayRemaining=remaining;
   if(!force&&(!games.length||state.nflParlayNext>now)){
     if(draft&&(kickoffChanged||deadlineChanged)){M.nfl.action('parlayRefreshDraft','');render({keepPosition:true});}
-    if(id==='nfl-td-jackpot'&&kickoffChanged)render({keepPosition:true});
+    if(jackpot&&(kickoffChanged||deadlineChanged))render({keepPosition:true});
     return;
   }
   state.nflParlayChecking=true;
@@ -675,6 +676,7 @@ async function tickNflInputs(force=false){
     if(latestProjections!==S.nflProjections){S.nflProjections=latestProjections;changed=true;}
     if(Array.isArray(odds)&&JSON.stringify(odds)!==JSON.stringify(S.odds)){S.odds=odds;changed=true;}
     if(availability){
+      if(jackpot&&availability.reportAt!==S.nflAvailability?.reportAt)changed=true;
       if(JSON.stringify(availability.teams)===JSON.stringify(S.injuries))availability.teams=S.injuries;
       else{S.injuries=availability.teams;changed=true;}
       if(JSON.stringify(availability.games||{})===JSON.stringify(S.nflAvailability?.games||{}))availability.games=S.nflAvailability?.games;
