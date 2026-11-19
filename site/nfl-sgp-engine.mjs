@@ -8,6 +8,14 @@ const passMarkets=new Set(['Passing','Pass Attempts','Completions']);
 const positions=new Set(['RB','TE','WR']);
 const receiverPosition=pos=>pos==='FB'?'RB':pos;
 const scales={rush:[.9,.08,.05],pass:[1.25,.08,.07],receiving:[1.65,.08,.08]};
+export const comparableLimit=1;
+export function defenseMatchMetrics({kind,target,past}){
+  const labels=kind==='rush'?['Yards allowed per carry','Rush share faced','Runs of 10+ yards allowed']:
+    kind==='pass'?['Yards allowed per pass attempt','Pass share faced','Throws of 15+ air yards faced']:
+      ['Yards allowed per '+kind+' target',kind+' share of targets','Deep '+kind+' target rate'];
+  const scale=scales[kind]||scales.receiving;
+  return labels.map((label,i)=>({label,target:target[i],past:past[i],scale:scale[i],percentage:i>0}));
+}
 const sample=()=>({plays:0,yards:0,known:0,explosive:0});
 const profile=()=>({rush:sample(),pass:sample(),RB:sample(),TE:sample(),WR:sample(),targets:0});
 const add=(bucket,yards,explosive)=>{
@@ -69,7 +77,7 @@ export function similarDefenseGames(profiles,row,statKey){
     const past=profiles.before(opponent,game.date,kind);
     if(!past)return [];
     const distance=Math.sqrt(mean(target.map((v,i)=>((v-past[i])/scale[i])**2)));
-    return distance<=1?[{opponent,date:game.date,value:log[statKey],distance}]:[];
+    return distance<=comparableLimit?[{opponent,date:game.date,value:log[statKey],distance,profile:{kind,target,past}}]:[];
   }).sort((a,b)=>a.distance-b.distance).slice(0,6);
 }
 

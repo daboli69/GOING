@@ -708,7 +708,7 @@ export function nflAction(act,v,target){
     const [a,h]=matchup();dialog(v,grid(2,[a,h].map(t=>card(team(t),table(['Week','Opponent','Results','Plays','Yards'],opening(t,false,S.f.window,S.f.view).map(x=>[x.g.week,team(x.o),esc(x.drives.join(', ')),x.plays,x.yards]))))),true);return true;
   }
   if(S.route.id==='nfl-parlays'&&act.startsWith('parlay'))return nflParlayAction(act,v,nflParlayData(),target);
-  if(S.route.id==='nfl-sgp'&&act.startsWith('parlay'))return nflSgpAction(act,v,nflSameGameData(),target);
+  if(S.route.id==='nfl-sgp'&&(act.startsWith('parlay')||act==='similarDefenses'))return nflSgpAction(act,v,nflSameGameData(),target);
   if(S.route.id==='nfl-td-jackpot'&&act.startsWith('tdJackpot'))return tdJackpotAction(act,v,tdBoardData());
   if(S.route.id==='nfl-tdboard'&&act.startsWith('td'))return tdBoardAction(act,v,tdBoardData());
   if(act==='pickplayers'){const [a,h]=matchup();dialog('Pick players',grid(2,[tdPlayers(a),tdPlayers(h)]),true);return true;}
