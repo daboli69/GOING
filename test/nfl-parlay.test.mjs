@@ -262,7 +262,7 @@ test('similar-defense profiles never use the comparison game or a future game to
   })]));
   const profiles=defenseProfiles(schedule,events,{});
   const input={date:'2026-10-21',opp:'DAL',stat:'Rushing',player:{team:'SF',pos:'RB',logs:[{game:'older',rushY:53}]}};
-  assert.deepEqual(similarDefenseGames(profiles,input,'rushY'),[{opponent:'NYG',date:'2026-10-11',value:53,distance:0}]);
+  assert.deepEqual(similarDefenseGames(profiles,input,'rushY'),[{opponent:'NYG',date:'2026-10-11',value:53,distance:0,profile:{kind:'rush',target:[4,1,0],past:[4,1,0]}}]);
   assert.equal(profiles.before('NYG','2026-10-03','rush'),null);
   assert.notDeepEqual(profiles.before('NYG','2026-10-23','rush'),profiles.before('DAL','2026-10-23','rush'));
 });

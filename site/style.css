@@ -142,3 +142,17 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .jackpot-legs{padding-inline-start:1.25rem;margin:0}
 .jackpot-legs>li+li{margin-top:.75rem}
 .jackpot-legs .tools{margin-top:.35rem}
+
+.board.sgp-evidence td:first-child{min-width:6rem}
+.board.sgp-evidence .sgp-comparison{min-width:7rem}
+.sgp-comparison-button{display:grid;gap:3px;justify-items:center;width:100%;min-height:44px;padding:4px;
+  border:1px solid var(--edge);border-radius:7px;background:var(--panel);color:var(--fg);white-space:nowrap}
+.sgp-comparison-button span{color:var(--accent-text);text-decoration:underline;font-size:.8rem}
+.sgp-defense-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr));gap:10px;clear:both}
+.sgp-defense-card h3 .subtle{font-size:.8em;font-weight:500}
+.sgp-defense-result{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:.35rem 0}
+.sgp-defense-result .subtle{margin-inline-start:auto}
+.board.sgp-defense-metrics :is(th,td){min-width:0}
+.sgp-defense-metrics td:nth-child(n+2){white-space:nowrap}
+.sgp-defense-method{margin:.75rem 0 1rem}
+.sgp-defense-method summary{color:var(--accent-text);font-weight:700;cursor:pointer}
