@@ -27,12 +27,11 @@ export function stress(row,step=3){
   });
 }
 
-export function classify(row,reliability){
+export function classify(row){
   if(row.prob==null||row.unavailable)return 'unsupported';
-  const lower=reliability?.interval?.[0];
-  if(reliability?.games>=30&&reliability.weeks>=4&&reliability.matched>=30&&Number.isFinite(lower)&&
-    Number.isFinite(reliability.brier)&&Number.isFinite(reliability.marketBrier)&&reliability.brier<=reliability.marketBrier&&row.prob+Math.min(0,lower)>breakEven(row.odds)&&row.executable)return 'supported';
-  const pressures=stress(row);
-  const threshold=breakEven(row.odds);
-  return pressures.some(x=>Math.abs(x.prob-row.prob)>=.025&&(x.prob>threshold)!==(row.prob>threshold))?'sensitive':'unsupported';
+  const {season,recent}=row.history||{};
+  const supportsUnder=row.prob>=.57&&season?.n>=8&&season.hits/season.n>=.65&&
+    recent?.n>=5&&recent.hits/recent.n>=.60&&!row.injuryFlag;
+  if(supportsUnder)return 'supported';
+  return stress(row).some(x=>Math.abs(x.prob-row.prob)>=.025&&(x.prob>.5)!==(row.prob>.5))?'sensitive':'unsupported';
 }

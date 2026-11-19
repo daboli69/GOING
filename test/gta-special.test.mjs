@@ -29,24 +29,25 @@ test('stress preserves the baseline, tests both directions and handles integer p
   assert.equal(breakEven(200),1/3);
 });
 
-test('sensitivity cannot bypass missing calibration, availability or market validation',()=>{
-  const row={odds:100,prob:.49,executable:true};
-  assert.equal(classify(row), 'sensitive');
-  assert.equal(classify({...row,unavailable:true}), 'unsupported');
-  assert.equal(classify({...row,prob:.65}), 'unsupported');
-  assert.equal(classify({...row,prob:.65},{games:30,matched:30,weeks:4,interval:[-.02,.01],brier:.24,marketBrier:.23}), 'unsupported');
-  assert.equal(classify({...row,prob:.65},{games:30,matched:30,weeks:4,interval:[-.02,.01],brier:.23,marketBrier:.24}), 'supported');
+test('historical support depends on recent and season results rather than the price',()=>{
+  const supported={odds:-500,prob:.64,history:{season:{hits:11,n:15},recent:{hits:7,n:10}}};
+  assert.equal(classify(supported),'supported');
+  assert.equal(classify({...supported,odds:150}),'supported');
+  assert.equal(classify({...supported,unavailable:true}),'unsupported');
+  assert.equal(classify({...supported,injuryFlag:'Questionable'}),'unsupported');
+  assert.equal(classify({...supported,history:{season:{hits:11,n:15},recent:{hits:5,n:10}}}),'unsupported');
+  assert.equal(classify({odds:100,prob:.49}),'sensitive');
 });
 
 test('discovery only joins an exact pregame snapshot from a timestamped source',()=>{
   const frozen=Date.parse('2026-11-19T18:00Z'),at='2026-11-19T17:45Z', date='2026-11-19',tip='2026-11-20T01:00Z';
   const game={id:'100',a:'SF',h:'NY',iso:tip,status:'FUT'};
   const prop={a:'SF',h:'NY',date,player:'Example Player',market:'Arbitrary count market',line:4.5,under:+125,provider:'DraftKings',capturedAt:at};
-  const leg={name:prop.player,player:'1',date,side:'Under',tip,game:game.id,stat:prop.market,line:4.5,price:125,provider:prop.provider,
+  const leg={name:prop.player,player:'1',date,side:'Under',tip,game:game.id,stat:prop.market,line:4.5,price:125,provider:prop.provider,alternate:false,
     capturedAt:at,observedAt:'2026-11-19T17:50Z',form:{season:{n:20,hits:11}}};
-  const data={nbaSlate:[game],nba:[leg],nbaQuotes:[prop,{...prop,line:3.5},{...prop,line:2.5,capturedAt:tip}],nfl:[],picks:[]};
+  const data={nbaSlate:[game],nba:[leg],nbaQuotes:[prop,{...prop,line:3.5,provider:'Kalshi'},{...prop,line:2.5,capturedAt:tip}],nfl:[],picks:[]};
   const first=discover(data,frozen);
-  assert.equal(first.rows.length,2);
+  assert.equal(first.rows.length,1);
   assert.equal(first.rows.find(r=>r.line===4.5)?.prob,16/30);
   assert.equal(first.rows.find(r=>r.line===3.5)?.prob,undefined);
   assert.equal(discover(data,Date.parse(tip)).rows.length,0);
