@@ -4,9 +4,11 @@ on:
   schedule:
     - cron: '8,23,38,53 * * * *'
   push:
-    branches: [codex/nba-overnight-props]
+    branches: [main]
     paths:
       - '.github/workflows/nba-main-lines.yml'
+      - 'scripts/publish-nba-main-lines.mjs'
+      - 'site/nba-main-lines.mjs'
   workflow_dispatch:
 
 permissions:
@@ -26,16 +28,6 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
-      - name: Disable the unused Cloudflare preview endpoint
-        if: github.ref_name == 'codex/nba-overnight-props'
-        env:
-          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          curl --fail --silent --show-error --max-time 15 -X POST \
-            -H "Authorization: Bearer $CF_TOKEN" -H 'Content-Type: application/json' \
-            --data '{"enabled":false,"previews_enabled":false}' \
-            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/workers/scripts/going-nba-lines/subdomain" | jq -e '.success'
       - name: Publish verified DraftKings lines for today and tomorrow Eastern
         run: |
           dir=$(mktemp -d)

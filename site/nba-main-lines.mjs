@@ -98,7 +98,8 @@ export async function nbaMainLineBoard(date,games,published,{previous,force=fals
 
   const mirror=await read();
   const stamp=Date.parse(mirror?.checkedAt);
-  const valid=mirror?.date===date&&Array.isArray(mirror.quotes)&&Array.isArray(mirror.failed)&&stamp<=now&&now-stamp<=120*60000;
+  const valid=mirror?.date===date&&Array.isArray(mirror.quotes)&&Array.isArray(mirror.failed)&&
+    mirror.failed.every(item=>markets.includes(item?.market))&&stamp<=now&&now-stamp<=120*60000;
   if(!valid||stamp<publishedAt){
     const prior=usable(recent?.quotes);
     return {date,slateKey,checkedAt:now,quotes:latest(prior)>publishedAt?prior:saved,source:fresh?'published':'unavailable'};
