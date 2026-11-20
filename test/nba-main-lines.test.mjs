@@ -25,21 +25,20 @@ test('DraftKings capture uses its marked main threshold and exact scheduled matc
   assert.equal(draftKingsMainLines(payload,'Threes',[game],now),null);
 });
 
-test('the parlay board gets today’s main lines directly after an overnight publication gap',async()=>{
+test('the parlay board gets today’s main lines from the separate feed after an overnight publication gap',async()=>{
   const overnight=Date.parse('2026-11-18T06:00:00Z'), date='2026-11-18';
   const next={...game,date,iso:'2026-11-19T02:00Z'};
   const [line]=draftKingsMainLines(payload,'Points',[game],now);
   const previousQuote={...line,date,capturedAt:new Date(overnight-115*60000).toISOString()};
   const refreshed={...previousQuote,line:6.5,capturedAt:new Date(overnight).toISOString()};
   let calls=0;
-  const read=async games=>{
+  const read=async()=>{
     calls++;
-    assert.deepEqual(games,[next]);
-    return {quotes:[refreshed],failed:[]};
+    return {date,checkedAt:refreshed.capturedAt,quotes:[refreshed],failed:[]};
   };
   const board=await nbaMainLineBoard(date,[next],[line,previousQuote],{now:overnight,read});
   assert.deepEqual(board.quotes,[refreshed]);
-  assert.equal(board.source,'direct');
+  assert.equal(board.source,'mirror');
   const later=await nbaMainLineBoard(date,[next],[],{previous:board,now:overnight+60000,read});
   assert.deepEqual(later.quotes,[refreshed]);
   assert.equal(calls,1);
@@ -48,19 +47,24 @@ test('the parlay board gets today’s main lines directly after an overnight pub
   assert.equal(calls,1);
   await nbaMainLineBoard(date,[next],[refreshed],{now:overnight,force:true,read});
   assert.equal(calls,2);
+  const old=await nbaMainLineBoard(date,[next],[refreshed],{now:overnight,force:true,
+    read:async()=>({date,checkedAt:previousQuote.capturedAt,quotes:[previousQuote],failed:[]})});
+  assert.equal(old.source,'published');
+  assert.deepEqual(old.quotes,[refreshed]);
 });
 
 test('successful empty markets remove saved lines while failed markets can reuse recent verified lines',async()=>{
   const [line]=draftKingsMainLines(payload,'Points',[game],now);
   const rebounds={...line,market:'Rebounds'};
   const timedOut={...rebounds,capturedAt:new Date(now-121*60000).toISOString()};
-  const read=async()=>({quotes:[],failed:[{market:'Rebounds'}]});
+  const snapshot=failed=>({date:game.date,checkedAt:line.capturedAt,quotes:[],failed});
+  const read=async()=>snapshot([{market:'Rebounds'}]);
   const opts={now,force:true,read};
   const board=await nbaMainLineBoard(game.date,[game],[line,rebounds,timedOut],opts);
   assert.equal(board.source,'partial');
   assert.deepEqual(board.quotes,[rebounds]);
-  const empty=await nbaMainLineBoard(game.date,[game],[line,rebounds],{...opts,read:async()=>({quotes:[],failed:[]})});
-  assert.equal(empty.source,'direct');
+  const empty=await nbaMainLineBoard(game.date,[game],[line,rebounds],{...opts,read:async()=>snapshot([])});
+  assert.equal(empty.source,'mirror');
   assert.deepEqual(empty.quotes,[]);
   const sameDate=await nbaMainLineBoard(game.date,[game],[line,rebounds],{now:now+60000,previous:empty,read:async()=>assert.fail('recent check should be reused')});
   assert.deepEqual(sameDate.quotes,[]);
