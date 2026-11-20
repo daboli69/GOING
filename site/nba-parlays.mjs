@@ -53,12 +53,19 @@ const nba=createParlays({
   nav:()=>slate({navOnly:true,date:true}),
   intro:()=>tools(`<a class="pill" href="${href('up/parlay-tracker.html')}">Parlay Leg Tracker</a>`+
     btn('Check for updates','nbaParlayCheck',''))+
-    '<p class="subtle">DraftKings main lines · Qualifying legs are ranked by estimated hit chance. Both includes an Over and an Under when they fit the same ticket.</p>',
+    '<p class="subtle">DraftKings main lines · Qualifying legs are ranked by estimated hit chance. Both includes an Over and an Under when they fit the same ticket.</p>'+
+    (S.f.nbaPriceBoard?.source==='mirror'&&S.odds.length?'<p class="subtle">Main lines loaded from the separate NBA price feed.</p>':
+      ['partial','unavailable'].includes(S.f.nbaPriceBoard?.source)&&S.odds.length?
+        '<p class="subtle">Some DraftKings markets could not refresh. Recent verified main lines are shown where available.</p>':''),
   afterTicket:fullList,poolSummary,
   chance:nbaLegChance,
   chanceNote:'Sample-adjusted season rates with lineup context',
   recent:{key:'last10',label:'L10'},
-  noRows:'No DraftKings main player lines are available for this slate. Try again after the next price refresh.',
+  noRows:()=>S.f.nbaPriceBoard?.source==='no-games'?'No upcoming NBA games on this slate.':
+    S.f.nbaPriceBoard?.source==='unavailable'||S.f.nbaPriceBoard?.source==='partial'?
+      'The DraftKings main-line feed is unavailable. We’ll retry automatically.':
+    S.odds.length?'Available DraftKings main lines could not be matched to the player data.':
+      'DraftKings hasn’t posted main player lines for this slate yet. We’ll check again automatically.',
   hints:{'Maximum spread':'Raise maximum spread toward 14.5.','Minimum total':'Lower the minimum game total.',
     'Type sample':'Try a smaller type-edge sample.','Season or L10 hit rate':'Try a lower minimum hit rate.',
     'Quote older than two hours or untimestamped':'Check again after the next price refresh.'},

@@ -1,5 +1,6 @@
 // Site root, derived from where this module is served (works at / locally and /GOING/ on GitHub Pages).
 export const BASE=new URL('./',import.meta.url).pathname;
+export const NBA_MAIN_LINES_FEED='https://raw.githubusercontent.com/daboli69/GOING/nba-live-lines/';
 export const sections={
   nba:{name:'GOING UP',word:'UP',sport:'Basketball',league:'NBA',home:'up/'},
   nfl:{name:'GOING LONG',word:'LONG',sport:'Football',league:'NFL',home:'long/'},

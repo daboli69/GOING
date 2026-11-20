@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {draftKingsMainLines} from '../scripts/nba-main-lines.mjs';
+import {draftKingsMainLines,nbaMainLineBoard} from '../site/nba-main-lines.mjs';
 import {buildNbaTicket,defaults,legKey} from '../site/nba-parlay-engine.mjs';
 
 const now=Date.parse('2026-11-17T23:15Z');
@@ -23,6 +23,54 @@ test('DraftKings capture uses its marked main threshold and exact scheduled matc
   assert.deepEqual(draftKingsMainLines({...payload,selections:[offers[0],{...offers[1],points:6.5}]},'Points',[game],now),[]);
   assert.deepEqual(draftKingsMainLines({...payload,selections:offers.slice(2)},'Points',[game],now),[]);
   assert.equal(draftKingsMainLines(payload,'Threes',[game],now),null);
+});
+
+test('the parlay board gets today’s main lines from the separate feed after an overnight publication gap',async()=>{
+  const overnight=Date.parse('2026-11-18T06:00:00Z'), date='2026-11-18';
+  const next={...game,date,iso:'2026-11-19T02:00Z'};
+  const [line]=draftKingsMainLines(payload,'Points',[game],now);
+  const previousQuote={...line,date,capturedAt:new Date(overnight-115*60000).toISOString()};
+  const refreshed={...previousQuote,line:6.5,capturedAt:new Date(overnight).toISOString()};
+  let calls=0;
+  const read=async()=>{
+    calls++;
+    return {date,checkedAt:refreshed.capturedAt,quotes:[refreshed],failed:[]};
+  };
+  const board=await nbaMainLineBoard(date,[next],[line,previousQuote],{now:overnight,read});
+  assert.deepEqual(board.quotes,[refreshed]);
+  assert.equal(board.source,'mirror');
+  const later=await nbaMainLineBoard(date,[next],[],{previous:board,now:overnight+60000,read});
+  assert.deepEqual(later.quotes,[refreshed]);
+  assert.equal(calls,1);
+  const published=await nbaMainLineBoard(date,[next],[refreshed],{now:overnight,read});
+  assert.equal(published.source,'published');
+  assert.equal(calls,1);
+  await nbaMainLineBoard(date,[next],[refreshed],{now:overnight,force:true,read});
+  assert.equal(calls,2);
+  const old=await nbaMainLineBoard(date,[next],[refreshed],{now:overnight,force:true,
+    read:async()=>({date,checkedAt:previousQuote.capturedAt,quotes:[previousQuote],failed:[]})});
+  assert.equal(old.source,'published');
+  assert.deepEqual(old.quotes,[refreshed]);
+});
+
+test('successful empty markets remove saved lines while failed markets can reuse recent verified lines',async()=>{
+  const [line]=draftKingsMainLines(payload,'Points',[game],now);
+  const rebounds={...line,market:'Rebounds'};
+  const timedOut={...rebounds,capturedAt:new Date(now-121*60000).toISOString()};
+  const snapshot=failed=>({date:game.date,checkedAt:line.capturedAt,quotes:[],failed});
+  const read=async()=>snapshot([{market:'Rebounds'}]);
+  const opts={now,force:true,read};
+  const board=await nbaMainLineBoard(game.date,[game],[line,rebounds,timedOut],opts);
+  assert.equal(board.source,'partial');
+  assert.deepEqual(board.quotes,[rebounds]);
+  const empty=await nbaMainLineBoard(game.date,[game],[line,rebounds],{...opts,read:async()=>snapshot([])});
+  assert.equal(empty.source,'mirror');
+  assert.deepEqual(empty.quotes,[]);
+  const sameDate=await nbaMainLineBoard(game.date,[game],[line,rebounds],{now:now+60000,previous:empty,read:async()=>assert.fail('recent check should be reused')});
+  assert.deepEqual(sameDate.quotes,[]);
+  const started=await nbaMainLineBoard(game.date,[{...game,status:'LIVE'}],[line],opts);
+  assert.equal(started.source,'no-games');
+  assert.deepEqual(started.quotes,[]);
 });
 
 test('the NBA builder prefers estimated chance over price and matchup score, while keeping the game cap',()=>{

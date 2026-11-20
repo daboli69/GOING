@@ -54,7 +54,7 @@ const baseHints={'Odds range':'Widen the odds range.','Existing tickets':'Allow 
    ticketSummary(ticket)    optional replacement for independent-leg math
    recent                   {key,label}: the recent-form record shown on the ticket
    legText(leg)             how a leg reads, e.g. "Over 6.5 Assists"
-   noRows                   message when no priced props exist
+   noRows                   message or message function when no priced props exist
    hints                    cut reason -> suggestion
    checks                   extra on/off filters: [{key,label}]
    rules(cfg)               ticket rules passed to buildTicket (same-game stacks, leg limits)
@@ -203,7 +203,7 @@ export function createParlays(opts){
 
   function shortage(data,cfg,report,count){
     if(count>=cfg.legs)return '';
-    if(!data.rows.length)return empty(opts.noRows);
+    if(!data.rows.length)return empty(typeof opts.noRows==='function'?opts.noRows():opts.noRows);
     if(!cfg.stats.length)return empty('Select at least one stat type.');
     if(!report.screened.length)return empty('No published prices match these sides and stat types.'+(cfg.side==='Under'?' Few Under prices are published; try Both or Over.':''));
     const ranked=[...report.cuts].sort((a,b)=>b[1]-a[1]);
