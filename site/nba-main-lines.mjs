@@ -1,6 +1,6 @@
 // DraftKings exposes its main Over/Under selections as MainPointLine in its public NBA board.
-import {markets} from '../site/nba-parlay-engine.mjs';
-import {teamCode} from '../site/market-watch-data.mjs';
+import {markets} from './nba-parlay-engine.mjs';
+import {teamCode} from './market-watch-data.mjs';
 
 const base='https://sportsbook-nash.draftkings.com/sites/US-IL-SB/api/sportscontent/controldata/league/leagueSubcategory/v1/markets';
 const categories={Points:['12488','Points O/U'],Rebounds:['12492','Rebounds O/U'],
@@ -66,14 +66,44 @@ function url(id){
   return u;
 }
 
+export const draftKingsMainLineURL=market=>Object.hasOwn(categories,market)?url(categories[market][0]):null;
+
 export async function readDraftKingsMainLines(games,{read=fetch}={}){
   if(!games.length)return {quotes:[],failed:[]};
   const results=await Promise.all(markets.map(async market=>{
     try{
-      const r=await read(url(categories[market][0]),{signal:AbortSignal.timeout(6500)});
+      const r=await read(draftKingsMainLineURL(market),{cache:'no-cache',signal:AbortSignal.timeout(6500)},market);
       const rows=r.ok?draftKingsMainLines(await r.json(),market,games):null;
       return {market,rows};
     }catch{return {market,rows:null};}
   }));
   return {quotes:results.flatMap(r=>r.rows||[]),failed:results.filter(r=>!r.rows).map(({market})=>({market}))};
+}
+
+// Pages normally supplies the board. Check the book directly when publication lags or has no offers yet.
+export async function nbaMainLineBoard(date,games,published,{previous,force=false,now=Date.now(),read=readDraftKingsMainLines}={}){
+  const upcoming=games.filter(g=>openGame(g)&&Date.parse(g.iso)>now);
+  if(!upcoming.length)return {date,quotes:[],source:'no-games'};
+  const matchups=new Set(upcoming.map(g=>g.a+'|'+g.h));
+  const usable=quotes=>(Array.isArray(quotes)?quotes:[]).filter(q=>{
+    const age=now-Date.parse(q?.capturedAt);
+    return q?.provider===provider&&q.date===date&&matchups.has(q.a+'|'+q.h)&&age>=0&&age<=120*60000;
+  });
+  const saved=usable(published);
+  const latest=quotes=>Math.max(0,...quotes.map(q=>Date.parse(q.capturedAt)));
+  const publishedAt=latest(saved);
+  const slateKey=upcoming.map(g=>g.id+'|'+g.iso).sort().join(',');
+  const recent=previous?.date===date&&previous.slateKey===slateKey&&previous.checkedAt>=publishedAt?previous:null;
+  const fresh=saved.length>0&&saved.every(q=>now-Date.parse(q.capturedAt)<=35*60000);
+  if(!force&&recent&&now-recent.checkedAt<3*60000)return {...recent,quotes:usable(recent.quotes)};
+  if(!force&&fresh&&!recent)return {date,quotes:saved,source:'published'};
+
+  const {quotes,failed}=await read(upcoming.map(g=>({...g,date})));
+  // A successful empty category is a book response. Only failed requests can reuse recent main lines.
+  const backup=failed.flatMap(({market})=>{
+    const prior=usable(recent?.quotes).filter(q=>q.market===market), snapshot=saved.filter(q=>q.market===market);
+    return latest(prior)>latest(snapshot)?prior:snapshot;
+  });
+  return {date,slateKey,checkedAt:now,quotes:[...quotes,...backup],
+    source:failed.length===markets.length?'unavailable':failed.length?'partial':'direct'};
 }

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { ESPN,sportPath,scoreboard,nhlSlate,compactInjuries } from '../site/feeds.mjs';
 import { lineupUrl,parseLineups } from './lineups.mjs';
 import { publicQuotes } from './market-data.mjs';
-import { readDraftKingsMainLines } from './nba-main-lines.mjs';
+import { readDraftKingsMainLines } from '../site/nba-main-lines.mjs';
 import { recentLines } from './lines-data.mjs';
 import { pruneShiftCache,shiftReader } from './nhl-shifts.mjs';
 import { kickoffHour,nflWeather } from './weather.mjs';
