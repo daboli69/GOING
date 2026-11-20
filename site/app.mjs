@@ -1,4 +1,4 @@
-import {menus,routes,sections,BASE,href,viewDefaults,viewSetup,NBA_MAIN_LINES_API} from './config.mjs';
+import {menus,routes,sections,BASE,href,viewDefaults,viewSetup,NBA_MAIN_LINES_FEED} from './config.mjs';
 import {$,current as S,today,dateKey,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus,sportWordmark} from './ui.mjs';
 import {ESPN,sportPath,scoreboard,compactInjuries} from './feeds.mjs';
 import {homeLoad,homePage,tickHomeClocks} from './home.mjs';
@@ -152,9 +152,8 @@ const oddsFor=(s,d,id)=>readSnapshot('live/'+oddsFile(s,d,id)).then(x=>Array.isA
 async function nbaDraftPrices(d,games,published,previous,force=false){
   const today=dateKey();
   if(d<today||d>dateAdd(today,3))return {date:d,quotes:[],source:'no-games'};
-  const {nbaMainLineBoard,readDraftKingsMainLines}=await import('./nba-main-lines.mjs');
-  const read=games=>readDraftKingsMainLines(games,{read:(_url,options,market)=>
-    fetch(NBA_MAIN_LINES_API+'/nba-main-lines/'+market,options)});
+  const {nbaMainLineBoard}=await import('./nba-main-lines.mjs');
+  const read=()=>readJson(NBA_MAIN_LINES_FEED+'nba-main-lines-'+d+'.json',4000);
   return nbaMainLineBoard(d,games,published,{previous,force,read});
 }
 const savedGames={};
@@ -658,7 +657,7 @@ async function tickNbaInputs(force=false){
     state.nbaChecked=now;
     state.nbaRemaining=S.games.filter(g=>Date.parse(g.iso)>now&&!final(g)).map(g=>g.id).join('|');
     if(force)toast(courtToday?(object(injuries)?'NBA injury report checked':'NBA injury report unavailable'):
-      priceBoard?.source==='direct'?'DraftKings main lines checked':
+      priceBoard?.source==='mirror'||priceBoard?.source==='published'?'DraftKings main lines checked':
       priceBoard?.source==='partial'?'Some DraftKings markets could not refresh':
       priceBoard?.source==='no-games'?'No upcoming games on this slate':
       'DraftKings main-line feed unavailable');

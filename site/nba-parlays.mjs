@@ -54,7 +54,7 @@ const nba=createParlays({
   intro:()=>tools(`<a class="pill" href="${href('up/parlay-tracker.html')}">Parlay Leg Tracker</a>`+
     btn('Check for updates','nbaParlayCheck',''))+
     '<p class="subtle">DraftKings main lines · Qualifying legs are ranked by estimated hit chance. Both includes an Over and an Under when they fit the same ticket.</p>'+
-    (S.f.nbaPriceBoard?.source==='direct'&&S.odds.length?'<p class="subtle">Main lines checked directly at DraftKings.</p>':
+    (S.f.nbaPriceBoard?.source==='mirror'&&S.odds.length?'<p class="subtle">Main lines loaded from the separate NBA price feed.</p>':
       ['partial','unavailable'].includes(S.f.nbaPriceBoard?.source)&&S.odds.length?
         '<p class="subtle">Some DraftKings markets could not refresh. Recent verified main lines are shown where available.</p>':''),
   afterTicket:fullList,poolSummary,

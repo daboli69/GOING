@@ -66,16 +66,12 @@ function url(id){
   return u;
 }
 
-export const draftKingsMainLineURL=market=>Object.hasOwn(categories,market)?url(categories[market][0]):null;
-
 export async function readDraftKingsMainLines(games,{read=fetch}={}){
   if(!games.length)return {quotes:[],failed:[]};
   const results=await Promise.all(markets.map(async market=>{
     try{
-      const r=await read(draftKingsMainLineURL(market),{cache:'no-cache',signal:AbortSignal.timeout(6500)},market);
-      const stamp=Date.parse(r.headers.get('X-Going-Captured-At'));
+      const r=await read(url(categories[market][0]),{cache:'no-cache',signal:AbortSignal.timeout(6500)});
       const rows=r.ok?draftKingsMainLines(await r.json(),market,games):null;
-      if(rows&&stamp<=Date.now())for(const row of rows)row.capturedAt=new Date(stamp).toISOString();
       return {market,rows};
     }catch{return {market,rows:null};}
   }));
@@ -83,7 +79,7 @@ export async function readDraftKingsMainLines(games,{read=fetch}={}){
 }
 
 // Pages normally supplies the board. Check a live source when publication lags or has no offers yet.
-export async function nbaMainLineBoard(date,games,published,{previous,force=false,now=Date.now(),read=readDraftKingsMainLines}={}){
+export async function nbaMainLineBoard(date,games,published,{previous,force=false,now=Date.now(),read}={}){
   const upcoming=games.filter(g=>openGame(g)&&Date.parse(g.iso)>now);
   if(!upcoming.length)return {date,quotes:[],source:'no-games'};
   const matchups=new Set(upcoming.map(g=>g.a+'|'+g.h));
@@ -100,12 +96,19 @@ export async function nbaMainLineBoard(date,games,published,{previous,force=fals
   if(!force&&recent&&now-recent.checkedAt<3*60000)return {...recent,quotes:usable(recent.quotes)};
   if(!force&&fresh&&!recent)return {date,quotes:saved,source:'published'};
 
-  const {quotes,failed}=await read(upcoming.map(g=>({...g,date})));
+  const mirror=await read();
+  const stamp=Date.parse(mirror?.checkedAt);
+  const valid=mirror?.date===date&&Array.isArray(mirror.quotes)&&Array.isArray(mirror.failed)&&stamp<=now&&now-stamp<=120*60000;
+  if(!valid||stamp<publishedAt){
+    const prior=usable(recent?.quotes);
+    return {date,slateKey,checkedAt:now,quotes:latest(prior)>publishedAt?prior:saved,source:fresh?'published':'unavailable'};
+  }
+  const quotes=usable(mirror.quotes), failed=mirror.failed;
   // A successful empty category is a book response. Only failed requests can reuse recent main lines.
   const backup=failed.flatMap(({market})=>{
     const prior=usable(recent?.quotes).filter(q=>q.market===market), snapshot=saved.filter(q=>q.market===market);
     return latest(prior)>latest(snapshot)?prior:snapshot;
   });
   return {date,slateKey,checkedAt:now,quotes:[...quotes,...backup],
-    source:failed.length===markets.length?'unavailable':failed.length?'partial':'direct'};
+    source:failed.length===markets.length||now-stamp>35*60000?'unavailable':failed.length?'partial':'mirror'};
 }
