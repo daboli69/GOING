@@ -73,14 +73,16 @@ export async function readDraftKingsMainLines(games,{read=fetch}={}){
   const results=await Promise.all(markets.map(async market=>{
     try{
       const r=await read(draftKingsMainLineURL(market),{cache:'no-cache',signal:AbortSignal.timeout(6500)},market);
+      const stamp=Date.parse(r.headers.get('X-Going-Captured-At'));
       const rows=r.ok?draftKingsMainLines(await r.json(),market,games):null;
+      if(rows&&stamp<=Date.now())for(const row of rows)row.capturedAt=new Date(stamp).toISOString();
       return {market,rows};
     }catch{return {market,rows:null};}
   }));
   return {quotes:results.flatMap(r=>r.rows||[]),failed:results.filter(r=>!r.rows).map(({market})=>({market}))};
 }
 
-// Pages normally supplies the board. Check the book directly when publication lags or has no offers yet.
+// Pages normally supplies the board. Check a live source when publication lags or has no offers yet.
 export async function nbaMainLineBoard(date,games,published,{previous,force=false,now=Date.now(),read=readDraftKingsMainLines}={}){
   const upcoming=games.filter(g=>openGame(g)&&Date.parse(g.iso)>now);
   if(!upcoming.length)return {date,quotes:[],source:'no-games'};

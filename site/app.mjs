@@ -1,4 +1,4 @@
-import {menus,routes,sections,BASE,href,viewDefaults,viewSetup} from './config.mjs';
+import {menus,routes,sections,BASE,href,viewDefaults,viewSetup,NBA_MAIN_LINES_API} from './config.mjs';
 import {$,current as S,today,dateKey,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus,sportWordmark} from './ui.mjs';
 import {ESPN,sportPath,scoreboard,compactInjuries} from './feeds.mjs';
 import {homeLoad,homePage,tickHomeClocks} from './home.mjs';
@@ -152,8 +152,10 @@ const oddsFor=(s,d,id)=>readSnapshot('live/'+oddsFile(s,d,id)).then(x=>Array.isA
 async function nbaDraftPrices(d,games,published,previous,force=false){
   const today=dateKey();
   if(d<today||d>dateAdd(today,3))return {date:d,quotes:[],source:'no-games'};
-  const {nbaMainLineBoard}=await import('./nba-main-lines.mjs');
-  return nbaMainLineBoard(d,games,published,{previous,force});
+  const {nbaMainLineBoard,readDraftKingsMainLines}=await import('./nba-main-lines.mjs');
+  const read=games=>readDraftKingsMainLines(games,{read:(_url,options,market)=>
+    fetch(NBA_MAIN_LINES_API+'/nba-main-lines/'+market,options)});
+  return nbaMainLineBoard(d,games,published,{previous,force,read});
 }
 const savedGames={};
 function start(){
