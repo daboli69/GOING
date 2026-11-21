@@ -10,6 +10,11 @@ on:
       - 'scripts/publish-nba-main-lines.mjs'
       - 'site/nba-main-lines.mjs'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      skip_if_fresh:
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -29,9 +34,16 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - name: Publish verified DraftKings lines for today and tomorrow Eastern
+        env:
+          SKIP_IF_FRESH: ${{ inputs.skip_if_fresh }}
         run: |
           dir=$(mktemp -d)
           if git fetch --no-tags --depth 1 origin refs/heads/nba-live-lines; then
+            age=$(($(date -u +%s) - $(git show -s --format=%ct FETCH_HEAD)))
+            if [ "$SKIP_IF_FRESH" = true ] && [ "$age" -ge 0 ] && [ "$age" -lt 720 ]; then
+              echo "The NBA price feed was refreshed in the last 12 minutes."
+              exit 0
+            fi
             git worktree add --detach "$dir" FETCH_HEAD
           else
             git worktree add --detach "$dir" HEAD

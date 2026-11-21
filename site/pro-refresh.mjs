@@ -1,7 +1,7 @@
 import {dataURL} from './ui.mjs';
 import {kickoff} from './nfl-availability.mjs';
 
-export const readJson=(url,timeout=7000)=>fetch(url,{cache:'no-cache',signal:AbortSignal.timeout(timeout)})
+export const readJson=(url,timeout=7000,headers)=>fetch(url,{headers,cache:'no-cache',signal:AbortSignal.timeout(timeout)})
   .then(r=>r.ok?r.json():null).catch(()=>null);
 export const readSnapshot=(file,timeout)=>readJson(dataURL(file),timeout);
 export const object=x=>!!x&&typeof x==='object'&&!Array.isArray(x);

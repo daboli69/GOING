@@ -33,6 +33,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  nba-main-lines:
+    uses: ./.github/workflows/nba-main-lines.yml
+    with:
+      skip_if_fresh: true
+
   market-watch:
     runs-on: ubuntu-latest
     timeout-minutes: 4
