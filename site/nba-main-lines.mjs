@@ -7,6 +7,8 @@ const categories={Points:['12488','Points O/U'],Rebounds:['12492','Rebounds O/U'
   Assists:['12495','Assists O/U'],Threes:['12497','Three Pointers Made O/U']};
 const provider='DraftKings';
 const halfHour=30*60000;
+const freshFor=35*60000;
+const usableFor=120*60000;
 const openGame=g=>['FUT','PRE'].includes(g.status);
 const team=value=>teamCode('nba',value);
 const price=value=>{
@@ -79,28 +81,35 @@ export async function readDraftKingsMainLines(games,{read=fetch}={}){
 }
 
 // Pages normally supplies the board. Check a live source when publication lags or has no offers yet.
-export async function nbaMainLineBoard(date,games,published,{previous,force=false,now=Date.now(),read}={}){
+export async function nbaMainLineBoard(date,games,published,{previous,force=false,now=Date.now(),read,recover}={}){
   const upcoming=games.filter(g=>openGame(g)&&Date.parse(g.iso)>now);
   if(!upcoming.length)return {date,quotes:[],source:'no-games'};
   const matchups=new Set(upcoming.map(g=>g.a+'|'+g.h));
   const usable=quotes=>(Array.isArray(quotes)?quotes:[]).filter(q=>{
     const age=now-Date.parse(q?.capturedAt);
-    return q?.provider===provider&&q.date===date&&matchups.has(q.a+'|'+q.h)&&age>=0&&age<=120*60000;
+    return q?.provider===provider&&q.date===date&&matchups.has(q.a+'|'+q.h)&&age>=0&&age<=usableFor;
   });
   const saved=usable(published);
   const latest=quotes=>Math.max(0,...quotes.map(q=>Date.parse(q.capturedAt)));
   const publishedAt=latest(saved);
   const slateKey=upcoming.map(g=>g.id+'|'+g.iso).sort().join(',');
   const recent=previous?.date===date&&previous.slateKey===slateKey&&previous.checkedAt>=publishedAt?previous:null;
-  const fresh=saved.length>0&&saved.every(q=>now-Date.parse(q.capturedAt)<=35*60000);
+  const fresh=saved.length>0&&saved.every(q=>now-Date.parse(q.capturedAt)<=freshFor);
   if(!force&&recent&&now-recent.checkedAt<3*60000)return {...recent,quotes:usable(recent.quotes)};
   if(!force&&fresh&&!recent)return {date,quotes:saved,source:'published'};
 
-  const mirror=await read();
-  const stamp=Date.parse(mirror?.checkedAt);
-  const valid=mirror?.date===date&&Array.isArray(mirror.quotes)&&Array.isArray(mirror.failed)&&
-    mirror.failed.every(item=>markets.includes(item?.market))&&stamp<=now&&now-stamp<=120*60000;
-  if(!valid||stamp<publishedAt){
+  const timestamp=snapshot=>{
+    const stamp=Date.parse(snapshot?.checkedAt);
+    return snapshot?.date===date&&Array.isArray(snapshot.quotes)&&Array.isArray(snapshot.failed)&&
+      snapshot.failed.every(item=>markets.includes(item?.market))&&stamp<=now&&now-stamp<=usableFor?stamp:0;
+  };
+  let mirror=await read(), stamp=timestamp(mirror);
+  // GitHub's raw branch URL can still return an old commit after a successful publish.
+  if(recover&&(now-stamp>freshFor||stamp<publishedAt)){
+    const newer=await recover(), newerStamp=timestamp(newer);
+    if(newerStamp>stamp){mirror=newer;stamp=newerStamp;}
+  }
+  if(!stamp||stamp<publishedAt){
     const prior=usable(recent?.quotes);
     return {date,slateKey,checkedAt:now,quotes:latest(prior)>publishedAt?prior:saved,source:fresh?'published':'unavailable'};
   }
@@ -111,5 +120,5 @@ export async function nbaMainLineBoard(date,games,published,{previous,force=fals
     return latest(prior)>latest(snapshot)?prior:snapshot;
   });
   return {date,slateKey,checkedAt:now,quotes:[...quotes,...backup],
-    source:failed.length===markets.length||now-stamp>35*60000?'unavailable':failed.length?'partial':'mirror'};
+    source:failed.length===markets.length||now-stamp>freshFor?'unavailable':failed.length?'partial':'mirror'};
 }

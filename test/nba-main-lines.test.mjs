@@ -73,6 +73,22 @@ test('successful empty markets remove saved lines while failed markets can reuse
   assert.deepEqual(started.quotes,[]);
 });
 
+test('an expired branch response is replaced using the current repository contents',async()=>{
+  const [line]=draftKingsMainLines(payload,'Points',[game],now);
+  const old={...line,capturedAt:new Date(now-125*60000).toISOString()};
+  const snapshot=quote=>({date:game.date,checkedAt:quote.capturedAt,quotes:[quote],failed:[]});
+  const current=await nbaMainLineBoard(game.date,[game],[old],{now,read:async()=>snapshot(old),
+    recover:async()=>snapshot(line)});
+  assert.equal(current.source,'mirror');
+  assert.deepEqual(current.quotes,[line]);
+  const outage=await nbaMainLineBoard(game.date,[game],[old],{now,read:async()=>snapshot(old), recover:async()=>null});
+  assert.equal(outage.source,'unavailable');
+  assert.deepEqual(outage.quotes,[]);
+  const fromRaw=await nbaMainLineBoard(game.date,[game],[old],{now,read:async()=>snapshot(line),
+    recover:async()=>assert.fail('Fresh branch data should need no extra request')});
+  assert.deepEqual(fromRaw.quotes,[line]);
+});
+
 test('the NBA builder prefers estimated chance over price and matchup score, while keeping the game cap',()=>{
   const leg=(player,game,hits,price,score)=>({player,game,stat:'Points',line:5.5,side:'Over',price,score,form:{season:{hits,n:20}}});
   const lower=leg('1','42',12,'-250',10);
