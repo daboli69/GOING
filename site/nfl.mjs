@@ -471,6 +471,7 @@ export function nflParlayData(quotes=S.odds){
       const s=stats(t);
       for(const p of players){
         const status=statusOf(p), role=L.roles.get(p.id);
+        const replacementHistory=new Map();
         for(const m of parlayMarkets){
           const matches=propQuotes(p,m,quotes);
           if(!matches.length&&!['Receiving','Receptions','Rushing','Rush Attempts','Passing'].includes(m))continue;
@@ -494,9 +495,21 @@ export function nflParlayData(quotes=S.odds){
           const limit=Math.abs(baseProjection??0)*.2;
           const absenceAdjustment=clamp(total(absences,x=>x.delta==null?0:x.delta*x.n/(x.n+5)),-limit,limit);
           const estimate=workload.projection(p,m,baseProjection,absenceAdjustment);
-          const projection=estimate.value;
-          if(estimate.absences?.length&&projection!=null&&estimate.baseline!=null&&Math.abs(projection-estimate.baseline)>=0.5){
-            changes.push({player:p,game,stat:m,...estimate});
+          const hasShift=estimate.usageShift||estimate.materialShift;
+          const absentKey=hasShift?estimate.absences.join('|'):'';
+          if(hasShift&&!replacementHistory.has(absentKey)){
+            replacementHistory.set(absentKey,nflReplacementGames(p,estimate.absences,players,teamGames,id=>L.snapsIn(id,t)));
+          }
+          const comparable=(replacementHistory.get(absentKey)||[]).map(({game,snaps})=>{
+            const log=logs.find(x=>x.game===game), past=schedule.get(game), atHome=past?.h===t;
+            return {game,snaps,value:log?.[k]??0,opportunities:log?.[estimate.opportunityKey]??0,opponent:atHome?past.a:past?.h,home:atHome};
+          });
+          // Anchor the role's observed production to four games of the workload estimate so one start cannot dominate.
+          const projection=estimate.materialShift&&estimate.value!=null&&comparable.length?
+            (4*estimate.value+total(comparable,g=>g.value))/(4+comparable.length):estimate.value;
+          if(estimate.absences?.length&&(projection!=null&&estimate.baseline!=null&&Math.abs(projection-estimate.baseline)>=0.5||
+            estimate.materialShift&&matches.length)){
+            changes.push({player:p,game,stat:m,...estimate,value:projection,comparable});
           }
           if(!matches.length)continue;
           const shareKey=['Receiving','Receptions'].includes(m)?'targets':['Rushing','Rush Attempts'].includes(m)?'rush':null;
@@ -506,11 +519,7 @@ export function nflParlayData(quotes=S.odds){
           const dv=table?.value.get(opp);
           const defense=table&&dv&&table.ranks.get(opp)?{rank:table.ranks.get(opp),value:dv[1],league:table.league,label:table.label(dv),role,scale:table.scale}:null;
           const allowedPerPlayer=L.perGameTables[(kind==='td'?'Anytime TD':m)+'|'+role]?.perPlayer.get(opp)??null;
-          const replacement=estimate.usageShift?{
-            games:nflReplacementGames(p,estimate.absences,players,teamGames,id=>L.snapsIn(id,t)).map(({game,snaps})=>({
-              value:logs.find(x=>x.game===game)?.[k]||0, home:schedule.get(game)?.h===t,snaps
-            })),opponentAverage:allowedPerPlayer
-          }:null;
+          const replacement=hasShift?{games:comparable,opponentAverage:allowedPerPlayer}:null;
           const snapList=L.recentIds(t).map(id=>L.snapsIn(id,t).find(r=>nflName(r[0])===nflName(p.name))?.[2]).filter(x=>x!=null);
           const ryoe=['Rushing','Rush Attempts'].includes(m)?[L.ryoePlayer.get(p.id),L.ryoeDef[opp]].filter(x=>x!=null):[];
           roster.set(p.id,{id:p.id,name:p.name,team:t});

@@ -61,6 +61,30 @@ export function buildTicket(eligible,cfg,{locked=[],avoid=new Set(),excluded=new
   return {ticket,invalidLock:false};
 }
 
+export function buildMixedTicket(legs,cfg,{locked=[],avoid=new Set(),excluded=new Set(),rules}){
+  const base=buildTicket(legs,cfg,{locked,avoid,excluded,rules});
+  const hasBoth=ticket=>ticket.some(leg=>leg.side!==ticket[0].side);
+  if(cfg.side!=='Both'||base.ticket.length<2||hasBoth(base.ticket)||locked.length>=base.ticket.length)return base;
+
+  // Look for a mixed ticket of the same size under the same game, player and market constraints.
+  const side=base.ticket[0].side, count=base.ticket.length, sameSize={...cfg,legs:count};
+  let best, bestRepeated=Infinity, bestChance=-1;
+  for(const leg of legs){
+    const key=legKey(leg);
+    if(leg.side===side||excluded.has(key))continue;
+    const {ticket}=buildTicket(legs,sameSize,{locked:[...locked,key],avoid,excluded,rules});
+    if(ticket.length!==count||!hasBoth(ticket))continue;
+    const repeated=ticket.filter(pick=>avoid.has(legKey(pick))).length;
+    const chance=ticket.reduce((p,pick)=>p*rules.rank(pick),1);
+    if(repeated<bestRepeated||repeated===bestRepeated&&chance>bestChance){
+      best=ticket;bestRepeated=repeated;bestChance=chance;
+    }
+  }
+  if(!best)return base;
+  const ranked=best.slice(locked.length).sort((a,b)=>rules.rank(b)-rules.rank(a));
+  return {ticket:[...best.slice(0,locked.length),...ranked],invalidLock:false};
+}
+
 // prior: wins and losses added to the season record (GOING UP 5, GOING LONG 8).
 export function adjustedLegChance(leg,prior=5){
   const {hits,n}=leg.form.season;

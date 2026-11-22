@@ -70,7 +70,9 @@ export function similarDefenseGames(profiles,row,statKey){
   if(!kind)return [];
   const scale=scales[kind]||scales.receiving, target=profiles.before(row.opp,row.date,kind);
   if(!target)return [];
+  const roleGames=row.workload?.materialShift?new Set(row.replacement?.games.map(game=>game.game)):null;
   return row.player.logs.flatMap(log=>{
+    if(roleGames&&!roleGames.has(log.game))return [];
     const game=profiles.schedule.get(log.game);
     if(!game||game.date>=row.date||!Number.isFinite(log[statKey]))return [];
     const opponent=game.a===row.player.team?game.h:game.a;
