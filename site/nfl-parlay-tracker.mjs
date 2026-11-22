@@ -21,7 +21,7 @@ const breakdowns={
   'Game script':l=>{const s=l.context?.script;return s==null?'Unknown':s>=7?'Favored by 7+':s>=3?'Favored by 3–6.5':s>-3?'Close (under 3)':s>-7?'Underdog by 3–6.5':'Underdog by 7+';},
   'Team total':l=>bucket(l.context?.teamTotal,[[20,'Under 20'],[24,'20 to under 24'],[27,'24 to under 27'],[Infinity,'27+']]),
   'Weather':l=>{const w=l.context?.weather;return !w?'No forecast':w.roof==='dome'?'Dome':badWeather(w)?'Wind 15+ mph or rain':(w.wind??0)>=10?'Wind 10–14 mph':'Calm';},
-  'Snap share (L3)':l=>bucket(l.context?.snaps,[[.5,'Under 50%'],[.75,'50–74%'],[Infinity,'75%+']]),
+  'Snap share':l=>bucket(l.context?.snaps,[[.5,'Under 50%'],[.75,'50–74%'],[Infinity,'75%+']]),
   'Injury context':l=>l.checks?.Availability?'Player out':l.context?.status?l.context.status:l.context?.qbOut?'Starting QB out':
     l.context?.olOut?.length?'Starting OL out':l.context?.absences?.length?'Teammate out':l.context?.cbOut?.length?'Opposing CB out':'None flagged',
   'Rest':l=>bucket(l.context?.rest,[[6,'Short week'],[13,'Normal week'],[Infinity,'Off a bye']]),

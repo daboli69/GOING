@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {assess,evaluate,defaults,shrunk,correlation,ticketRules,warnings,badWeather} from '../site/nfl-parlay-engine.mjs';
+import {assess,buildNflTicket,evaluate,defaults,shrunk,correlation,ticketRules,warnings,badWeather} from '../site/nfl-parlay-engine.mjs';
 import {buildTicket,ticketMath,legKey} from '../site/parlay-core.mjs';
 import {buildSameGame,defenseProfiles,evaluateSameGame,sgpDefaults,similarDefenseGames} from '../site/nfl-sgp-engine.mjs';
 import {kickoff,playerRole} from '../site/nfl.mjs';
@@ -56,6 +56,9 @@ test('an injured lead back redistributes workload and older fantasy projections 
   assert.ok(result.value>50);
   assert.equal(result.sleeper,55);
   assert.deepEqual(result.absences,[starter.name]);
+  assert.equal(result.materialShift,true);
+  assert.equal(result.opportunityKey,'rush');
+  assert.equal(context(current).projection(backup,'Anytime TD',null).materialShift,true);
   assert.equal(context(current).projection(starter,'Rushing',72).out,true);
   const stale=context(old).projection(backup,'Rush Attempts',3);
   assert.equal(stale.sleeper,null);
@@ -98,6 +101,41 @@ test('a live role change can add a leg when comparable form supports it and remo
   assert.ok(small.flags.includes('Limited comparable-role history'));
   const expensive=assess({...backup,quote:{...backup.quote,over:-525},replacement:{games:comparable}},'Over',defaults,{now,taken:new Set()});
   assert.equal(expensive.cut,'Shrunk hit rate below the price');
+});
+
+test('a promoted back cannot qualify from backup numbers, and a supported role can still qualify for an Under',()=>{
+  const backupHistory=[16,21,14,17,15,24,33,101], starterOut=['Lead Back'];
+  const o={stat:'Rushing',player:{id:'promotion',name:'Next Back',team:'SF',pos:'RB'},
+    quote:{...row().quote,line:89.5},projection:80,reads:[16,21,19,47,80],
+    form:{season:backupHistory,last8:backupHistory,last5:backupHistory.slice(-5),venue:backupHistory,home:[],away:backupHistory},
+    defense:{...row().defense,rank:rank(4),role:'rushing RBs'},
+    workload:{usageShift:true,materialShift:true,absences:starterOut},
+    replacement:{games:[{value:101,home:false,snaps:.79,opportunities:22}]}};
+  assert.equal(run({...o,workload:{...o.workload,materialShift:false}},'Under').cut,null,'backup form used to pass');
+  for(const side of ['Under','Over']){
+    const leg=run(o,side,{...defaults,hit:0,sample:1});
+    assert.equal(leg.cut,'Too few comparable workload games');
+    assert.equal(leg.chance,null);
+    assert.equal(leg.context.formSource,'limited-role');
+    assert.equal(leg.form.season.hits,side==='Under'?0:1);
+    assert.equal(leg.form.season.n,1);
+  }
+  const games=[66,75,78,82].map(value=>({value,home:false,snaps:.78}));
+  const qualified=run({...o,replacement:{games}},'Under');
+  assert.equal(qualified.cut,null);
+  assert.equal(qualified.context.formSource,'comparable-role');
+  assert.equal(qualified.form.season.hits,4);
+  assert.equal(run({...o,replacement:{games}},'Under',{...defaults,sample:5}).cut,'Too few comparable workload games');
+});
+
+test('NFL tickets rank by estimated chance and mix sides with the existing game and TD caps',()=>{
+  const prop=(player,game,side,chance,score,stat='Rushing')=>({player,game,side,chance,score,stat});
+  const rows=[prop('a','1','Under',.90,1,'Anytime TD'),prop('b','2','Under',.89,2,'Anytime TD'),
+    prop('c','2','Under',.80,2),prop('d','3','Under',.75,7),prop('e','3','Over',.67,1),prop('f','1','Over',.65,9)];
+  const cfg={...defaults,legs:3};
+  assert.deepEqual(buildNflTicket(rows,cfg).ticket.map(x=>x.player),['a','c','e']);
+  assert.deepEqual(buildNflTicket(rows,{...cfg,side:'Under'}).ticket.map(x=>x.player),['a','c','d']);
+  assert.deepEqual(buildNflTicket(rows,cfg,{locked:[legKey(rows[0])]}).ticket.map(x=>x.player),['a','c','e']);
 });
 
 test('a receiving Over against a weak defense for his role qualifies, with reasons from each data source',()=>{

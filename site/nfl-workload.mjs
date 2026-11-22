@@ -82,7 +82,7 @@ export function nflWorkload(game,team,players,teamGames,report,sleeper,now=Date.
   const start=Date.parse(kickoff(game.date,game.time));
   const opponent=team===game.a?game.h:game.a;
   const isPregame=Number.isFinite(start)&&start>now&&start<=now+8*86400000&&game.sa==null&&game.sh==null;
-  const recent=teamGames.slice(-5),shift=new Map();
+  const recent=teamGames.slice(-5),shift=new Map(),touchdownShift=new Map();
   const prefix=[game.date,team,opponent].join('|')+'|';
   const sameSlate=sleeper?.week===game.week&&sleeper?.season===Number(game.id.slice(0,4));
   const fresh=entry=>entry&&entry.updated<=now&&now-entry.updated<=48*3600000;
@@ -107,27 +107,35 @@ export function nflWorkload(game,team,players,teamGames,report,sleeper,now=Date.
         if(nflOut(status(p)?.status))return [];
         const historical=volume(p), projected=external(p)?.stats[channel.projected]??0;
         const weight=Math.max(historical,projected)*(/doubtful/i.test(status(p)?.status||'')?0.25:1);
-        return weight>0?[{p,weight}]:[];
+        return weight>0?[{p,weight,historical}]:[];
       });
       const externalPeers=total(outside.filter(p=>p.position===position),p=>p.stats[channel.projected]);
       const all=total(candidates,r=>r.weight)+externalPeers,vacated=total(absent,volume)*0.75;
       const absences=absent.map(p=>p.name);
       const asOf=Math.max(0,...absent.map(p=>Date.parse(status(p)?.date)).filter(Number.isFinite));
-      for(const {p,weight} of candidates){
+      for(const {p,weight,historical} of candidates){
         const add=vacated*weight/all;
         // A small share of extra work does not justify a change of role.
         if(add<0.5)continue;
+        const materialShift=add>=Math.max(channel.min,.35*historical);
+        const role={add,absences,asOf,materialShift,opportunityKey:channel.key};
+        const priority=add/channel.min;
+        if(materialShift&&priority>(touchdownShift.get(p.id)?.priority??0))touchdownShift.set(p.id,{...role,priority});
         for(const market of channel.markets){
           const [value,usage,min]=perOpportunity[market]||[];
           const opportunities=value?total(p.logs,l=>l[usage]):0;
           const multiplier=value&&opportunities>=min?total(p.logs,l=>l[value])/opportunities:value?null:1;
-          shift.set(p.id+'|'+market,{add,multiplier,absences,asOf});
+          shift.set(p.id+'|'+market,{...role,multiplier});
         }
       }
     }
   }
   return {status,projection(p,market,baseline,historicalSplit=0){
-    if(!Object.hasOwn(statFields,market))return {value:baseline};
+    if(!Object.hasOwn(statFields,market)){
+      const role=touchdownShift.get(p.id);
+      return role?{value:baseline,baseline,absences:role.absences,extraOpportunities:role.add,usageShift:true,
+        materialShift:true,opportunityKey:role.opportunityKey}:{value:baseline};
+    }
     if(start>now-86400000&&start<=now+8*86400000&&nflOut(status(p)?.status))return {value:null,out:true};
     if(!isPregame)return {value:null};
     const role=shift.get(p.id+'|'+market),entry=external(p);
@@ -138,6 +146,7 @@ export function nflWorkload(game,team,players,teamGames,report,sleeper,now=Date.
     const value=sleeperValue==null?local:local==null?sleeperValue:(1-weight)*local+weight*sleeperValue;
     return {value,baseline,local,sleeper:sleeperValue,sleeperAt:sleeperValue!=null?new Date(entry.updated).toISOString():null,
       absences:role?.absences??[],extraOpportunities:role?.add??null,usageShift:hasWorkload,
+      materialShift:role?.materialShift??false,opportunityKey:role?.opportunityKey??null,
       splitApplied:!hasWorkload&&baseline!=null?historicalSplit:0};
   }};
 }

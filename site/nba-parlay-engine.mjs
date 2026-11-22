@@ -1,5 +1,5 @@
 import {implied,mean} from './math.mjs';
-import {legKey,clamp,record,allowedRanks,favorable,format,signed,percent,buildTicket,ticketMath,adjustedLegChance} from './parlay-core.mjs';
+import {legKey,clamp,record,allowedRanks,favorable,format,signed,percent,buildTicket,buildMixedTicket,ticketMath,adjustedLegChance} from './parlay-core.mjs';
 import {lineupEffect,lineupReason} from './nba-lineup-splits.mjs';
 export {legKey,record,allowedRanks,buildTicket,ticketMath};
 
@@ -13,30 +13,7 @@ const typed=stat=>stat==='Points'||stat==='Threes';
 
 export const nbaLegChance=leg=>clamp(adjustedLegChance(leg)+(leg.context?.lineup?.adjustment??0),0,1);
 export function buildNbaTicket(legs,cfg,options={}){
-  const {locked=[],avoid=new Set(),excluded=new Set()}=options;
-  const rules={...options.rules,rank:nbaLegChance};
-  const base=buildTicket(legs,cfg,{locked,avoid,excluded,rules});
-  const hasBoth=ticket=>ticket.some(leg=>leg.side!==ticket[0].side);
-  if(cfg.side!=='Both'||base.ticket.length<2||hasBoth(base.ticket)||locked.length>=base.ticket.length)return base;
-
-  // The first pass is one-sided. Test each qualifying leg on the missing side with the same ticket constraints.
-  const side=base.ticket[0].side, count=base.ticket.length;
-  const sameSize={...cfg,legs:count};
-  let best, bestRepeated=Infinity, bestChance=-1;
-  for(const leg of legs){
-    const key=legKey(leg);
-    if(leg.side===side||excluded.has(key))continue;
-    const {ticket}=buildTicket(legs,sameSize,{locked:[...locked,key],avoid,excluded,rules});
-    if(ticket.length!==count||!hasBoth(ticket))continue;
-    const repeated=ticket.filter(pick=>avoid.has(legKey(pick))).length;
-    const chance=ticket.reduce((p,pick)=>p*nbaLegChance(pick),1);
-    if(repeated<bestRepeated||repeated===bestRepeated&&chance>bestChance){
-      best=ticket;bestRepeated=repeated;bestChance=chance;
-    }
-  }
-  if(!best)return base;
-  const ranked=best.slice(locked.length).sort((a,b)=>nbaLegChance(b)-nbaLegChance(a));
-  return {ticket:[...best.slice(0,locked.length),...ranked],invalidLock:false};
+  return buildMixedTicket(legs,cfg,{...options,rules:{...options.rules,rank:nbaLegChance}});
 }
 
 export function assess(row,side,cfg,context){

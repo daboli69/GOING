@@ -18,7 +18,7 @@
 // 10 Price: hit rates shrink toward 50% harder than GOING UP (8 wins and 8 losses added; touchdown props shrink toward
 //    their price instead, since a fair TD chance is rarely near 50%), and touchdown legs are limited.
 import {implied,mean} from './math.mjs';
-import {clamp,favorable,format,legKey,percent,record,signed} from './parlay-core.mjs';
+import {buildMixedTicket,clamp,favorable,format,legKey,percent,record,signed} from './parlay-core.mjs';
 
 export const yardMarkets=new Set(['Receiving','Rushing','Passing']);
 export const volumeMarkets=new Set(['Receptions','Rush Attempts','Pass Attempts','Completions']);
@@ -44,13 +44,14 @@ export const badWeather=w=>!!w&&w.roof!=='dome'&&((w.wind??0)>=15||(w.rain??0)>=
 export function assess(row,side,cfg,context){
   const {quote,player,game,stat}=row;
   const comparable=row.replacement?.games||[];
-  const useComparable=comparable.length>=Math.max(4,cfg.sample);
+  const minRoleGames=Math.max(4,cfg.sample), materialShift=row.workload?.materialShift===true;
+  const useComparable=materialShift||comparable.length>=minRoleGames;
   const form=useComparable?{
     season:comparable.map(g=>g.value),last8:comparable.slice(-8).map(g=>g.value),last5:comparable.slice(-5).map(g=>g.value),
     venue:comparable.filter(g=>g.home===row.home).map(g=>g.value),
     home:comparable.filter(g=>g.home).map(g=>g.value),away:comparable.filter(g=>!g.home).map(g=>g.value)
   }:row.form;
-  const reads=useComparable?[mean(form.last5),mean(form.last8),mean(form.season),mean(form.venue),row.projection,row.replacement.opponentAverage]
+  const reads=useComparable?[mean(form.last5),mean(form.last8),mean(form.season),mean(form.venue),row.projection,row.replacement?.opponentAverage]
     .filter(x=>x!=null):row.reads;
   const snaps=useComparable?mean(comparable,g=>g.snaps):row.snaps;
   const over=side==='Over', direction=over?1:-1, yards=yardMarkets.has(stat), volume=volumeMarkets.has(stat), td=tdMarkets.has(stat);
@@ -88,7 +89,10 @@ export function assess(row,side,cfg,context){
   else if(context.now-captured>90*60000)leg.flags.push('Stale quote');
   check('Quote freshness',!Number.isFinite(captured)||captured>context.now||context.now-captured>120*60000?
     'Quote older than two hours or untimestamped':null);
-  check('Games played',form.season.length<cfg.sample?'Too few games played':null);
+  const last8=record(form.last8,leg.line,side), season=record(form.season,leg.line,side), venue=record(form.venue,leg.line,side);
+  const limitedRole=materialShift&&season.n<minRoleGames;
+  check('Comparable workload',limitedRole?'Too few comparable workload games':null);
+  check('Games played',!materialShift&&form.season.length<cfg.sample?'Too few games played':null);
 
   // 3 and 4: role edge, and the defense must be weak (or strong for an Under) against that role.
   let matchup=0;
@@ -108,14 +112,15 @@ export function assess(row,side,cfg,context){
     if(row.projection!=null){
       gap=direction*(row.projection-leg.line);
       check('Line vs projection',gap<0?'Line vs projection':null);
-      if(gap>=0)leg.reasons.push('Line '+leg.line+' vs projection '+format(row.projection)+' (L5 '+format(row.recentAvg)+(row.usage!=null?', usage '+format(row.usage):'')+')');
+      if(gap>=0)leg.reasons.push('Line '+leg.line+' vs projection '+format(row.projection)+
+        (useComparable?(form.last5.length?' (role L5 '+format(mean(form.last5))+')':''):
+          ' (L5 '+format(row.recentAvg)+(row.usage!=null?', usage '+format(row.usage):'')+')'));
     }
   }
 
   // 6: hit rates on the last 8, venue, reads, and agreement with the role edge.
-  const last8=record(form.last8,leg.line,side), season=record(form.season,leg.line,side), venue=record(form.venue,leg.line,side);
-  if(!checks['Games played'])check('Hit rate',last8.rate==null||last8.rate<cfg.hit/100?'Last 8 hit rate':null);
-  if(last8.n)leg.reasons.push('Cleared '+leg.line+' in '+last8.hits+' of '+last8.n+' (last 8)');
+  if(!checks['Games played']&&!limitedRole)check('Hit rate',last8.rate==null||last8.rate<cfg.hit/100?'Last 8 hit rate':null);
+  if(last8.n)leg.reasons.push('Cleared '+leg.line+' in '+last8.hits+' of '+last8.n+(useComparable?' (recent comparable games)':' (last 8)'));
   if(venue.n>=3){
     check('Venue split',venue.rate<.5?'Home or away split':null);
     if(!checks['Venue split'])leg.reasons.push((row.home?'Home':'Away')+' '+percent(venue.rate)+' ('+venue.hits+'/'+venue.n+')');
@@ -128,7 +133,7 @@ export function assess(row,side,cfg,context){
   if(d?.rank&&favorable(d.rank,over))check('Hit rate vs role',last8.rate!=null&&last8.rate<.5?'Hit rate conflicts with role edge':null);
 
   // 10: value after shrinking toward 50%.
-  const chance=shrunk(season,PRIOR,td&&prob!=null?prob:.5), edge=chance==null||prob==null?null:chance-prob;
+  const chance=limitedRole?null:shrunk(season,PRIOR,td&&prob!=null?prob:.5), edge=chance==null||prob==null?null:chance-prob;
   if(edge!=null){
     check('Value',edge<0?'Shrunk hit rate below the price':null);
     if(edge>=0)leg.reasons.push('Shrunk chance '+percent(chance)+' vs '+percent(prob)+' implied');
@@ -164,7 +169,7 @@ export function assess(row,side,cfg,context){
       if(w.roof==='retractable')leg.flags.push('Retractable roof');
     }
   }
-  if(row.share!=null&&row.recentShare!=null&&row.share>0){
+  if(!materialShift&&row.share!=null&&row.recentShare!=null&&row.share>0){
     const t=(row.recentShare-row.share)/row.share;
     impact+=direction*clamp(t,-.3,.3);
     if(Math.abs(t)>=.15)leg.reasons.push(row.shareLabel+' L3 '+percent(row.recentShare)+' vs '+percent(row.share)+' season');
@@ -191,9 +196,10 @@ export function assess(row,side,cfg,context){
     if(absent.delta!=null)impact+=clamp(direction*absent.delta/Math.max(row.avg||1,1),-.3,.3);
   }
   if(row.absenceAdjustment)leg.reasons.push('Projection '+signed(row.absenceAdjustment)+' from teammate-out splits');
-  if(row.workload?.usageShift)leg.reasons.push('Workload shift with '+row.workload.absences.join(', ')+' out');
-  if(useComparable)leg.reasons.push('Form from '+comparable.length+' games without '+row.workload.absences.join(', '));
-  else if(row.workload?.usageShift)leg.flags.push('Limited comparable-role history');
+  if(row.workload?.usageShift||materialShift)leg.reasons.push('Workload shift with '+row.workload.absences.join(', ')+' out');
+  if(useComparable&&comparable.length)leg.reasons.push('Form from '+comparable.length+' games without '+row.workload.absences.join(', '));
+  if(limitedRole)leg.flags.push(season.n+' of '+minRoleGames+' comparable workload games needed');
+  else if(!useComparable&&row.workload?.usageShift)leg.flags.push('Limited comparable-role history');
   if(row.workload?.sleeper!=null)leg.reasons.push('RotoWire via Sleeper '+format(row.workload.sleeper));
   if(row.rest!=null){
     if(row.rest<=5){impact-=.1;leg.flags.push('Short week ('+row.rest+' days)');}
@@ -202,13 +208,14 @@ export function assess(row,side,cfg,context){
   if(row.status)impact-=.25;
 
   leg.form={season,last8,venue,last5:record(form.last5,leg.line,side),home:record(form.home,leg.line,side),away:record(form.away,leg.line,side)};
-  leg.avg=row.avg;leg.recentAvg=row.recentAvg;leg.projection=row.projection;leg.edge=edge;leg.chance=chance;
+  leg.avg=useComparable?mean(form.season):row.avg;leg.recentAvg=useComparable?mean(form.last5):row.recentAvg;
+  leg.projection=row.projection;leg.edge=edge;leg.chance=chance;
   leg.checks=checks;
   leg.context={role:row.role,defense:d?{rank:d.rank,value:d.value,league:d.league,label:d.label}:null,spread:row.spread,script:row.script,total:row.total,
-    teamTotal:row.teamTotal,model:row.model,weather:w||null,proe:row.proe,pace:row.pace,snaps:row.snaps,share:row.share,recentShare:row.recentShare,
+    teamTotal:row.teamTotal,model:row.model,weather:w||null,proe:row.proe,pace:row.pace,snaps,share:row.share,recentShare:row.recentShare,
     rzShare:row.rzShare,ryoe:row.ryoe,cbRoom:row.cbRoom,cbOut:row.cbOut,qbOut:row.qbOut,olOut:row.olOut,rest:row.rest,
     absences:row.absences,absenceAdjustment:row.absenceAdjustment,status:row.status,inactivesPosted:row.inactivesPosted,workload:row.workload,
-    comparableGames:row.replacement?comparable.length:null,formSource:useComparable?'comparable-role':'full-season'};
+    comparableGames:row.replacement?comparable.length:null,formSource:limitedRole?'limited-role':useComparable?'comparable-role':'full-season'};
   leg.cut=Object.values(checks).find(Boolean)||null;
   if(!leg.cut||context.angles){
     const value=clamp((edge||0)*5,0,1)+(gap==null?0:clamp(gap/Math.max(Math.abs(leg.line),1),0,1));
@@ -246,6 +253,8 @@ export const ticketRules=cfg=>({
   sameGame:(leg,inGame)=>cfg.stacks&&inGame.every(x=>correlation(leg,x)>0),
   allow:(leg,ticket)=>!tdMarkets.has(leg.stat)||ticket.filter(x=>tdMarkets.has(x.stat)).length<cfg.tdMax
 });
+export const buildNflTicket=(legs,cfg,options={})=>buildMixedTicket(legs,cfg,
+  {...options,rules:{...ticketRules(cfg),...options.rules,rank:leg=>leg.chance}});
 export function warnings(ticket){
   const out=[];
   for(let i=0;i<ticket.length;i++)for(let j=i+1;j<ticket.length;j++){

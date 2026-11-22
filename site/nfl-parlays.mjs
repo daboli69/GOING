@@ -3,9 +3,20 @@ import {current as S,slate,tools,btn,esc,box,table,round,teamName,today} from '.
 import {href} from './config.mjs';
 import {nflInjuryContext} from './nfl-availability.mjs';
 import {nflOut} from './nfl-workload.mjs';
-import {defaults,evaluate,markets,weights,yardMarkets,tdMarkets,ticketRules,warnings,PRIOR} from './nfl-parlay-engine.mjs';
-import {createParlays} from './parlay-ui.mjs';
+import {buildNflTicket,defaults,evaluate,markets,weights,yardMarkets,tdMarkets,ticketRules,warnings,PRIOR} from './nfl-parlay-engine.mjs';
+import {createParlays,parlayPool,parlayPoolSummary} from './parlay-ui.mjs';
 import {legKey} from './parlay-core.mjs';
+
+const legText=leg=>tdMarkets.has(leg.stat)?leg.stat+' · '+(leg.side==='Over'?'Yes':'No'):
+  leg.side+' '+leg.line+' '+leg.stat+(yardMarkets.has(leg.stat)?' yds':'');
+const fullList=(report,ticket)=>parlayPool(report,ticket,{
+  chance:leg=>leg.chance,legText,tag:leg=>leg.context.role,
+  form:({form:{season,last8},context})=>`${context.formSource==='comparable-role'?'Comparable role':'Season'} ${season.hits}/${season.n} · Last 8 ${last8.hits}/${last8.n}`,
+  note:'Every qualifying leg appears here, including legs left off the ticket. Small samples are adjusted toward 50%, or toward the quoted chance for touchdown legs.'
+});
+const workloadUnit={rush:'carries',targets:'targets',pass:'attempts'};
+const resultUnit={Rushing:'rushing yds',Receiving:'receiving yds',Passing:'passing yds','Rush Attempts':'carries',
+  Receptions:'catches','Pass Attempts':'pass attempts',Completions:'completions','Anytime TD':'TDs','First TD':'first TDs'};
 
 function workloadChanges(data,report,ticket){
   if(!data.changes.length)return '';
@@ -24,16 +35,24 @@ function workloadChanges(data,report,ticket){
     return legs.map(leg=>{
       const price=Number(leg.price)>0?'+'+Number(leg.price):leg.price;
       const cuts=Object.values(leg.checks).filter(Boolean);
-      const reasons=[...new Set([...cuts.slice(0,2),leg.checks.Value||cuts[2]].filter(Boolean))];
+      const reasons=[...new Set([...cuts.slice(0,2),leg.checks['Comparable workload']||leg.checks.Value||cuts[2]].filter(Boolean))];
       const decision=selected.has(legKey(leg))?'On draft':!leg.cut?'Eligible · outside draft':reasons.join(' · ');
       return `<div><strong>${esc(leg.side+' '+leg.line+' ('+price+')')}</strong><br>${esc(decision)}</div>`;
     }).join('');
   };
-  const rows=[...data.changes].sort((a,b)=>Math.abs(b.value-b.baseline)/Math.max(b.baseline,1)-Math.abs(a.value-a.baseline)/Math.max(a.baseline,1));
-  return box('Injury-adjusted projections',table(['Player','Game','Stat','Baseline','Adjusted','RotoWire via Sleeper','Teammates out','Price and screening'],
+  const movement=r=>r.value==null||r.baseline==null?0:Math.abs(r.value-r.baseline)/Math.max(r.baseline,1);
+  const evidence=r=>{
+    const games=r.comparable||[], labels=[r.absences.join(', ')+(r.absences.length?' out':''),games.length+' comparable '+(games.length===1?'game':'games')];
+    const recent=games.at(-1), unit=workloadUnit[r.opportunityKey];
+    if(recent)labels.push([recent.opponent,recent.value+' '+resultUnit[r.stat],
+      unit&&unit!==resultUnit[r.stat]?'on '+recent.opportunities+' '+unit:null].filter(Boolean).join(' · '));
+    return labels.map((label,i)=>i?`<div class="subtle">${esc(label)}</div>`:`<div>${esc(label)}</div>`).join('');
+  };
+  const rows=[...data.changes].sort((a,b)=>movement(b)-movement(a));
+  return box('Injury-adjusted projections',table(['Player','Game','Stat','Baseline','Adjusted','RotoWire via Sleeper','Workload evidence','Price and screening'],
     rows.map(r=>[esc(r.player.name+' · '+r.player.team),esc(r.game.a+' @ '+r.game.h),esc(r.stat),round(r.baseline,1),
-      round(r.value,1),r.sleeper==null?'—':round(r.sleeper,1),esc(r.absences.join(', ')),screening(r)]),{sort:'nfl-workload',wrap:'box'}),
-    'A workload change can move the projection across a line. The price and screening column shows whether that leg qualifies. With at least four comparable games, the engine can use form from games without the same teammates.','nfl-workload');
+      round(r.value,1),round(r.sleeper,1),evidence(r),screening(r)]),{sort:'nfl-workload',wrap:'box'}),
+    'For a material workload change, the screening record uses verified games without the same teammates. Both sides need at least four comparable results or your higher minimum.','nfl-workload');
 }
 
 function injuryReport(){
@@ -50,7 +69,7 @@ function injuryReport(){
 const nfl=createParlays({
   settingsKey:'nfl-parlay-settings',ticketsKey:'nfl-parlay-tickets',
   liveDraft:true,
-  engine:{defaults,weights,markets,evaluate},
+  engine:{defaults,weights,markets,evaluate},build:buildNflTicket,rankByChance:true,
   weightNames:{form:'Hit rates',matchup:'Role matchup',line:'Value and projection',context:'Game context',mix:'Stat variety'},
   fields:[{key:'hit',label:'Min. last-8 hit rate %',min:0,max:100},{key:'sample',label:'Min. games played',min:1,max:17,integer:true},
     {key:'spread',label:'Max. spread',min:0,max:30,step:.5},{key:'total',label:'Min. total',min:0,max:70,step:.5},
@@ -62,7 +81,8 @@ const nfl=createParlays({
     (f.tdMax??1)+' max TD legs',f.stacks?'correlated stacks allowed':'',f.weather===false?'weather cut off':''].filter(Boolean),
   period:()=>S.year+'-'+S.week,periodLabel:()=>S.year+' Week '+S.week,
   nav:()=>slate({navOnly:true}),
-  afterTicket:(data,report,ticket)=>workloadChanges(data,report,ticket)+injuryReport(),
+  afterTicket:(data,report,ticket)=>fullList(report,ticket)+workloadChanges(data,report,ticket)+injuryReport(),
+  poolSummary:(report,cfg)=>parlayPoolSummary(report,cfg,'Kickoff'),
   intro:()=>{
     const availability=S.nflAvailability;
     const format=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
@@ -73,12 +93,13 @@ const nfl=createParlays({
       games?games+' games with inactives reported for both teams':null].filter(Boolean).join(' · ');
     return tools(`<a class="pill" href="${href('long/parlay-tracker.html')}">NFL Leg Tracker</a> <a class="pill" href="${href('long/same-game-parlays.html')}">Same-Game Parlays</a>`+
       btn('Check for updates','nflParlayCheck','')+`<span class="subtle">${esc(status||'Waiting for a timestamped injury report')}</span>`)+
-      '<p class="subtle">The suggested draft updates as injury reports, game-day inactives, projections and published prices change. Generate to save a ticket to your history.</p>';
+      '<p class="subtle">Qualifying legs are ranked by estimated hit chance. Both includes an Over and an Under when the same size ticket can fit them. The draft updates as injuries, projections and published prices change.</p>';
   },
   recent:{key:'last8',label:'L8'},
-  legText:leg=>tdMarkets.has(leg.stat)?leg.stat+': '+(leg.side==='Over'?'Yes':'No'):leg.side+' '+leg.line+' '+leg.stat+(yardMarkets.has(leg.stat)?' yds':''),
+  legText,
   noRows:'No priced NFL player props were published for this week yet. Prices usually post a few days before kickoff.',
   hints:{'Maximum spread':'Raise the maximum spread.','Minimum total':'Lower the minimum game total.',
+    'Too few comparable workload games':'Check the injury-adjusted projections for players taking on a different role.',
     'Last 8 hit rate':'Try a lower minimum hit rate (TD props rarely clear 60%).','Too few games played':'Lower the minimum games played.',
     'Defense rank vs role':'Fewer defenses rank in the weak third for every role; try more stat types or both sides.',
     'Line vs projection':'Most lines sit above the projection this week; try Unders or more stat types.',

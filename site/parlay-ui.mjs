@@ -12,6 +12,35 @@ const oddsText=price=>Number(price)>0?'+'+Number(price):String(price);
 export const toAmerican=d=>d>=2?Math.round((d-1)*100):Math.round(-100/(d-1));
 export const fromAmerican=a=>Math.abs(a)<100?2:a>0?1+a/100:1+100/-a;
 const americanText=d=>oddsText(toAmerican(d));
+export function parlayPool({eligible},ticket,{chance,legText,tag,form,note}){
+  if(!eligible.length)return box('Full List',empty('No priced legs pass the current filters.'));
+  const onTicket=new Set(ticket.map(legKey));
+  const ranked=eligible.map(leg=>({leg,chance:chance(leg)}))
+    .sort((a,b)=>b.chance-a.chance||b.leg.form.season.n-a.leg.form.season.n||b.leg.score-a.leg.score);
+  const rows=ranked.map(({leg,chance})=>`<li><div class="parlay-pool-row"><div><strong>${esc(leg.name)}</strong> ${esc(leg.team+' vs '+leg.opp)}
+    <div>${esc(legText(leg)+' · '+oddsText(leg.price)+' '+leg.provider)} ${badge(esc(tag(leg)))} ${onTicket.has(legKey(leg))?badge('On ticket','g'):''}</div></div>
+    <strong>${pct(chance,1)}</strong></div>
+    <p class="subtle">${esc(form(leg))}</p>
+    <p><strong>Why it qualifies</strong> ${esc(leg.reasons.join(' · '))}</p>
+    ${leg.flags.length?`<p class="subtle"><strong>Watch</strong> ${esc(leg.flags.join(' · '))}</p>`:''}</li>`);
+  return box('Full List',`<p class="subtle">${ranked.length} eligible ${ranked.length===1?'leg':'legs'}, ranked by estimated hit chance. ${esc(note)}</p>
+    <ol class="parlay-pool">${rows.join('')}</ol>`);
+}
+
+export function parlayPoolSummary({eligible,screened},cfg,kickoff){
+  const games=new Set(eligible.map(leg=>leg.game)).size;
+  const sides=cfg.side==='Both'?['Over','Under']:[cfg.side];
+  const quotes=sides.map(side=>{
+    const fresh=screened.filter(leg=>leg.side===side&&!leg.checks.Quote&&!leg.checks['Quote freshness']&&!leg.checks[kickoff]).length;
+    const qualified=eligible.filter(leg=>leg.side===side);
+    const matchups=new Set(qualified.map(leg=>leg.game)).size;
+    const matchupText=cfg.side==='Both'&&matchups?` across ${matchups} ${matchups===1?'game':'games'}`:'';
+    return fresh?`${qualified.length} of ${fresh} ${side} quotes qualify${matchupText}`:`No fresh ${side} quotes`;
+  });
+  return [...quotes,`${games} qualifying ${games===1?'game':'games'}`].join(' · ')+
+    (cfg.perGame&&!cfg.stacks&&games>0&&games<cfg.legs?`. One leg per game limits this ticket to at most ${games}.`:'');
+}
+
 const timeLabel=value=>value&&Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-US',{
   timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'
 }).format(new Date(value)):'Unknown';

@@ -1,8 +1,8 @@
 // GOING LONG leg tracker: capture every screened NFL leg before kickoff and grade it after the game.
 // Results come from the nflverse play-by-play (usually updated the morning after a game), so they follow the same
 // stat definitions the engine uses. Snap counts separate "did not play" (void) from "played and got nothing".
-import {evaluate,defaults,ticketRules,markets} from './nfl-parlay-engine.mjs';
-import {buildTicket,legKey} from './parlay-core.mjs';
+import {evaluate,defaults,buildNflTicket,markets} from './nfl-parlay-engine.mjs';
+import {legKey} from './parlay-core.mjs';
 import {outcome} from './track-core.mjs';
 
 // Stored legs keep 3 decimals: the tracker files grow every week and the page loads them all.
@@ -12,7 +12,7 @@ const compact=x=>typeof x==='number'?(Number.isInteger(x)?x:Math.round(x*1000)/1
 export function captureLegs(rows,now){
   rows=rows.filter(({quote})=>!quote.capturedAt||Date.parse(quote.capturedAt)<=now);
   const {eligible}=evaluate(rows,defaults,{now});
-  const selected=new Set(buildTicket(eligible,defaults,{rules:ticketRules(defaults)}).ticket.map(legKey));
+  const selected=new Set(buildNflTicket(eligible,defaults).ticket.map(legKey));
   return evaluate(rows,{...defaults,stats:markets},{now}).screened
     .filter(leg=>leg.price!=null&&Number.isFinite(leg.line)&&!leg.checks.Kickoff&&!leg.checks.Quote)
     .map(leg=>{
