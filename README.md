@@ -99,6 +99,8 @@ Two sources feed the site, and neither commits data to `main`.
 
 **Public data (GitHub Actions, `.github/workflows/deploy.yml`).** The workflow runs every hour. It saves slates, injuries, Kalshi public player prices, NHL projected lineups and line-matchup stats (`scripts/live.mjs`, about a minute), then builds and deploys the site to GitHub Pages. The first run after 7am Eastern each morning, and the first after 17:00 UTC, also rebuilds the season archives from nflverse, hoopR and the NHL feed (`scripts/refresh.mjs`). Downloads and archives sit in the Actions cache, so each rebuild fetches only what changed. A push to `main` also deploys.
 
+**Independent NBA price backstop.** The free `going-nba-refresh-backstop` Cloudflare Worker checks the timestamp of today’s NBA price file every 15 minutes and starts the existing NBA publisher if the file is missing or is more than 35 minutes old. Set up a fine-grained GitHub token for `daboli69/GOING` with **Actions: Read and write**, store it as the `GITHUB_NBA_REFRESH_TOKEN` Actions secret, then run **Deploy NBA refresh backstop**. The workflow installs it as a Worker secret using the existing Cloudflare deploy credentials. The Worker has no public HTTP endpoint and skips a refresh while a publisher run is active.
+
 **Model forecasts (your PC).** The NFL and NBA labs run locally and use private inputs, so they cannot run on GitHub. `publishers/publish_models.bat` runs each lab's own Python, exports the saved forecasts read-only, and commits them to the `model-feeds` branch. It then starts a deploy. When the forecasts haven't changed, it pushes nothing. The site keeps showing the last published forecasts while the PC is off, along with how old they are.
 
 ```bat
