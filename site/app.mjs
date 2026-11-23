@@ -291,7 +291,8 @@ async function load(){
     else S.games=[];
     const preferred=S.games.find(g=>g.id===S.f.requestedNflGame)||S.games.find(g=>g.id===savedGames[s]);
     S.f.requestedNflGame=null;
-    const upcoming=id==='nfl-sgp'?upcomingNflGames(S.games,Date.now()).find(g=>odds.some(q=>q.date===g.date&&q.a===g.a&&q.h===g.h)):null;
+    const future=id==='nfl-sgp'||id==='nfl-preview'?upcomingNflGames(S.games,Date.now()):[];
+    const upcoming=id==='nfl-sgp'?future.find(g=>odds.some(q=>q.date===g.date&&q.a===g.a&&q.h===g.h)):future[0];
     S.game=preferred||upcoming||(s==='nba'&&['keys','basket'].includes(id)?S.games.at(-1):S.games[0])||null;
     rememberSgpGame();
     if(S.game){S.f.away=S.game.a;S.f.home=S.game.h;}

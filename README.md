@@ -48,6 +48,8 @@ To capture Market Watch locally, clone [Sports Leader MCP](https://github.com/Wa
 
 The opening possessions come from the play-by-play (`scripts/normalize.py` keeps each game's first 16 as team, points, shooters, free-throw shooter and scorer, and tags early shots with their possession number).
 
+**GOING LONG Defense Targets.** In Game Previews, see the highest allowance ranks for both defenses and use the position filter for the full split. The board compares season, last-three and league averages for QB passing and rushing, RB rushing and receiving, all WRs, estimated slot and outside WRs, and tight ends. Volume, touchdowns and explosive plays are per game. Efficiency is per attempt, carry or target. Rankings require at least four completed games dated before the selected matchup. WR roles are estimated from prior target location and depth.
+
 **GOING LONG TD Board.** Under Props (`long/td-board.html`), for anytime and first touchdown. Expected TDs come from opportunity, not past TD counts (`site/nfl-td.mjs`).
 - **Opportunity:** every carry and target counts at the league's TD rate for where it happened. This season a carry at the 1–2 scores 48% of the time, at the 3–5 29%, at the 6–10 11%. An end-zone target scores 42%, a target inside the 10 23%, a touch outside the 20 about 1%.
 - **Team TDs:** (implied points − two field goals) ÷ 7, from the total and spread, split between rushing and receiving by the team's TD split (shrunk to league), the game script and weather. A player's share is half his red-zone opportunity share and half his share of the team's carries and targets, flattened slightly. The weights come from the backtest, where pure red-zone shares were overconfident at the top. Missing teammates drop out and the rest renormalize.

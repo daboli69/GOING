@@ -9,9 +9,12 @@ import {tdJackpotPage,tdJackpotAction} from './nfl-td-jackpot-page.mjs';
 import {nflParlayPage,nflParlayAction} from './nfl-parlays.mjs';
 import {nflSgpPage,nflSgpAction} from './nfl-sgp.mjs';
 import {defenseProfiles,similarDefenseGames} from './nfl-sgp-engine.mjs';
+import {playerRole} from './nfl-defense-targets.mjs';
+import {defenseTargetsPanel} from './nfl-defense-targets-ui.mjs';
 import {kickoff,nflInjuryContext,nflName} from './nfl-availability.mjs';
 import {nflOut as outNow,nflReplacementGames,nflWorkload} from './nfl-workload.mjs';
 export {kickoff} from './nfl-availability.mjs';
+export {playerRole} from './nfl-defense-targets.mjs';
 
 const names=Object.keys(nflTeams).sort((a,b)=>nflTeams[a][0].localeCompare(nflTeams[b][0]));
 let statsMemo={archive:null,week:null,value:new Map()};
@@ -200,7 +203,9 @@ function nflPreview(){
   if(!g)return top;
   const v=S.f.view||'Full Preview';
   const header=tools(btn('‹','gameStep',-1,'sq')+`<span class="period-label">Game ${S.games.indexOf(g)+1} of ${S.games.length}</span>`+btn('›','gameStep',1,'sq'),'center')+
-    tools(toggles(['Full Preview','Build Your Model','Summary'],'view')+`<a class="pill" href="${href('long/same-game-parlays.html?game='+encodeURIComponent(g.id))}">Build a Same-Game Parlay</a>`);
+    tools(toggles(['Full Preview','Defense Targets','Build Your Model','Summary'],'view')+`<a class="pill" href="${href('long/same-game-parlays.html?game='+encodeURIComponent(g.id))}">Build a Same-Game Parlay</a>`);
+  const targets=()=>defenseTargetsPanel(S.data,g,S.f.nflDefenseGroup);
+  if(v==='Defense Targets')return top+header+targets();
   const o=gameLines(g),weights=local('nfl-model',{Offense:35,Defense:35,'Recent form':20,'Home field':10});
   const statsBox=box('General Stats & Scheme',tools(toggles(['Raw Stats','vs Opponents'],'scheme'))+grid(2,[schemeTable(a,h,S.f.scheme==='vs Opponents'),schemeTable(h,a,S.f.scheme==='vs Opponents')]),'Success rate is the share of plays with positive expected points added. Opponent adjustment compares each team with the opponents it faced.');
   const picks=pickTracker(g,o);
@@ -213,7 +218,7 @@ function nflPreview(){
   return top+header+box('Injuries','<p class="subtle">Latest ESPN injury report and reported game-day inactives.</p>'+
     grid(2,[a,h].map(t=>card(t,injuryList(t,gameInjuries(g,t).filter(r=>outNow(r.status)||/questionable|doubtful/i.test(r.status||'')))))))+
     box('Odds',grid(3,[metric('Spread',esc(o.spread)),metric('Total',esc(o.total)),metric('Moneyline',esc(o.ml))]))+
-    box('Recent Games',grid(2,[teamBanner(a)+recent(a),teamBanner(h)+recent(h)]))+statsBox+picks+notes();
+    targets()+box('Recent Games',grid(2,[teamBanner(a)+recent(a),teamBanner(h)+recent(h)]))+statsBox+picks+notes();
 }
 function pickTracker(g,o){
   const picks=local('picks',{}),p=picks[g.id]||{};
@@ -326,19 +331,6 @@ export const marketValue={Receiving:'recY',Receptions:'rec',Rushing:'rushY','Rus
 const marketGroup=m=>tdMarkets.has(m)?'td':['Receiving','Receptions'].includes(m)?'catch':['Rushing','Rush Attempts'].includes(m)?'rush':'pass';
 const OL=new Set(['T','G','C','OL','OT','OG']);
 const doubtful=x=>/^doubtful/i.test(x||'');
-// Roles, the NFL version of player types. Slot is estimated from where a receiver is targeted (middle of the field)
-// and how deep; alignment and man/zone coverage are not in the public data.
-export function playerRole(p){
-  const sum=k=>total(p.logs,x=>x[k]||0);
-  if(p.pos==='QB')return 'QBs';
-  if(p.pos==='TE')return 'TEs';
-  if(p.pos==='RB'||p.pos==='FB')return sum('targets')/Math.max(1,sum('targets')+sum('rush'))>=.26?'receiving RBs':'rushing RBs';
-  if(p.pos==='WR'){
-    const t=sum('targets'),mid=t?sum('mid')/t:0,adot=t?sum('air')/t:null;
-    return mid>=.27||mid>=.21&&adot!=null&&adot<9.6?'slot WRs (est.)':'outside WRs';
-  }
-  return null;
-}
 let parlayMemo={};
 // League tables for the slate's week: players and roles, what each defense allows by role (opponent-adjusted), team
 // tendencies, cornerback rooms and starting offensive lines.
