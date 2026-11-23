@@ -79,7 +79,7 @@ test('prop history treats whole-number pushes as neither wins nor losses',()=>{
   assert.deepEqual(record([4,5,6],5,'Over'),{hits:1,n:2,pushes:1,rate:.5});
 });
 
-test('Builder Legs screen priced alternate thresholds through the same side and matchup checks',()=>{
+test('Builder Legs use only alternate overs below the main line and keep the matchup and form checks',()=>{
   const main=row({quote:{...row().quote,provider:'DraftKings'}});
   const alt=(line,price)=>row({quote:{...row().quote,line,over:price,under:price}});
   const underSample=Array(10).fill(6);
@@ -90,14 +90,18 @@ test('Builder Legs screen priced alternate thresholds through the same side and 
   const injured={...alt(2.5,-249),out:true};
   const sample=[4,4,4,4,9,9,9,9,9,9], weak={...alt(4.5,-201),
     form:{season:sample,last10:sample,last5:sample.slice(-5),venue:sample,home:sample,away:[]}};
-  const alternates=[alt(5.5,-200),under,alt(6.5,-230),alt(1.5,-301),expired,injured,weak];
+  const noOver=alt(1.5,-250);
+  delete noOver.quote.over;
+  const alternates=[alt(5.5,-200),under,alt(6.5,-230),alt(7.5,-250),alt(1.5,-301),expired,injured,weak,noOver];
   const options={now,minPrice:-300,maxPrice:-200};
   const report=builderLegs([main],alternates,defaults,options);
-  assert.equal(report.priced,4);
-  assert.deepEqual(report.eligible.map(l=>[l.side,l.line,l.price,l.mainLine]),[['Over',5.5,-200,6.5],['Under',9.5,-300,6.5]]);
-  assert.deepEqual(builderLegs([main],alternates,over,options).eligible.map(l=>l.side),['Over']);
+  assert.equal(report.priced,3);
+  assert.deepEqual(report.eligible.map(l=>[l.side,l.line,l.price,l.mainLine]),[['Over',5.5,-200,6.5]]);
+  const undersOnly={...defaults,side:'Under'};
+  assert.deepEqual(builderLegs([main],alternates,undersOnly,options).eligible,report.eligible);
   assert.deepEqual(builderLegs([],alternates,defaults,options).eligible,[]);
-  assert.deepEqual(evaluateRows([main]).eligible.map(l=>l.line),[6.5]);
+  const mainUnder={...under,quote:{...main.quote}};
+  assert.deepEqual(evaluateRows([mainUnder],undersOnly).eligible.map(l=>[l.side,l.line]),[['Under',6.5]]);
 });
 
 test('Full List ranks the entire eligible pool by adjusted hit rate, even when games repeat',t=>{

@@ -20,11 +20,11 @@ function builderPool(data,cfg,taken){
   const [minPrice,maxPrice]=builderRanges[range], report=builderLegs(data.rows,data.alternates??[],cfg,{minPrice,maxPrice,taken});
   return parlayPool(report,[],{
     ...poolDisplay,title:'Builder Legs',
-    intro:'<p class="subtle">Alternate player lines for building your own ticket. Uses the matchup filters above and requires '+
+    intro:'<p class="subtle">Alternate overs only. Uses the matchup filters above and requires '+
       esc(Math.max(cfg.hit,70))+'% in both season and last-10 results at the alternate line. Kalshi prices are exchange quotes.</p>'+
       tools(Object.entries(builderRanges).map(([key,[min,max]])=>btn(min+' to '+max,'parlayBuilderRange',key,key===range?'on':'')).join('')),
-    emptyText:report.priced?'The alternate lines in this range are available, but none pass the current matchup and form filters.':
-      'No recent alternate prices in this range match a current main line on this slate.',
+    emptyText:report.priced?'No alternate overs in this range pass the current matchup and form filters.':
+      'No recent alternate over prices in this range match a current main line on this slate.',
     legText:leg=>leg.milestone?leg.milestone+'+ '+leg.stat:poolDisplay.legText(leg),
     tag:leg=>'DK main '+leg.mainLine,
     form:leg=>poolDisplay.form(leg)+' · Quoted '+timeLabel(leg.capturedAt),

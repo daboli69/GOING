@@ -167,22 +167,20 @@ export function builderLegs(mainRows,alternateRows,cfg,{minPrice,maxPrice,now=Da
   const priced=new Map();
   for(const row of alternateRows){
     const {quote,stat}=row, mainLine=main.get(playerMarket(row));
-    if(mainLine==null||!cfg.stats.includes(stat)||!freshLine(row,now))continue;
-    const side=quote.line<mainLine?'Over':quote.line>mainLine?'Under':null;
-    if(!side||cfg.side!=='Both'&&cfg.side!==side)continue;
-    if(quote.provider!=='Kalshi'&&(quote.provider!=='DraftKings'||side!=='Over'||quote.milestone!==quote.line+.5))continue;
-    const price=Number(quote[side.toLowerCase()]);
+    if(mainLine==null||quote.line>=mainLine||!cfg.stats.includes(stat)||!freshLine(row,now))continue;
+    if(quote.provider!=='Kalshi'&&(quote.provider!=='DraftKings'||quote.milestone!==quote.line+.5))continue;
+    const price=Number(quote.over);
     if(!Number.isInteger(price)||price<minPrice||price>maxPrice)continue;
     const key=[playerMarket(row),quote.line,quote.provider].join('|');
     const current=priced.get(key);
-    if(!current||Date.parse(current.quote.capturedAt)<Date.parse(quote.capturedAt))priced.set(key,{...row,side,mainLine});
+    if(!current||Date.parse(current.quote.capturedAt)<Date.parse(quote.capturedAt))priced.set(key,{...row,mainLine});
   }
   // Use the same opponent, form and lineup checks as main lines, with a higher observed hit-rate floor.
   const rows=[...priced.values()];
-  const {eligible}=evaluate(rows,{...cfg,hit:Math.max(cfg.hit,70),minOdds:1,maxOdds:2},{now,taken});
-  return {priced:priced.size,eligible:eligible.flatMap(leg=>{
+  const {eligible}=evaluate(rows,{...cfg,side:'Over',hit:Math.max(cfg.hit,70),minOdds:1,maxOdds:2},{now,taken});
+  return {priced:priced.size,eligible:eligible.map(leg=>{
     const row=priced.get([[leg.date,leg.game,leg.player,leg.stat].join('|'),leg.line,leg.provider].join('|'));
-    return row?.side===leg.side?[{...leg,mainLine:row.mainLine,milestone:row.quote.milestone}]:[];
+    return {...leg,mainLine:row.mainLine,milestone:row.quote.milestone};
   })};
 }
 
