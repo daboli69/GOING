@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { ESPN,sportPath,scoreboard,nhlSlate,compactInjuries } from '../site/feeds.mjs';
 import { lineupUrl,parseLineups } from './lineups.mjs';
 import { publicQuotes } from './market-data.mjs';
-import { readDraftKingsMainLines } from '../site/nba-main-lines.mjs';
+import { readDraftKingsMainLines,readDraftKingsMilestones } from '../site/nba-main-lines.mjs';
 import { recentLines } from './lines-data.mjs';
 import { pruneShiftCache,shiftReader } from './nhl-shifts.mjs';
 import { kickoffHour,nflWeather } from './weather.mjs';
@@ -89,7 +89,8 @@ await Promise.all(Object.keys(sportPath).map(async s=>{
 const upcoming=g=>['FUT','PRE'].includes(g.status);
 const priceDays=[today,add(today,1)];
 const pricedGames=(s,d)=>(slates[s][d]||[]).filter(g=>upcoming(g)&&Date.parse(g.iso)>Date.now()).map(g=>({...g,date:d}));
-const draftKings=readDraftKingsMainLines(priceDays.flatMap(d=>pricedGames('nba',d)));
+const nbaGames=priceDays.flatMap(d=>pricedGames('nba',d));
+const draftKings=Promise.all([readDraftKingsMainLines(nbaGames),readDraftKingsMilestones(nbaGames)]);
 for(const s of ['nba','nhl'])for(const d of priceDays){
   const file='odds-'+s+'-'+d+'.json', alternate=s==='nba'?'nba-alternate-lines-'+d+'.json':null;
   if(!slates[s][d]){
@@ -100,12 +101,15 @@ for(const s of ['nba','nhl'])for(const d of priceDays){
   const games=pricedGames(s,d);
   await saveOdds(s,games,file,alternate);
 }
-const main=await draftKings;
-if(main.failed.length)note.push('DraftKings NBA main lines ('+main.failed.map(x=>x.market).join(', ')+')');
-for(const d of priceDays){
-  const file='nba-main-lines-'+d+'.json';
-  if(!slates.nba[d])await backup(file,'DraftKings NBA main lines '+d);
-  else await writeOdds(file,main.quotes.filter(q=>q.date===d),main.failed,pricedGames('nba',d));
+const [main,milestones]=await draftKings;
+for(const [board,prefix,label] of [[main,'nba-main-lines-','main lines'],[milestones,'nba-dk-alternate-lines-','alternate milestones']]){
+  const labelText='DraftKings NBA '+label;
+  if(board.failed.length)note.push(labelText+' ('+board.failed.map(x=>x.market).join(', ')+')');
+  for(const d of priceDays){
+    const file=prefix+d+'.json';
+    if(!slates.nba[d])await backup(file,labelText+' '+d);
+    else await writeOdds(file,board.quotes.filter(q=>q.date===d),board.failed,pricedGames('nba',d),board===milestones);
+  }
 }
 const schedule=await read('nfl-schedule.json')||[];
 const nflUpcoming=upcomingNflGames(schedule,Date.now()).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));

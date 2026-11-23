@@ -511,9 +511,9 @@ function defenseLogs(stat,profile,key,byType){
 }
 
 export function parlayData(quotes=S.odds){
-  const memo=reset(), previous=memo.parlayData;
-  const useCache=quotes===S.odds;
-  if(useCache&&previous&&previous.games===S.games&&previous.odds===S.odds&&previous.injuries===S.injuries)return previous;
+  const memo=reset(), cacheKey=quotes===S.odds?'parlayData':quotes===S.f?.nbaPriceBoard?.builderQuotes?'builderData':null;
+  const previous=cacheKey&&memo[cacheKey];
+  if(previous&&previous.games===S.games&&previous.odds===quotes&&previous.injuries===S.injuries)return previous;
   const byPlayer=new Map();
   for(const quote of Array.isArray(quotes)?quotes:[]){
     if(!quote||(quote.id==null&&!quote.player))continue;
@@ -567,8 +567,8 @@ export function parlayData(quotes=S.odds){
         }))}));
     });
   });
-  const data={rows,roster,games:S.games,odds:S.odds,injuries:S.injuries};
-  if(useCache)memo.parlayData=data;
+  const data={rows,roster,games:S.games,odds:quotes,injuries:S.injuries};
+  if(cacheKey)memo[cacheKey]=data;
   return data;
 }
 function courtSvg(data,label){
@@ -900,7 +900,9 @@ export function nbaAction(act,v,target){
   return false;
 }
 export function nbaPage(){
-  return ({'nba-props':propTable,'nba-parlays':()=>parlayPage(parlayData()),league,keys,standouts,zones:zoneTargets,types:typePage,shotcharts:shotCharts,basket,court:kotc})[S.route.id]();
+  return ({'nba-props':propTable,'nba-parlays':()=>parlayPage({...parlayData(),
+    alternates:S.f.nbaPriceBoard?.builderQuotes?.length?parlayData(S.f.nbaPriceBoard.builderQuotes).rows:[]}),
+    league,keys,standouts,zones:zoneTargets,types:typePage,shotcharts:shotCharts,basket,court:kotc})[S.route.id]();
 }
 export function nbaResult(p){
   const idx=nbaKeys[p.market];if(idx==null)return null;
