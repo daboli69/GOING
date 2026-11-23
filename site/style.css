@@ -52,6 +52,10 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .nfl-angle-stats dt{color:var(--sub);font-size:11px}
 .nfl-angle-stats dd{margin:0;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .nfl-angle-method{margin:12px 0 0}
+.nba-accuracy-board td:first-child{white-space:normal;overflow-wrap:anywhere}
+.nba-accuracy-board td:nth-child(n+2){white-space:nowrap;font-variant-numeric:tabular-nums}
+.nba-accuracy-board td:first-child .badge{display:inline-block;margin-inline-start:3px}
+.nba-accuracy-lead{margin-bottom:2px}
 :root:is([data-sport=cbb],[data-sport=cwb],[data-sport=fbs]) .tools select{max-width:min(65vw,440px)}
 .door:hover{border-color:color-mix(in srgb,var(--door) 60%,var(--edge))}
 .door-name{grid-area:name;min-width:0}.door-name a{display:block;width:fit-content;max-width:100%}.door-name .sport-wordmark{width:clamp(245px,38vw,490px);max-width:100%}

@@ -48,6 +48,8 @@ To capture Market Watch locally, clone [Sports Leader MCP](https://github.com/Wa
 
 The opening possessions come from the play-by-play (`scripts/normalize.py` keeps each game's first 16 as team, points, shooters, free-throw shooter and scorer, and tags early shots with their possession number).
 
+**GOING UP Model Accuracy.** Ensemble Forecasts compares the six individual models and the combined ensemble on the same graded games. Switch between all available games and the last 30. Winner accuracy ranks the models and shares the lead on ties. Brier measures the accuracy of the win probabilities. The Pages build combines verified pre-tip forecasts and finals from the NBA feed with the public pregame tracker so scores can update between forecast exports.
+
 **GOING LONG Defense Targets.** In Game Previews, see the highest allowance ranks for both defenses and use the position filter for the full split. The board compares season, last-three and league averages for QB passing and rushing, RB rushing and receiving, all WRs, estimated slot and outside WRs, and tight ends. Volume, touchdowns and explosive plays are per game. Efficiency is per attempt, carry or target. Rankings require at least four completed games dated before the selected matchup. WR roles are estimated from prior target location and depth.
 
 **GOING LONG TD Board.** Under Props (`long/td-board.html`), for anytime and first touchdown. Expected TDs come from opportunity, not past TD counts (`site/nfl-td.mjs`).

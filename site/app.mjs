@@ -232,10 +232,12 @@ async function load(){
   }
   if(isModel(id)){
     try{
-      const [,feed]=await Promise.all([need('models'),readSnapshot('models/'+s+'.json',25000)]);
+      const [,feed,accuracy]=await Promise.all([need('models'),readSnapshot('models/'+s+'.json',25000),
+        s==='nba'?readSnapshot('models/nba-accuracy.json'):null]);
       if(token!==req)return;
       if(!modelFeed(s,feed))throw new Error('Forecast feed unavailable');
       M.models.setModelFeed(s,feed);
+      if(s==='nba')S.nbaModelAccuracy=accuracy?.all&&accuracy?.recent?accuracy:null;
       S.f.modelNext=Date.now()+60000;S.f.proFailures=0;
       S.loaded=true;render();
     }
@@ -728,11 +730,13 @@ async function tickModels(s,token){
   const now=Date.now();
   if(S.f.modelNext>now)return;
   S.f.modelNext=now+120000;
-  const feed=await newerModel(s,S.model);
+  const [feed,accuracy]=await Promise.all([newerModel(s,S.model),s==='nba'?readSnapshot('models/nba-accuracy.json'):null]);
   if(token!==req)return;
   if(document.visibilityState!=='visible'){S.f.modelNext=0;return;}
-  if(!feed)return;
-  M.models.setModelFeed(s,feed,S.game?.id);
+  const changed=accuracy?.all&&accuracy?.recent&&different(S.nbaModelAccuracy,accuracy);
+  if(changed)S.nbaModelAccuracy=accuracy;
+  if(feed)M.models.setModelFeed(s,feed,S.game?.id);
+  if(!feed&&!changed)return;
   render({keepPosition:true});
 }
 
