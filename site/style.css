@@ -39,6 +39,19 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .door[data-door=ufc]{--door:var(--c-ufc)}
 :root[data-sport=ufc] .tools select{max-width:min(65vw,440px)}
 .nfl-workload .tablewrap,[data-nfl-injuries] .tablewrap{max-height:22rem}
+.nfl-defense-targets{align-items:start}
+.nfl-defense-side{min-width:0}
+.nfl-defense-side>.subtle{margin:6px 0 8px}
+.nfl-angle-group{margin:12px 0 0}
+.nfl-angle-group h4{margin:0 0 6px}
+.nfl-angle-list{list-style:none;padding:0;margin:0;display:grid;gap:6px}
+.nfl-defense-angle{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:6px 8px;padding:8px 10px;background:var(--cell);border:1px solid var(--edge);border-radius:8px}
+.nfl-angle-name{display:grid;gap:1px;overflow-wrap:anywhere}
+.nfl-defense-angle .badge{white-space:nowrap}
+.nfl-angle-stats{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:0}
+.nfl-angle-stats dt{color:var(--sub);font-size:11px}
+.nfl-angle-stats dd{margin:0;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.nfl-angle-method{margin:12px 0 0}
 :root:is([data-sport=cbb],[data-sport=cwb],[data-sport=fbs]) .tools select{max-width:min(65vw,440px)}
 .door:hover{border-color:color-mix(in srgb,var(--door) 60%,var(--edge))}
 .door-name{grid-area:name;min-width:0}.door-name a{display:block;width:fit-content;max-width:100%}.door-name .sport-wordmark{width:clamp(245px,38vw,490px);max-width:100%}

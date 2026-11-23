@@ -56,7 +56,7 @@ export const routes=[
 ];
 // Filters each view opens with. The tracker (scripts/track.mjs) renders views with these same settings.
 export const viewDefaults={
-  td:{view:'Season TDs'},'nfl-preview':{view:'Full Preview',scheme:'Raw Stats'},drives:{view:'Opening Drive',window:'Season'},'nfl-best':{view:'Receiving',rating:'All Ratings',gameFilter:'All games'},
+  td:{view:'Season TDs'},'nfl-preview':{view:'Full Preview',scheme:'Raw Stats',nflDefenseGroup:'top'},drives:{view:'Opening Drive',window:'Season'},'nfl-best':{view:'Receiving',rating:'All Ratings',gameFilter:'All games'},
   keys:{view:'Summary',window:'Season'},standouts:{cat:'All',window:'Season'},league:{window:'Season'},
   'nfl-td-jackpot':{jackpotDefense:'rush',jackpotOpp:'',jackpotMinChance:'0',jackpotQuestionable:'No'},
   'nfl-tdboard':{tdMarket:'Anytime TD',tdPos:'All',tdMinEdge:'4',tdMinOdds:'',tdMaxOdds:'',tdMinRz:'0',tdMinSnap:'0',tdMaxSpread:'20',tdMinTotal:'0',
