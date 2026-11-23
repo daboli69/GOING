@@ -155,4 +155,35 @@ export function evaluate(rows,cfg,{now=Date.now(),taken=new Set()}={}){
   return {eligible,cuts,screened};
 }
 
+const playerMarket=({date,game,player,stat})=>[date,game.id,player.id,stat].join('|');
+const freshLine=(row,now)=>{
+  const stamp=Date.parse(row.quote.capturedAt), tip=Date.parse(row.game.iso);
+  return active(row.game)&&tip>now&&stamp<=now&&now-stamp<=120*60000&&Number.isFinite(row.quote.line);
+};
+
+export function builderLegs(mainRows,alternateRows,cfg,{minPrice,maxPrice,now=Date.now(),taken}){
+  const main=new Map(mainRows.filter(row=>row.quote.provider==='DraftKings'&&freshLine(row,now))
+    .map(row=>[playerMarket(row),row.quote.line]));
+  const priced=new Map();
+  for(const row of alternateRows){
+    const {quote,stat}=row, mainLine=main.get(playerMarket(row));
+    if(mainLine==null||!cfg.stats.includes(stat)||!freshLine(row,now))continue;
+    const side=quote.line<mainLine?'Over':quote.line>mainLine?'Under':null;
+    if(!side||cfg.side!=='Both'&&cfg.side!==side)continue;
+    if(quote.provider!=='Kalshi'&&(quote.provider!=='DraftKings'||side!=='Over'||quote.milestone!==quote.line+.5))continue;
+    const price=Number(quote[side.toLowerCase()]);
+    if(!Number.isInteger(price)||price<minPrice||price>maxPrice)continue;
+    const key=[playerMarket(row),quote.line,quote.provider].join('|');
+    const current=priced.get(key);
+    if(!current||Date.parse(current.quote.capturedAt)<Date.parse(quote.capturedAt))priced.set(key,{...row,side,mainLine});
+  }
+  // Use the same opponent, form and lineup checks as main lines, with a higher observed hit-rate floor.
+  const rows=[...priced.values()];
+  const {eligible}=evaluate(rows,{...cfg,hit:Math.max(cfg.hit,70),minOdds:1,maxOdds:2},{now,taken});
+  return {priced:priced.size,eligible:eligible.flatMap(leg=>{
+    const row=priced.get([[leg.date,leg.game,leg.player,leg.stat].join('|'),leg.line,leg.provider].join('|'));
+    return row?.side===leg.side?[{...leg,mainLine:row.mainLine,milestone:row.quote.milestone}]:[];
+  })};
+}
+
 

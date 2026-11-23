@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {allowedRanks,buildTicket,defaults,evaluate,legKey,nbaLegChance,record,ticketMath} from '../site/nba-parlay-engine.mjs';
+import {allowedRanks,builderLegs,buildTicket,defaults,evaluate,legKey,nbaLegChance,record,ticketMath} from '../site/nba-parlay-engine.mjs';
 import {lineupEffect,rotationTeammates,teammateSplits} from '../site/nba-lineup-splits.mjs';
 import {captureLegs,finalPlayers,gradeLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
 import {chooseQuotes} from '../scripts/market-data.mjs';
@@ -77,6 +77,27 @@ test('Suggested Parlays opens with incomplete saved filters and shows usable leg
 test('prop history treats whole-number pushes as neither wins nor losses',()=>{
   assert.deepEqual(record([4,5,6],5,'Under'),{hits:1,n:2,pushes:1,rate:.5});
   assert.deepEqual(record([4,5,6],5,'Over'),{hits:1,n:2,pushes:1,rate:.5});
+});
+
+test('Builder Legs screen priced alternate thresholds through the same side and matchup checks',()=>{
+  const main=row({quote:{...row().quote,provider:'DraftKings'}});
+  const alt=(line,price)=>row({quote:{...row().quote,line,over:price,under:price}});
+  const underSample=Array(10).fill(6);
+  const under={...alt(9.5,-300),typeRank:lows,typeDeltas:[-1,-2,-2,-1,-2],avg:6,reads:[6,7],
+    form:{season:underSample,last10:underSample,last5:underSample.slice(-5),venue:underSample,home:underSample,away:[]}};
+  const expired=alt(3.5,-200);
+  expired.quote.capturedAt='2026-11-12T13:59Z';
+  const injured={...alt(2.5,-249),out:true};
+  const sample=[4,4,4,4,9,9,9,9,9,9], weak={...alt(4.5,-201),
+    form:{season:sample,last10:sample,last5:sample.slice(-5),venue:sample,home:sample,away:[]}};
+  const alternates=[alt(5.5,-200),under,alt(6.5,-230),alt(1.5,-301),expired,injured,weak];
+  const options={now,minPrice:-300,maxPrice:-200};
+  const report=builderLegs([main],alternates,defaults,options);
+  assert.equal(report.priced,4);
+  assert.deepEqual(report.eligible.map(l=>[l.side,l.line,l.price,l.mainLine]),[['Over',5.5,-200,6.5],['Under',9.5,-300,6.5]]);
+  assert.deepEqual(builderLegs([main],alternates,over,options).eligible.map(l=>l.side),['Over']);
+  assert.deepEqual(builderLegs([],alternates,defaults,options).eligible,[]);
+  assert.deepEqual(evaluateRows([main]).eligible.map(l=>l.line),[6.5]);
 });
 
 test('Full List ranks the entire eligible pool by adjusted hit rate, even when games repeat',t=>{

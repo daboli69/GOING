@@ -154,9 +154,16 @@ async function nbaDraftPrices(d,games,published,previous,force=false){
   if(d<today||d>dateAdd(today,3))return {date:d,quotes:[],source:'no-games'};
   const {nbaMainLineBoard}=await import('./nba-main-lines.mjs');
   const file='nba-main-lines-'+d+'.json';
-  return nbaMainLineBoard(d,games,published,{previous,force,
+  const [milestones,exchange]=await Promise.all([
+    readSnapshot('live/nba-dk-alternate-lines-'+d+'.json',3500),
+    readSnapshot('live/nba-alternate-lines-'+d+'.json',3500)
+  ]);
+  const board=await nbaMainLineBoard(d,games,published,{previous,force,
+    publishedAlternates:Array.isArray(milestones)?milestones:[],
     read:()=>readJson(NBA_MAIN_LINES_FEED+file,4000),
     recover:()=>readJson(NBA_MAIN_LINES_CONTENTS+file+'?ref=nba-live-lines',4000,{Accept:'application/vnd.github.raw+json'})});
+  const exchangeAlternates=Array.isArray(exchange)?exchange:previous?.date===d?previous.exchangeAlternates??[]:[];
+  return {...board,exchangeAlternates,builderQuotes:board.source==='no-games'?[]:[...(board.alternates??[]),...exchangeAlternates]};
 }
 const savedGames={};
 function start(){
@@ -641,12 +648,16 @@ async function tickNbaInputs(force=false){
     const priceBoard=draft?await nbaDraftPrices(d,games,published,state.nbaPriceBoard,force):null;
     if(token!==req)return;
     if(!force&&(document.visibilityState!=='visible'||isEditing())){state.nbaCheckNext=0;return;}
-    const sourceChanged=priceBoard&&priceBoard.source!==state.nbaPriceBoard?.source;
+    const priorBoard=state.nbaPriceBoard;
+    const sourceChanged=priceBoard&&priceBoard.source!==priorBoard?.source;
+    const builderChanged=priceBoard&&different(priceBoard.builderQuotes,priorBoard?.builderQuotes);
+    if(priceBoard&&!builderChanged)priceBoard.builderQuotes=priorBoard.builderQuotes;
     if(priceBoard)state.nbaPriceBoard=priceBoard;
     const odds=priceBoard?.quotes??published;
     const pricesChanged=Array.isArray(odds)&&different(odds,S.odds);
     const injuriesChanged=object(injuries)&&different(injuries,S.injuries);
     const expired=draft&&quoteAgeChanged(S.odds,state.nbaChecked,now);
+    const builderExpired=draft&&quoteAgeChanged(priceBoard?.builderQuotes??[],state.nbaChecked,now);
     if(pricesChanged)S.odds=odds;
     if(injuriesChanged)S.injuries=injuries;
     if(slateChanged){
@@ -655,8 +666,9 @@ async function tickNbaInputs(force=false){
       S.game=games.find(g=>g.id===previous?.id)||games[0]||null;
       if(S.game?.id!==previous?.id){S.f.away=S.game?.a;S.f.home=S.game?.h;}
     }
-    if(force||slateChanged||pricesChanged||sourceChanged||injuriesChanged||expired||remaining!==state.nbaRemaining){
-      if(draft)M.nba.action('parlayRefreshDraft','');
+    const draftChanged=force||slateChanged||pricesChanged||sourceChanged||injuriesChanged||expired||remaining!==state.nbaRemaining;
+    if(draftChanged||builderChanged||builderExpired){
+      if(draft&&draftChanged)M.nba.action('parlayRefreshDraft','');
       render({keepPosition:true});
     }
     state.nbaChecked=now;

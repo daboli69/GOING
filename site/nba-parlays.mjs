@@ -1,18 +1,40 @@
 // GOING UP Suggested Parlays: the shared parlay page (parlay-ui.mjs) with the NBA engine and filters.
-import {current as S,btn,slate,tools} from './ui.mjs';
+import {current as S,btn,esc,keep,local,playCheck,slate,tools} from './ui.mjs';
 import {href} from './config.mjs';
-import {buildNbaTicket,defaults,evaluate,markets,nbaLegChance,weights} from './nba-parlay-engine.mjs';
-import {createParlays,parlayPool,parlayPoolSummary} from './parlay-ui.mjs';
+import {builderLegs,buildNbaTicket,defaults,evaluate,markets,nbaLegChance,weights} from './nba-parlay-engine.mjs';
+import {createParlays,parlayPool,parlayPoolSummary,timeLabel} from './parlay-ui.mjs';
 import {nbaTicketsKey,resolveNbaTicketLeg} from './nba-parlay-results.mjs';
 export {toAmerican,fromAmerican} from './parlay-ui.mjs';
 
-const fullList=(_data,report,ticket)=>parlayPool(report,ticket,{
+const poolDisplay={
   chance:nbaLegChance,
   legText:leg=>leg.side+' '+leg.line+' '+leg.stat,
   tag:leg=>leg.context.type&&leg.context.type!=='—'?'Type '+leg.context.type:'Type unavailable',
   form:({form:{season,last10}})=>`Season ${season.hits}/${season.n} · Last 10 ${last10.hits}/${last10.n}`,
   note:'Season rates are pulled toward 50% for small samples. A qualifying teammate split can move the estimate by up to 3 percentage points. Future results can differ.'
-});
+};
+const builderRangeKey='nba-builder-range';
+const builderRanges={core:[-300,-200],wider:[-400,-150],heavier:[-500,-300]};
+function builderPool(data,cfg,taken){
+  const savedRange=local(builderRangeKey,'core'), range=Object.hasOwn(builderRanges,savedRange)?savedRange:'core';
+  const [minPrice,maxPrice]=builderRanges[range], report=builderLegs(data.rows,data.alternates??[],cfg,{minPrice,maxPrice,taken});
+  return parlayPool(report,[],{
+    ...poolDisplay,title:'Builder Legs',
+    intro:'<p class="subtle">Alternate player lines for building your own ticket. Uses the matchup filters above and requires '+
+      esc(Math.max(cfg.hit,70))+'% in both season and last-10 results at the alternate line. Kalshi prices are exchange quotes.</p>'+
+      tools(Object.entries(builderRanges).map(([key,[min,max]])=>btn(min+' to '+max,'parlayBuilderRange',key,key===range?'on':'')).join('')),
+    emptyText:report.priced?'The alternate lines in this range are available, but none pass the current matchup and form filters.':
+      'No recent alternate prices in this range match a current main line on this slate.',
+    legText:leg=>leg.milestone?leg.milestone+'+ '+leg.stat:poolDisplay.legText(leg),
+    tag:leg=>'DK main '+leg.mainLine,
+    form:leg=>poolDisplay.form(leg)+' · Quoted '+timeLabel(leg.capturedAt),
+    actions:leg=>{
+      const play={sport:'nba',date:leg.date,game:leg.game,id:leg.player,team:leg.team,market:leg.stat,
+        side:leg.side,line:leg.line,odds:leg.price,provider:leg.provider,title:leg.name+' · '+leg.stat};
+      return `<p><label class="field">${playCheck(play)} Save to My Plays</label></p>`;
+    }
+  });
+}
 
 const nba=createParlays({
   settingsKey:'nba-parlay-settings',ticketsKey:nbaTicketsKey,liveDraft:true,prefill:false,resolveSavedLeg:resolveNbaTicketLeg,
@@ -29,7 +51,8 @@ const nba=createParlays({
     (S.f.nbaPriceBoard?.source==='mirror'&&S.odds.length?'<p class="subtle">Main lines loaded from the separate NBA price feed.</p>':
       ['partial','unavailable'].includes(S.f.nbaPriceBoard?.source)&&S.odds.length?
         '<p class="subtle">Some DraftKings markets could not refresh. Recent verified main lines are shown where available.</p>':''),
-  afterTicket:fullList,poolSummary:(report,cfg)=>parlayPoolSummary(report,cfg,'Tip time'),
+  afterTicket:(data,report,ticket,cfg,taken)=>builderPool(data,cfg,taken)+parlayPool(report,ticket,poolDisplay),
+  poolSummary:(report,cfg)=>parlayPoolSummary(report,cfg,'Tip time'),
   chance:nbaLegChance,
   chanceNote:'Sample-adjusted season rates with lineup context',
   recent:{key:'last10',label:'L10'},
@@ -44,4 +67,10 @@ const nba=createParlays({
 });
 export const savedParlayTickets=nba.savedTickets;
 export const parlayPage=data=>nba.page(data);
-export const parlayAction=(act,value,data,target)=>nba.action(act,value,data,target);
+export function parlayAction(act,value,data,target){
+  if(act==='parlayBuilderRange'){
+    if(Object.hasOwn(builderRanges,value))keep(builderRangeKey,value);
+    return true;
+  }
+  return nba.action(act,value,data,target);
+}

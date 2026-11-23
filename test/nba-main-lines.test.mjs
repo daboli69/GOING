@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {draftKingsMainLines,nbaMainLineBoard} from '../site/nba-main-lines.mjs';
+import {draftKingsMainLines,draftKingsMilestones,nbaMainLineBoard} from '../site/nba-main-lines.mjs';
 import {buildNbaTicket,defaults,legKey} from '../site/nba-parlay-engine.mjs';
 
 const now=Date.parse('2026-11-17T23:15Z');
@@ -23,6 +23,38 @@ test('DraftKings capture uses its marked main threshold and exact scheduled matc
   assert.deepEqual(draftKingsMainLines({...payload,selections:[offers[0],{...offers[1],points:6.5}]},'Points',[game],now),[]);
   assert.deepEqual(draftKingsMainLines({...payload,selections:offers.slice(2)},'Points',[game],now),[]);
   assert.equal(draftKingsMainLines(payload,'Threes',[game],now),null);
+});
+
+test('DraftKings captures quoted pregame milestones as exact alternate Overs',()=>{
+  const alt={...market,subcategoryId:'16477',marketType:{name:'Points Milestones'},tags:['SGP']};
+  const offer={marketId:market.id,label:'4+',milestoneValue:4,tags:['SGP'],
+    displayOdds:{american:'−240'},participants:offers[0].participants};
+  const data={events:[event],markets:[alt],selections:[offer,{...offer,milestoneValue:6},
+    {...offer,label:'7+',milestoneValue:7,isSuspended:true},{...offer,label:'9+',milestoneValue:9,tags:[]}]};
+  assert.deepEqual(draftKingsMilestones(data,'Points',[game],now),[{
+    player:'Kris Dunn',team:'LAC',market:'Points',line:3.5,milestone:4,date:game.date,a:'UTAH',h:'LAC',
+    over:'-240',provider:'DraftKings',capturedAt:new Date(now).toISOString()
+  }]);
+  assert.deepEqual(draftKingsMilestones(data,'Points',[{...game,status:'LIVE'}],now),[]);
+  assert.equal(draftKingsMainLines(data,'Points',[game],now),null);
+});
+
+test('the mirror keeps milestone snapshots separate and only retains failed alternate categories',async()=>{
+  const [main]=draftKingsMainLines(payload,'Points',[game],now);
+  const standby={...main,line:3.5,milestone:4,capturedAt:new Date(now-60000).toISOString()};
+  delete standby.under;
+  const snapshot={date:game.date,checkedAt:main.capturedAt,quotes:[main],failed:[],alternates:[],alternateFailed:[]};
+  const read=async()=>snapshot;
+  const opts={now,force:true,read,publishedAlternates:[standby]};
+  const empty=await nbaMainLineBoard(game.date,[game],[main],opts);
+  assert.deepEqual(empty.alternates,[]);
+  assert.deepEqual(empty.quotes,[main]);
+  snapshot.alternateFailed=[{market:'Points'}];
+  const failed=await nbaMainLineBoard(game.date,[game],[main],opts);
+  assert.deepEqual(failed.alternates,[standby]);
+  const stale={...standby,capturedAt:new Date(now-121*60000).toISOString()};
+  const expired=await nbaMainLineBoard(game.date,[game],[main],{...opts,publishedAlternates:[stale]});
+  assert.deepEqual(expired.alternates,[]);
 });
 
 test('the parlay board gets today’s main lines from the separate feed after an overnight publication gap',async()=>{

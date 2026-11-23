@@ -12,8 +12,8 @@ const oddsText=price=>Number(price)>0?'+'+Number(price):String(price);
 export const toAmerican=d=>d>=2?Math.round((d-1)*100):Math.round(-100/(d-1));
 export const fromAmerican=a=>Math.abs(a)<100?2:a>0?1+a/100:1+100/-a;
 const americanText=d=>oddsText(toAmerican(d));
-export function parlayPool({eligible},ticket,{chance,legText,tag,form,note}){
-  if(!eligible.length)return box('Full List',empty('No priced legs pass the current filters.'));
+export function parlayPool({eligible},ticket,{chance,legText,tag,form,note,actions,title='Full List',intro='',emptyText='No priced legs pass the current filters.'}){
+  if(!eligible.length)return box(title,intro+empty(emptyText));
   const onTicket=new Set(ticket.map(legKey));
   const ranked=eligible.map(leg=>({leg,chance:chance(leg)}))
     .sort((a,b)=>b.chance-a.chance||b.leg.form.season.n-a.leg.form.season.n||b.leg.score-a.leg.score);
@@ -22,8 +22,9 @@ export function parlayPool({eligible},ticket,{chance,legText,tag,form,note}){
     <strong>${pct(chance,1)}</strong></div>
     <p class="subtle">${esc(form(leg))}</p>
     <p><strong>Why it qualifies</strong> ${esc(leg.reasons.join(' · '))}</p>
-    ${leg.flags.length?`<p class="subtle"><strong>Watch</strong> ${esc(leg.flags.join(' · '))}</p>`:''}</li>`);
-  return box('Full List',`<p class="subtle">${ranked.length} eligible ${ranked.length===1?'leg':'legs'}, ranked by estimated hit chance. ${esc(note)}</p>
+    ${leg.flags.length?`<p class="subtle"><strong>Watch</strong> ${esc(leg.flags.join(' · '))}</p>`:''}
+    ${actions?.(leg)||''}</li>`);
+  return box(title,intro+`<p class="subtle">${ranked.length} eligible ${ranked.length===1?'leg':'legs'}, ranked by estimated hit chance. ${esc(note)}</p>
     <ol class="parlay-pool">${rows.join('')}</ol>`);
 }
 
@@ -41,7 +42,7 @@ export function parlayPoolSummary({eligible,screened},cfg,kickoff){
     (cfg.perGame&&!cfg.stacks&&games>0&&games<cfg.legs?`. One leg per game limits this ticket to at most ${games}.`:'');
 }
 
-const timeLabel=value=>value&&Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-US',{
+export const timeLabel=value=>value&&Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-US',{
   timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'
 }).format(new Date(value)):'Unknown';
 const gameName=g=>g.a+' @ '+g.h;
@@ -74,7 +75,7 @@ const baseHints={'Odds range':'Widen the odds range.','Existing tickets':'Allow 
    periodLabel()            how a saved ticket names that slate
    nav()                    the slate navigation shown above the filters
    intro                    HTML under the page title (links)
-   afterTicket(data,report,ticket)  optional market screening details
+   afterTicket(data,report,ticket,cfg,taken)  optional market screening details
    poolSummary(report,filters)  optional summary of the priced pool shown above the ticket
    rankByChance             show hit chance and label the scoring weights as tie breakers
    resolveSavedLeg(leg)     enrich saved legs with automatic results when the sport supports it
@@ -266,7 +267,7 @@ export function createParlays(opts){
         (state.message?`<p class="subtle" role="status">${esc(state.message)}</p>`:'')+
         shortage(data,cfg,report,activeDraft(state)?ticket.length:ticket.length||preview.length)+
         (ticket.length?ticketTable(ticket,state.locked)+(ticket.length>=2?(opts.ticketSummary||mathSummary)(ticket):''):empty(activeDraft(state)?'No suggested legs match the current filters.':'Generate a ticket from the eligible legs.')))+
-      (opts.afterTicket?.(data,report,ticket)||'')+box(singleGame?'SGP ticket history':'Ticket history',history());
+      (opts.afterTicket?.(data,report,ticket,cfg,overlaps)||'')+box(singleGame?'SGP ticket history':'Ticket history',history());
   }
 
   function saveTicket(ticket,cfg){
