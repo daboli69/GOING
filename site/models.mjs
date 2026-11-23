@@ -135,8 +135,8 @@ function nbaGames(){
     status:g.completed?'FINAL':g.started&&g.home_score!=null?'LIVE':'FUT',sa:g.away_score,sh:g.home_score,raw:g}));
   S.game=S.games.find(g=>g.status!=='FINAL')||S.games[0]||null;
 }
-function nbaAccuracyPanel(feed){
-  const summary=S.nbaModelAccuracy||nbaModelAccuracy(feed), sample=summary[S.f.nbaAccuracyWindow]||summary.all;
+function nbaAccuracyPanel(summary){
+  const sample=summary[S.f.nbaAccuracyWindow]||summary.all;
   const filter=tools(select('Sample','nbaAccuracyWindow',[['all','All available games'],['recent','Last 30 graded games']]));
   if(!sample.games)return box('Model Accuracy',filter+empty('Accuracy appears once all six models and the ensemble have a verified pregame forecast and a final result for the same game.'));
   const {rows,games}=sample, best=rows[0].won, leaders=rows.filter(r=>r.won===best);
@@ -154,13 +154,17 @@ function nbaAccuracyPanel(feed){
 }
 function nbaPage(){
   const f=S.model,m=f.meta||{},tr=m.track_record||{};
+  const accuracy=S.nbaModelAccuracy||nbaModelAccuracy(f);
+  const overall=accuracy.all.rows.find(row=>row.combined)?.accuracy??tr.accuracy;
+  const marginGames=tr.margin_miss?.games;
   const head=`<h1>Ensemble Forecasts ${info('Six statistical models trained on past games. The headline win chance is their frozen combination. The models use no betting prices and current injuries do not change the original forecast.')}</h1>`+
     `<p class="subtle">${published(f.generated_at)} · ${esc(m.evaluation_status||'')} · ${marketLink('nba')}</p>`;
-  const record=grid(3,[metric('Graded games',esc(tr.games??'—')),metric('Picked the winner',tr.accuracy==null?'—':pct(tr.accuracy,1),'',tr.accuracy==null?'':heat(tr.accuracy,.6,.03).replace(' heat','')),
-    metric('Average margin miss',tr.margin_miss?.points==null?'—':round(tr.margin_miss.points,1)+' pts')]);
-  const accuracy=nbaAccuracyPanel(f);
+  const record=grid(3,[metric('Graded games',esc(accuracy.all.games||tr.games||'—')),
+    metric('Combined winner accuracy',pct(overall,1),'',overall==null?'':heat(overall,.6,.03).replace(' heat','')),
+    metric('Average margin miss',tr.margin_miss?.points==null?'—':round(tr.margin_miss.points,1)+' pts',marginGames?'Score model · '+marginGames+' games':'')]);
+  const leaderboard=nbaAccuracyPanel(accuracy);
   const picker=S.mdates.length?tools(`<label class="field upper">Saved day <select data-field="mday" aria-label="Saved forecast day">${[...S.mdates].reverse().map(d=>`<option value="${d}" ${d===S.mday?'selected':''}>${esc(dateLabel(d,true))}</option>`).join('')}</select></label>`):'';
-  if(!S.games.length)return head+record+accuracy+picker+box('',empty('No saved forecasts for this day.'));
+  if(!S.games.length)return head+record+leaderboard+picker+box('',empty('No saved forecasts for this day.'));
   const details=f.games||{};
   const rows=S.games.map(x=>{
     const d=details[x.id],p=x.raw.p_home,[t,pf]=p==null?[null,null]:favored(p,x.h,x.a);
@@ -173,7 +177,7 @@ function nbaPage(){
       e?esc((e.margin>=0?x.h:x.a)+' by '+round(Math.abs(e.margin),1)):'—',e?round(e.total,1):'—',
       x.status==='FINAL'?esc(`${x.a} ${x.sa}, ${x.h} ${x.sh}`):'—',verdict(t,winner)]};
   });
-  return head+record+accuracy+picker+slate()+box(dateLabel(S.mday)+' board',table(['Game','Tip','Six-model pick','Vote','Score model spread','Total','Final','Pick'],rows,{wrap:'box'}),
+  return head+record+leaderboard+picker+slate()+box(dateLabel(S.mday)+' board',table(['Game','Tip','Six-model pick','Vote','Score model spread','Total','Final','Pick'],rows,{wrap:'box'}),
     'Click a row for the full forecast. Spread and total come from a separate score model, not a sportsbook.')+
     (S.game?nbaDetail(S.game,details[S.game.id]):'')+(m.reality_check?`<div class="callout">${esc(m.reality_check)}</div>`:'');
 }
