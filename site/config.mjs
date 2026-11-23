@@ -58,6 +58,7 @@ export const routes=[
 export const viewDefaults={
   td:{view:'Season TDs'},'nfl-preview':{view:'Full Preview',scheme:'Raw Stats',nflDefenseGroup:'top'},drives:{view:'Opening Drive',window:'Season'},'nfl-best':{view:'Receiving',rating:'All Ratings',gameFilter:'All games'},
   keys:{view:'Summary',window:'Season'},standouts:{cat:'All',window:'Season'},league:{window:'Season'},
+  'nba-models':{nbaAccuracyWindow:'all'},
   'nfl-td-jackpot':{jackpotDefense:'rush',jackpotOpp:'',jackpotMinChance:'0',jackpotQuestionable:'No'},
   'nfl-tdboard':{tdMarket:'Anytime TD',tdPos:'All',tdMinEdge:'4',tdMinOdds:'',tdMaxOdds:'',tdMinRz:'0',tdMinSnap:'0',tdMaxSpread:'20',tdMinTotal:'0',
     tdWeather:'Any',tdNoQ:'No',tdDue:'No',tdDst:'Yes',tdHold:'20',tdShow:'Top 40',tdLegs:'3',tdPerGame:'Yes',tdStack:'No'},

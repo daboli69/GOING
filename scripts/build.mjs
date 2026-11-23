@@ -9,6 +9,7 @@ import { isCollege } from '../site/college-core.mjs';
 import { compactNflParlays } from './nfl-parlay-archive.mjs';
 import { compactNbaParlays } from './nba-parlay-archive.mjs';
 import { publishTrackerHistory } from './tracker-history.mjs';
+import { nbaModelAccuracy } from '../site/nba-model-accuracy.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const site=join(root,'site'), dist=join(root,'dist');
@@ -23,6 +24,17 @@ const dataDir=join(dist,'data');
 await publishTrackerHistory(join(dataDir,'tracker'));
 const dataFiles=new Set(await readdir(dataDir).catch(()=>[]));
 const readArchive=async file=>JSON.parse(await readFile(join(dataDir,file),'utf8'));
+if(dataFiles.has('models')){
+  const nba=await readArchive('models/nba.json').catch(error=>{if(error.code!=='ENOENT')throw error;return null;});
+  if(nba){
+    const index=await readArchive('tracker/index.json').catch(error=>{if(error.code!=='ENOENT')throw error;return null;});
+    const picks=[];
+    for(const month of index?.months||[]){
+      for(const row of await readArchive('tracker/picks-'+month+'.json'))if(row.sport==='nba'&&row.kind==='model')picks.push(row);
+    }
+    await writeFile(join(dataDir,'models','nba-accuracy.json'),JSON.stringify(nbaModelAccuracy(nba,picks)));
+  }
+}
 for(const file of dataFiles){
   const year=file.match(/^nfl-(\d{4})\.json$/)?.[1];
   if(!year)continue;
