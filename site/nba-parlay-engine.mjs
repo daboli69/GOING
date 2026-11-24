@@ -120,6 +120,7 @@ export function assess(row,side,cfg,context){
   leg.context={spread:row.spread,total:row.total,pace:row.pace,threeRate:row.threeRate,
     position:player.pos,type:row.type,typeEdge,typeRank:row.typeRank,posRank:row.posRank,
     readsFor:forSide,readsAgainst:against,absences:row.absences,
+    ...(row.roleTrend?.comparable?{roleMinutes:row.roleTrend.minutes,roleAttempts:row.roleTrend.attempts}:{}),
     ...(assistResearch?{assistRead:assistResearch.read,assistTargetDelta:assistResearch.targetDelta,assistMixEdge:assistResearch.mixEdge}:{})};
   leg.cut=Object.values(checks).find(Boolean)||null;
   if(!leg.cut){

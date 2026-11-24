@@ -27,7 +27,7 @@ export const menus={
   },
   nba:{
     Models:[['Ensemble Forecasts','up/','nba-models']],
-    Matchups:[['Slate Standouts','up/standouts.html','standouts'],['League Stats Chart','up/league.html','league'],['Matchup Keys','up/matchup-keys.html','keys'],['Market Watch','up/market-watch.html','market-watch'],['Zone Matchup Targets','up/zones.html','zones'],['Player Types','up/types.html','types'],['Shot Charts','up/shot-charts.html','shotcharts']],
+    Matchups:[['Slate Standouts','up/standouts.html','standouts'],['League Stats Chart','up/league.html','league'],['Matchup Keys','up/matchup-keys.html','keys'],['Role Changes','up/role-changes.html','nba-roles'],['Market Watch','up/market-watch.html','market-watch'],['Zone Matchup Targets','up/zones.html','zones'],['Player Types','up/types.html','types'],['Shot Charts','up/shot-charts.html','shotcharts']],
     Props:[['All Props','up/all-props.html','nba-props'],['Points','up/points.html','nba-props'],['Threes','up/threes.html','nba-props'],['Assists','up/assists.html','nba-props'],['Rebounds','up/rebounds.html','nba-props'],['Assist Spots','up/assist-spots.html','nba-props'],['1st Basket','up/first-basket.html','basket']],
     Parlays:[['Suggested Parlays','up/suggested-parlays.html','nba-parlays'],['Parlay Leg Tracker','up/parlay-tracker.html','nba-parlay-tracker']],
     Promos:[['King of the Court','up/promo-tools.html','court']]
@@ -58,11 +58,13 @@ export const routes=[
 export const viewDefaults={
   td:{view:'Season TDs'},'nfl-preview':{view:'Full Preview',scheme:'Raw Stats',nflDefenseGroup:'top'},drives:{view:'Opening Drive',window:'Season'},'nfl-best':{view:'Receiving',rating:'All Ratings',gameFilter:'All games'},
   keys:{view:'Summary',window:'Season'},standouts:{cat:'All',window:'Season'},league:{window:'Season'},
-  'nba-models':{nbaAccuracyWindow:'all'},
+  'nba-models':{nbaAccuracyWindow:'all',nbaMarketView:'All games'},
+  'nba-parlays':{nbaMilestoneStat:'Points',nbaFullContext:'All eligible',nbaFullSample:'3'},
+  'nba-roles':{nbaRoleView:'Workload',nbaRoleWindow:'5',nbaRoleGame:'all',nbaInjuryFilter:'All',nbaRoleStat:'PRA'},
   'nfl-td-jackpot':{jackpotDefense:'rush',jackpotOpp:'',jackpotMinChance:'0',jackpotQuestionable:'No'},
   'nfl-tdboard':{tdMarket:'Anytime TD',tdPos:'All',tdMinEdge:'4',tdMinOdds:'',tdMaxOdds:'',tdMinRz:'0',tdMinSnap:'0',tdMaxSpread:'20',tdMinTotal:'0',
     tdWeather:'Any',tdNoQ:'No',tdDue:'No',tdDst:'Yes',tdHold:'20',tdShow:'Top 40',tdLegs:'3',tdPerGame:'Yes',tdStack:'No'},
-  basket:{fbMinEdge:'2',fbRatio:'1.2',fbHold:'30',fbRR:'3',fbBy:'2',fbShow:'Top 30'},
+  basket:{fbHistory:'Season',fbMinEdge:'2',fbRatio:'1.2',fbHold:'30',fbRR:'3',fbBy:'2',fbShow:'Top 30'},
   zones:{zoneMarket:'Threes',zoneView:'Best & Worst Spots',minimum:'0'},types:{view:'The 12 Types',typeFilter:'All',typeDefense:'Points'},
   'nba-props':{position:'All',pricing:'Every Player',allGames:true,gameFilter:'All games'},court:{trend:'Pregame Rank'},
   'nhl-props':{allGames:true,side:'Best side',skater:'All skaters',status:'All games',edge:'0',pricing:'All players',zoneMatch:'Everyone'},

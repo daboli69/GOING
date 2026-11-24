@@ -8,7 +8,8 @@ import {routes} from '../site/config.mjs';
 import {together,lineStats} from '../scripts/lines-data.mjs';
 
 test('every tool has one unique path inside its sport section',()=>{
-  assert.equal(routes.length,93);
+  assert.equal(routes.length,94);
+  assert.ok(routes.some(r=>r.id==='nba-roles'&&r.path==='up/role-changes.html'));
   assert.deepEqual(routes.filter(r=>r.id==='market-watch').map(r=>r.path).sort(),[
     'cbb/market-watch.html','cwb/market-watch.html','fbs/market-watch.html','goal/market-watch.html','long/market-watch.html','up/market-watch.html','yard/market-watch.html'
   ]);

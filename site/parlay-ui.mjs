@@ -168,7 +168,7 @@ export function createParlays(opts){
       return [esc(leg.name+' · '+leg.team),esc(leg.team+' vs '+leg.opp+' · '+et({iso:leg.tip})+' ET'),esc(legText(leg)),
         esc(oddsText(leg.price)+' · '+leg.provider)+`<small class="muted"><br>Last updated ${esc(timeLabel(leg.capturedAt))}</small>`,
         ...(opts.rankByChance?[pct(opts.chance(leg),1)]:[]),pct(leg.form[opts.recent.key]?.rate),pct(leg.form.season.rate),tagList(leg.reasons),tagList(leg.flags),
-        btn(pinned?'Unlock':'Lock','parlayLock',key,pinned?'on':'outline')+(pinned?'':btn('Swap','parlaySwap',key,'outline'))];
+        (opts.legAction?.(leg)||'')+btn(pinned?'Unlock':'Lock','parlayLock',key,pinned?'on':'outline')+(pinned?'':btn('Swap','parlaySwap',key,'outline'))];
     }),{wrap:'box'});
   }
 

@@ -62,7 +62,7 @@ function render(options={}){
   if(!S.route)return;
   const main=$('#main'),row=main.querySelector('.matchup-row'),scroll=row?.scrollLeft||0,top=window.scrollY;
   const nbaDetails='details[data-parlay-ticket],details[data-parlay-weights]';
-  const opened=S.route.id==='nba-parlays'&&options.keepPosition?
+  const opened=S.loaded&&S.route.id==='nba-parlays'?
     new Set([...main.querySelectorAll(nbaDetails)].filter(x=>x.open).map(x=>x.dataset.parlayTicket??'')):null;
   const cbbDetails=S.route.sport==='cbb'&&S.route.id==='college-slate'?
     new Set([...main.querySelectorAll('details[data-cbb-forecast][open]')].map(x=>x.dataset.cbbForecast)):null;
@@ -132,6 +132,9 @@ async function slateFor(s,d){
 }
 // 1st Basket: the live injury report (starters are a hard input) and the saved calibration log.
 const nbaInjuryReport=()=>readJson(`${ESPN}/${sportPath.nba}/injuries`).then(j=>j?.injuries?.length?compactInjuries(j):null);
+const nbaRoleInjuries=()=>nbaInjuryReport().then(injuries=>injuries?{injuries,checked:new Date().toISOString()}:null);
+const nbaRoleInputs=day=>Promise.all([day>=dateKey()?nbaRoleInjuries():null,readSnapshot('tracker/nba-tracking-stats.json',3500)])
+  .then(([injury,tracking])=>({...injury,tracking}));
 const basketInputs=()=>Promise.all([nbaInjuryReport(),
   get(dataURL('tracker/first-basket-index.json'),{}).then(i=>Promise.all((i.months||[]).map(m=>get(dataURL('tracker/first-basket-'+m+'.json'),[])))).then(x=>x.flat()).catch(()=>[]),
   get(dataURL('tracker/first-basket-backtest.json'),null)])
@@ -162,13 +165,14 @@ async function nbaBookPrices(d,games,published,{previous,force,publishedAlternat
 async function nbaDraftPrices(d,games,published,previous,force=false){
   const today=dateKey();
   if(d<today||d>dateAdd(today,3))return {date:d,quotes:[],source:'no-games'};
-  const [milestones,exchange]=await Promise.all([
+  const [milestones,exchange,currentComparison]=await Promise.all([
     readSnapshot('live/nba-dk-alternate-lines-'+d+'.json',3500),
-    readSnapshot('live/nba-alternate-lines-'+d+'.json',3500)
+    readSnapshot('live/nba-alternate-lines-'+d+'.json',3500),readSnapshot('live/odds-nba-'+d+'.json',3500)
   ]);
   const board=await nbaBookPrices(d,games,published,{previous,force,publishedAlternates:Array.isArray(milestones)?milestones:[]});
   const exchangeAlternates=Array.isArray(exchange)?exchange:previous?.date===d?previous.exchangeAlternates??[]:[];
-  return {...board,exchangeAlternates,builderQuotes:board.source==='no-games'?[]:[...(board.alternates??[]),...exchangeAlternates]};
+  const comparisonQuotes=Array.isArray(currentComparison)?currentComparison:previous?.date===d?previous.comparisonQuotes??[]:[];
+  return {...board,exchangeAlternates,comparisonQuotes,builderQuotes:board.source==='no-games'?[]:[...(board.alternates??[]),...exchangeAlternates]};
 }
 async function nbaPropPrices(d,games,published,previous){
   const today=dateKey();
@@ -259,12 +263,17 @@ async function load(){
   }
   if(isModel(id)){
     try{
-      const [,feed,accuracy]=await Promise.all([need('models'),readSnapshot('models/'+s+'.json',25000),
-        s==='nba'?readSnapshot('models/nba-accuracy.json'):null]);
+      const [,feed,accuracy,nbaMarkets,nbaMarketRecord]=await Promise.all([need('models'),readSnapshot('models/'+s+'.json',25000),
+        s==='nba'?readSnapshot('models/nba-accuracy.json'):null,s==='nba'?readSnapshot('market-watch/nba.json'):null,
+        s==='nba'?readSnapshot('tracker/nba-game-markets.json'):null]);
       if(token!==req)return;
       if(!modelFeed(s,feed))throw new Error('Forecast feed unavailable');
       M.models.setModelFeed(s,feed);
-      if(s==='nba')S.nbaModelAccuracy=accuracy?.all&&accuracy?.recent?accuracy:null;
+      if(s==='nba'){
+        S.nbaModelAccuracy=accuracy?.all&&accuracy?.recent?accuracy:null;
+        S.nbaMarkets=nbaMarkets;
+        S.nbaMarketRecord=nbaMarketRecord;
+      }
       S.f.modelNext=Date.now()+60000;S.f.proFailures=0;
       S.loaded=true;render();
     }
@@ -293,7 +302,7 @@ async function load(){
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
       id==='court'&&d===dateKey()?nbaInjuryReport().then(x=>x??injuriesFor(s)):injuriesFor(s),oddsFor(s,d,id),
       s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{},
-      nflLiveViews.has(id)?nflParlayInputs(year,id):id==='basket'?basketInputs():null]);
+      nflLiveViews.has(id)?nflParlayInputs(year,id):id==='basket'?basketInputs():id==='nba-roles'?nbaRoleInputs(d):null]);
     if(token!==req)return;
     const priceBoard=id==='nba-parlays'?await nbaDraftPrices(d,dayGames||[],publishedOdds,S.f.nbaPriceBoard):null;
     const propBoard=id==='nba-props'?await nbaPropPrices(d,dayGames||[],publishedOdds,S.f.nbaPropBoard):null;
@@ -310,6 +319,7 @@ async function load(){
     S.nflAvailability=models?.availability||null;
     S.nflProjections=models?.projections||null;
     if(Object.keys(models?.injuries||{}).length)S.injuries=models.injuries;
+    if(id==='nba-roles'){S.f.nbaRoleInjuryChecked=models?.checked||null;S.f.nbaTrackingStats=models?.tracking||null;}
     S.fbLog=models?.fbLog||null;S.tdLog=models?.tdLog||null;
     if(s==='nfl'){
       const sched=data.schedule?.filter(g=>+g.id.slice(0,4)===S.year)||[];
@@ -663,8 +673,9 @@ async function tickNbaInputs(force=false){
   state.nbaCheckDay=d;
   state.nbaCheckNext=now+interval;
   try{
-    const injuriesRequest=S.route.id==='basket'||courtToday?nbaInjuryReport().then(x=>x??readLive('injuries-nba.json')):readLive('injuries-nba.json');
-    const [published,injuries,slate]=await Promise.all([readLive(oddsFile('nba',d,S.route.id)),injuriesRequest,
+    const roleView=S.route.id==='nba-roles'&&d>=today;
+    const injuriesRequest=roleView?nbaRoleInjuries():S.route.id==='basket'||courtToday?nbaInjuryReport().then(x=>x??readLive('injuries-nba.json')):readLive('injuries-nba.json');
+    const [published,report,slate]=await Promise.all([roleView?null:readLive(oddsFile('nba',d,S.route.id)),injuriesRequest,
       draft?slateFor('nba',d):readLive('slate-nba-'+d+'.json')]);
     if(token!==req)return;
     const games=mergeNbaSlate(S.games,slate), slateChanged=games!==S.games;
@@ -675,12 +686,15 @@ async function tickNbaInputs(force=false){
     const priorBoard=state.nbaPriceBoard;
     const sourceChanged=priceBoard&&priceBoard.source!==priorBoard?.source;
     const builderChanged=priceBoard&&different(priceBoard.builderQuotes,priorBoard?.builderQuotes);
+    const comparisonChanged=priceBoard&&different(priceBoard.comparisonQuotes,priorBoard?.comparisonQuotes);
     if(priceBoard&&!builderChanged)priceBoard.builderQuotes=priorBoard.builderQuotes;
     if(priceBoard)state.nbaPriceBoard=priceBoard;
     if(propBoard)state.nbaPropBoard=propBoard;
     const odds=priceBoard?.quotes??propBoard?.quotes??published;
     const pricesChanged=Array.isArray(odds)&&different(odds,S.odds);
+    const injuries=roleView?report?.injuries:report;
     const injuriesChanged=object(injuries)&&different(injuries,S.injuries);
+    if(roleView&&report?.checked)state.nbaRoleInjuryChecked=report.checked;
     const expired=draft&&quoteAgeChanged(S.odds,state.nbaChecked,now);
     const builderExpired=draft&&quoteAgeChanged(priceBoard?.builderQuotes??[],state.nbaChecked,now);
     if(pricesChanged)S.odds=odds;
@@ -692,7 +706,7 @@ async function tickNbaInputs(force=false){
       if(S.game?.id!==previous?.id){S.f.away=S.game?.a;S.f.home=S.game?.h;}
     }
     const draftChanged=force||slateChanged||pricesChanged||sourceChanged||injuriesChanged||expired||remaining!==state.nbaRemaining;
-    if(draftChanged||builderChanged||builderExpired){
+    if(draftChanged||builderChanged||builderExpired||comparisonChanged||roleView&&report?.checked&&state.nbaRoleView==='Injuries & Lineups'){
       if(draft&&draftChanged)M.nba.action('parlayRefreshDraft','');
       render({keepPosition:true});
     }
@@ -767,13 +781,17 @@ async function tickModels(s,token){
   const now=Date.now();
   if(S.f.modelNext>now)return;
   S.f.modelNext=now+120000;
-  const [feed,accuracy]=await Promise.all([newerModel(s,S.model),s==='nba'?readSnapshot('models/nba-accuracy.json'):null]);
+  const [feed,accuracy,nbaMarkets,nbaMarketRecord]=await Promise.all([newerModel(s,S.model),
+    s==='nba'?readSnapshot('models/nba-accuracy.json'):null,s==='nba'?readSnapshot('market-watch/nba.json'):null,
+        s==='nba'?readSnapshot('tracker/nba-game-markets.json'):null]);
   if(token!==req)return;
   if(document.visibilityState!=='visible'){S.f.modelNext=0;return;}
   const changed=accuracy?.all&&accuracy?.recent&&different(S.nbaModelAccuracy,accuracy);
   if(changed)S.nbaModelAccuracy=accuracy;
   if(feed)M.models.setModelFeed(s,feed,S.game?.id);
-  if(!feed&&!changed)return;
+  const marketChanged=s==='nba'&&(nbaMarkets?.checked!==S.nbaMarkets?.checked||nbaMarketRecord?.updated!==S.nbaMarketRecord?.updated);
+  if(marketChanged){S.nbaMarkets=nbaMarkets;S.nbaMarketRecord=nbaMarketRecord;}
+  if(!feed&&!changed&&!marketChanged)return;
   render({keepPosition:true});
 }
 

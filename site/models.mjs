@@ -4,6 +4,7 @@ import {current as S,esc,box,grid,metric,logo,team,teamName,teamBanner,table,cel
 import {signed,heat} from './math.mjs';
 import {href} from './config.mjs';
 import {nbaModelAccuracy} from './nba-model-accuracy.mjs';
+import {nbaGameMarkets} from './nba-game-market-view.mjs';
 
 const marketLink=sport=>'<a href="'+href((sport==='nba'?'up/':'long/')+'market-watch.html')+'">Market Watch</a>';
 
@@ -179,7 +180,7 @@ function nbaPage(){
   });
   return head+record+leaderboard+picker+slate()+box(dateLabel(S.mday)+' board',table(['Game','Tip','Six-model pick','Vote','Score model spread','Total','Final','Pick'],rows,{wrap:'box'}),
     'Click a row for the full forecast. Spread and total come from a separate score model, not a sportsbook.')+
-    (S.game?nbaDetail(S.game,details[S.game.id]):'')+(m.reality_check?`<div class="callout">${esc(m.reality_check)}</div>`:'');
+    nbaGameMarkets()+(S.game?nbaDetail(S.game,details[S.game.id]):'')+(m.reality_check?`<div class="callout">${esc(m.reality_check)}</div>`:'');
 }
 function nbaDetail(x,d){
   if(!d||!d.has_forecast)return hero(x)+box('',empty('This game has no saved forecast.'));

@@ -256,12 +256,18 @@ jobs:
             echo "::notice::No model feed could be restored."
           fi
 
+      - name: Update NBA optical tracking stats
+        run: node scripts/nba-tracking-stats.mjs || echo "::warning::NBA optical tracking is unavailable; retaining the last snapshot."
+
       - name: Capture and grade picks
         id: track
         run: node scripts/track.mjs || echo "::warning::Pick tracker failed; the previous record is still published."
 
       - name: Capture and grade NBA parlay legs
         run: node scripts/track-nba-parlays.mjs || echo "::warning::NBA parlay tracker failed; the previous record is still published."
+
+      - name: Capture and grade NBA game markets
+        run: node scripts/track-nba-game-markets.mjs || echo "::warning::NBA game market tracker failed; the previous record is still published."
 
       - name: Log first basket probabilities
         run: node scripts/track-nba-first-basket.mjs || echo "::warning::First basket log failed; the previous record is still published."

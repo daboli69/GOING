@@ -28,6 +28,8 @@ const breakdowns={
     'Odds':l=>bucket(impliedProb(l.odds),[[.4,'Under 40% implied'],[.6,'40–59% implied'],[Infinity,'60%+ implied']]),
     'Injury context':l=>l.checks?.Availability?'Player out':l.flags.includes('Player injury report unavailable')?'Report unavailable':
       l.context?.absences?.length?'Teammate out':'No rotation absence flagged',
+    'Recent minutes change':l=>bucket(l.context?.roleMinutes,[[-2,'Down more than 2'],[2,'Within 2 minutes'],[Infinity,'Up 2 or more']]),
+    'Recent shot attempt change':l=>bucket(l.context?.roleAttempts,[[-2,'Down more than 2'],[2,'Within 2 attempts'],[Infinity,'Up 2 or more']]),
     'Quote age':l=>l.flags.includes('Stale quote')?'Stale':l.flags.includes('Quote time unknown')?'Unknown':'Within 90 minutes'
 };
 const nba=createTracker({prefix:'parlay-legs',title:'Parlay Leg Tracker',suggested:'up/suggested-parlays.html',markets,prior:5,breakdowns,
