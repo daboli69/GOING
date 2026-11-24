@@ -149,21 +149,38 @@ const injuriesFor=s=>readSnapshot('live/injuries-'+s+'.json').then(x=>object(x)?
   readJson(`${ESPN}/${sportPath[s]}/injuries`).then(j=>Array.isArray(j?.injuries)?compactInjuries(j):{}));
 const oddsFile=(s,d,id)=>id==='nba-parlays'?'nba-main-lines-'+d+'.json':'odds-'+s+(s==='nfl'?'':'-'+d)+'.json';
 const oddsFor=(s,d,id)=>readSnapshot('live/'+oddsFile(s,d,id)).then(x=>Array.isArray(x)?x:[]);
+async function nbaBookPrices(d,games,published,{previous,force,publishedAlternates}){
+  const {nbaMainLineBoard}=await import('./nba-main-lines.mjs');
+  const file=oddsFile('nba',d,'nba-parlays');
+  return nbaMainLineBoard(d,games,published,{previous,force,publishedAlternates,
+    read:()=>readJson(NBA_MAIN_LINES_FEED+file,4000),
+    recover:()=>readJson(NBA_MAIN_LINES_CONTENTS+file+'?ref=nba-live-lines',4000,{Accept:'application/vnd.github.raw+json'})});
+}
 async function nbaDraftPrices(d,games,published,previous,force=false){
   const today=dateKey();
   if(d<today||d>dateAdd(today,3))return {date:d,quotes:[],source:'no-games'};
-  const {nbaMainLineBoard}=await import('./nba-main-lines.mjs');
-  const file='nba-main-lines-'+d+'.json';
   const [milestones,exchange]=await Promise.all([
     readSnapshot('live/nba-dk-alternate-lines-'+d+'.json',3500),
     readSnapshot('live/nba-alternate-lines-'+d+'.json',3500)
   ]);
-  const board=await nbaMainLineBoard(d,games,published,{previous,force,
-    publishedAlternates:Array.isArray(milestones)?milestones:[],
-    read:()=>readJson(NBA_MAIN_LINES_FEED+file,4000),
-    recover:()=>readJson(NBA_MAIN_LINES_CONTENTS+file+'?ref=nba-live-lines',4000,{Accept:'application/vnd.github.raw+json'})});
+  const board=await nbaBookPrices(d,games,published,{previous,force,publishedAlternates:Array.isArray(milestones)?milestones:[]});
   const exchangeAlternates=Array.isArray(exchange)?exchange:previous?.date===d?previous.exchangeAlternates??[]:[];
   return {...board,exchangeAlternates,builderQuotes:board.source==='no-games'?[]:[...(board.alternates??[]),...exchangeAlternates]};
+}
+async function nbaPropPrices(d,games,published,previous){
+  const today=dateKey();
+  const last=previous?.date===d?previous:null;
+  const exchange=Array.isArray(published)?published:last?.exchange??[];
+  if(d<today||d>dateAdd(today,3))return {date:d,exchange,quotes:exchange};
+  const {missingNbaPropMarkets,nbaPropMarketKey}=await import('./nba-main-lines.mjs');
+  const missing=missingNbaPropMarkets(d,games,exchange);
+  if(!missing.size)return {date:d,exchange,quotes:exchange};
+  const main=await oddsFor('nba',d,'nba-parlays');
+  const book=await nbaBookPrices(d,games,main,{previous:last?.book});
+  const key=q=>nbaPropMarketKey(q.date,q.a,q.h,q.market);
+  const fallback=book.quotes.filter(q=>missing.has(key(q)));
+  const replaced=new Set(fallback.map(key));
+  return {date:d,exchange,book,quotes:[...exchange.filter(q=>!replaced.has(key(q))),...fallback]};
 }
 const savedGames={};
 function start(){
@@ -276,9 +293,11 @@ async function load(){
       nflLiveViews.has(id)?nflParlayInputs(year,id):id==='basket'?basketInputs():null]);
     if(token!==req)return;
     const priceBoard=id==='nba-parlays'?await nbaDraftPrices(d,dayGames||[],publishedOdds,S.f.nbaPriceBoard):null;
+    const propBoard=id==='nba-props'?await nbaPropPrices(d,dayGames||[],publishedOdds,S.f.nbaPropBoard):null;
     if(token!==req)return;
-    const odds=priceBoard?.quotes??publishedOdds;
+    const odds=priceBoard?.quotes??propBoard?.quotes??publishedOdds;
     if(priceBoard)S.f.nbaPriceBoard=priceBoard;
+    if(propBoard)S.f.nbaPropBoard=propBoard;
     if(s==='nba'){S.hoops=year;S.f.nbaFollowToday??=d===dateKey();}
     if(s==='nhl')S.ice=year;
     S.data=data;S.odds=odds;S.injuries=injuries;S.lineups=lineups;
@@ -646,6 +665,7 @@ async function tickNbaInputs(force=false){
     if(token!==req)return;
     const games=mergeNbaSlate(S.games,slate), slateChanged=games!==S.games;
     const priceBoard=draft?await nbaDraftPrices(d,games,published,state.nbaPriceBoard,force):null;
+    const propBoard=S.route.id==='nba-props'?await nbaPropPrices(d,games,published,state.nbaPropBoard):null;
     if(token!==req)return;
     if(!force&&(document.visibilityState!=='visible'||isEditing())){state.nbaCheckNext=0;return;}
     const priorBoard=state.nbaPriceBoard;
@@ -653,7 +673,8 @@ async function tickNbaInputs(force=false){
     const builderChanged=priceBoard&&different(priceBoard.builderQuotes,priorBoard?.builderQuotes);
     if(priceBoard&&!builderChanged)priceBoard.builderQuotes=priorBoard.builderQuotes;
     if(priceBoard)state.nbaPriceBoard=priceBoard;
-    const odds=priceBoard?.quotes??published;
+    if(propBoard)state.nbaPropBoard=propBoard;
+    const odds=priceBoard?.quotes??propBoard?.quotes??published;
     const pricesChanged=Array.isArray(odds)&&different(odds,S.odds);
     const injuriesChanged=object(injuries)&&different(injuries,S.injuries);
     const expired=draft&&quoteAgeChanged(S.odds,state.nbaChecked,now);

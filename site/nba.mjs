@@ -345,7 +345,7 @@ function propTable(){
   });
   const columns=ast?['Player','Line','Over','Under','AVG','AST/36','L5','Season','Targets','Types','Lineup','Read','Chances','Volume']:['Player',...(all?['Stat']:[]),'Line','Over','Under','AVG',...(!all?[a==='Threes'?'3PA':'MIN','Volume']:[]),'Last Game','L5','L10','Season','Home','Away','Opp Allows','Type','Matchup','O','U','Pace','Spread','Total','Teammates on the report'];
   return navProps()+box(title,`<p class="lede">Research ${all?'points, threes, assists, and rebounds':a.toLowerCase()} with real game logs, recent hit rates, and opponent context.</p>`+
-    '','Click a player to open the game log. K marks a public Kalshi quote. Guard and forward sub-positions are inferred from box scores when the feed only lists G or F.')+
+    '','Click a player to open the game log. K marks a public Kalshi quote. DraftKings main lines fill markets without recent exchange quotes. Guard and forward sub-positions are inferred from box scores when the feed only lists G or F.')+
     slate({date:true})+tools(select('Position','position',positions)+toggles(['With A Line','Every Player'],'pricing')+(!S.f.allGames?btn('All games','flip','allGames'):''))+
     box('',tools(btn('Filters ▾','flip','filters','outline')+(all?Object.keys(nbaKeys).map(k=>btn(k,'marketFilter',k,S.f.markets?.includes(k)??true?'on':'')).join(''):''),'tight')+
       (expanded?tools(search()+select('Game','gameFilter',['All games',...S.games.map(g=>[g.id,g.a+' @ '+g.h])]))+tools(bounds)+savedScreens:''),'','slate')+
