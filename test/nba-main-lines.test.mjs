@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {draftKingsMainLines,draftKingsMilestones,nbaMainLineBoard} from '../site/nba-main-lines.mjs';
+import {draftKingsMainLines,draftKingsMilestones,missingNbaPropMarkets,nbaMainLineBoard,nbaPropMarketKey} from '../site/nba-main-lines.mjs';
 import {buildNbaTicket,defaults,legKey} from '../site/nba-parlay-engine.mjs';
 
 const now=Date.parse('2026-11-17T23:15Z');
@@ -37,6 +37,22 @@ test('DraftKings captures quoted pregame milestones as exact alternate Overs',()
   }]);
   assert.deepEqual(draftKingsMilestones(data,'Points',[{...game,status:'LIVE'}],now),[]);
   assert.equal(draftKingsMainLines(data,'Points',[game],now),null);
+});
+
+test('NBA prop fallback is scoped to open game markets without a recent exchange quote',()=>{
+  const next={...game,id:'next',a:'DET',h:'ORL'};
+  const live={...game,id:'live',a:'DAL',h:'DEN',status:'LIVE'};
+  const quote={date:game.date,a:game.a,h:game.h,provider:'Kalshi',capturedAt:new Date(now).toISOString(),under:'-123'};
+  const exchange=[{...quote,market:'Points'},
+    {...quote,market:'Rebounds',capturedAt:new Date(now-121*60000).toISOString()},
+    {...quote,market:'Assists',under:null},
+    {...quote,market:'Threes',date:'2026-11-16'}];
+  const missing=missingNbaPropMarkets(game.date,[game,next,live],exchange,now);
+  assert.equal(missing.size,7);
+  assert.ok(!missing.has(nbaPropMarketKey(game.date,game.a,game.h,'Points')));
+  assert.ok(missing.has(nbaPropMarketKey(game.date,game.a,game.h,'Rebounds')));
+  assert.ok(missing.has(nbaPropMarketKey(game.date,next.a,next.h,'Points')));
+  assert.ok(!missing.has(nbaPropMarketKey(game.date,live.a,live.h,'Points')));
 });
 
 test('the mirror keeps milestone snapshots separate and only retains failed alternate categories',async()=>{

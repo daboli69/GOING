@@ -107,6 +107,16 @@ async function readBoard(games,categories,parse,read){
 export const readDraftKingsMainLines=(games,{read=fetch}={})=>readBoard(games,categories,draftKingsMainLines,read);
 export const readDraftKingsMilestones=(games,{read=fetch}={})=>readBoard(games,milestones,draftKingsMilestones,read);
 
+export const nbaPropMarketKey=(date,a,h,market)=>[date,a,h,market].join('|');
+export function missingNbaPropMarkets(date,games,exchange,now=Date.now()){
+  const priced=new Set(exchange.filter(q=>{
+    const age=now-Date.parse(q.capturedAt);
+    return q.provider==='Kalshi'&&age>=0&&age<=usableFor&&(q.over!=null||q.under!=null);
+  }).map(q=>nbaPropMarketKey(q.date,q.a,q.h,q.market)));
+  return new Set(games.filter(g=>openGame(g)&&Date.parse(g.iso)>now)
+    .flatMap(g=>markets.map(m=>nbaPropMarketKey(date,g.a,g.h,m))).filter(key=>!priced.has(key)));
+}
+
 // Pages normally supplies the board. Check a live source when publication lags or has no offers yet.
 export async function nbaMainLineBoard(date,games,published,{previous,force=false,now=Date.now(),read,recover,publishedAlternates}={}){
   const upcoming=games.filter(g=>openGame(g)&&Date.parse(g.iso)>now);
