@@ -1,6 +1,6 @@
 import {nbaPropTabs,href} from './config.mjs';
 import {total,mean,round,pct,div,rate,heat,signed,seasonLimit,distanceZone} from './math.mjs';
-import {current as S,esc,box,plain,grid,card,metric,logo,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,person,market,basePlay,propOdds,gameDay,gamesFor,final,dialog,badge,action,local,keep,et,dateKey} from './ui.mjs';
+import {current as S,esc,box,plain,grid,card,metric,logo,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,person,market,basePlay,propOdds,gameDay,gamesFor,final,dialog,badge,action,local,keep,et,dateKey,dateAdd} from './ui.mjs';
 import {courtDefense,courtField,courtThresholds,pra} from './nba-court.mjs';
 import {parlayPage,parlayAction} from './nba-parlays.mjs';
 import {openingTables,teamFirst,shotTables,makeEdge,earlyShares,blendShare,scorerShares,fairChances,impliedChance,americanFrom,roundRobin,regression,convictionTier} from './first-basket.mjs';
@@ -9,7 +9,13 @@ import {allowedRanks,markets} from './nba-parlay-engine.mjs';
 import {rotationTeammates,teammateSplits} from './nba-lineup-splits.mjs';
 import {typeLetters as letters,minimumTypeShots,shotMixLabels,eligibleShot,shotMix,playerProfile,assistLabels,assistArchive,assistMatchup} from './nba-research.mjs';
 
-const nbaKeys={Points:6,Threes:7,Assists:8,Rebounds:9};
+import {currentStint,evidenceGroups,exactRecord,firstBasketHistory,propStats,propValue,roleTrend,sharedAvailability,teamStrength} from './nba-role-data.mjs';
+import {roleBoard} from './nba-role-view.mjs';
+import {playerTracking} from './nba-tracking-stats.mjs';
+import {showRotations,verifyStarters} from './nba-rotation-view.mjs';
+import {evidenceBody,exactQuoteComparison,formatQuoteTime,legEvidenceButton} from './nba-evidence-view.mjs';
+
+const nbaKeys=propStats;
 const positions=['All','PG','SG','SF','PF','C','G','F'];
 const zones=['Restricted Area','Paint','Mid-Range','Corner 3','Above the Break 3'];
 const periods=['Season','Last 10','Last 5','Last 3'];
@@ -77,6 +83,31 @@ function ranks(list,access,inv=false){
   return new Map(list.filter(x=>access(x)!=null).sort((a,b)=>(access(b)-access(a))*(inv?-1:1)).map((x,i)=>[x.t,i+1]));
 }
 const gameMetrics=[['Pace','pace'],['Net RTG','net'],['Avg Margin','margin'],['Avg Total','avgTotal'],['ATS','ats'],['O/U','ou']];
+
+function trendSample(leg,context){
+  const row=roleData().players.find(x=>x.p.id===leg.player);
+  if(!row)return null;
+  const groups=evidenceGroups(row.p.logs,{opponent:leg.opp,team:leg.team,
+    venue:gamesFor(leg.team)?.h===leg.team?'home':'away',day:leg.date,teamGames:source().tg||{},without:row.without?.without});
+  const group=groups.find(g=>g.label===(context==='Head-to-head'?'Vs '+leg.opp:context));
+  if(!group||context==='Back-to-back'&&!group.todayBackToBack)return null;
+  return exactRecord(group.sample,leg.stat,leg.line,leg.side);
+}
+function weeklyStrength(){
+  const earlier=dateAdd(S.day,-7);
+  const rows=teams().map(t=>{
+    const all=played(source().tg[t]||[]);
+    const recent=all.slice(-10), previous=all.filter(row=>row[1]<earlier).slice(-10);
+    const current=teamStrength(recent), before=teamStrength(previous);
+    return {t,current,before};
+  }).filter(row=>row.current.n).sort((a,b)=>b.current.net-a.current.net);
+  return box('Team Strength & Weekly Movement',table(['Rank','Team','Recent games','Off / 100','Def / 100','Net / 100','Δ vs last week','Pace'],
+    rows.map(({t,current,before},i)=>[i+1,team(t),current.n,round(current.offense),round(current.defense),round(current.net),
+      current.n>=5&&before.n>=5&&current.net!=null&&before.net!=null?signed(current.net-before.net):'—',round(current.pace)]),
+    {cls:'compact',sort:'nba-strength',wrap:'box'}),
+    'Ranked by net points per 100 estimated possessions over the last 10 team games. Weekly change compares that window with the one available seven days earlier. Pace is estimated possessions per game.');
+}
+
 function league(){
   const w=S.f.window||'Season';
   const list=teams().map(t=>teamStat(t,w));
@@ -86,7 +117,7 @@ function league(){
     table(['Team',...colsets.flatMap(([,f])=>f.map(([n])=>n))],list.filter(x=>!S.f.todayTeams||gamesFor(x.t)).sort((a,b)=>(b.game.net??-100)-(a.game.net??-100)).map(x=>[team(x.t),...colsets.flatMap(([k,f],i)=>f.map(([,key],j)=>{
       const rank=metrics[i][j].get(x.t),v=x[k][key];return cell(S.f.rank?ordinal(rank):display(key,v),heat(rank,15.5,5,true),ordinal(rank)+' in the league');
     }))]),{cls:'wide',groups:[group('',1),group('Offense',14),group('Defense (Allowed)',14),group('Game & Betting',6)],sort:'nba-league',wrap:'box'}),
-    'Rankings compare the selected window of regular-season games. Unavailable historical prices are left blank.');
+    'Rankings compare the selected window of regular-season games. Unavailable historical prices are left blank.')+weeklyStrength();
 }
 const tabbar=(labels,key)=>`<div class="viewtabs">${labels.map(v=>`<button type="button" class="viewtab ${S.f[key]===v?'on':''}" ${action('set',key+':'+v)}>${esc(v)}</button>`).join('')}</div>`;
 const matchupMeasures={
@@ -325,7 +356,7 @@ function propTable(){
     const b=[person(p),...(all?[badge(m)]:[]),line??'—',over+alt('Over'),under+alt('Under'),cell(round(avg),heat(avg,line??(m==='Points'?12:2),m==='Points'?4:1))];
     if(ast){
       const data=assistData(p,opp),[targets,types,lineup]=data.signals;
-      const research=btn('Research','assistResearch',p.id,'outline');
+      const research=btn('Research','assistResearch',p.id,'outline')+(line==null?'':legEvidenceButton({player:p.id,stat:m,side:'Over',line}));
       const read=readCell(data.read);
       read.html+= ' '+research;
       return [...b,round(div(avg,p.min)*36),hitCell(l.slice(-5),k,line),hitCell(l,k,line),
@@ -341,9 +372,9 @@ function propTable(){
     const lastGame=cell(last==null?'—':last+' <small>'+signed(gap)+'</small>',gap==null?'':heat(gap,0,Math.max(1,avg*.2)),'Last game vs season average');
     return [...b,...(!all?[round(m==='Threes'?mean(l,r=>r[11]):p.min),round(m==='Points'?mean(l,r=>r[10]):m==='Threes'?mean(l,r=>r[11]):p.min)]:[]),lastGame,
       hitCell(l.slice(-5),k,line),hitCell(l.slice(-10),k,line),hitCell(l,k,line),hitCell(l.filter(x=>x[4]==='home'),k,line),hitCell(l.filter(x=>x[4]==='away'),k,line),
-      round(mean(vs)),type(p.id),opp?team(opp):'—',line==null?'—':reads.filter(x=>x!=null&&x>line).length,line==null?'—':reads.filter(x=>x!=null&&x<line).length,opp?round(teamStat(opp).game.pace):'—',esc(g?.odds?.details||'—'),g?.odds?.total??'—',cell(esc((S.injuries[teamName(p.team)]||[]).slice(0,2).map(x=>x.name).join(' · ')||'—'))];
+      round(mean(vs)),type(p.id),opp?team(opp):'—',line==null?'—':reads.filter(x=>x!=null&&x>line).length,line==null?'—':reads.filter(x=>x!=null&&x<line).length,opp?round(teamStat(opp).game.pace):'—',esc(g?.odds?.details||'—'),g?.odds?.total??'—',line==null?'—':legEvidenceButton({player:p.id,stat:m,side:'Over',line}),cell(esc((S.injuries[teamName(p.team)]||[]).slice(0,2).map(x=>x.name).join(' · ')||'—'))];
   });
-  const columns=ast?['Player','Line','Over','Under','AVG','AST/36','L5','Season','Targets','Types','Lineup','Read','Chances','Volume']:['Player',...(all?['Stat']:[]),'Line','Over','Under','AVG',...(!all?[a==='Threes'?'3PA':'MIN','Volume']:[]),'Last Game','L5','L10','Season','Home','Away','Opp Allows','Type','Matchup','O','U','Pace','Spread','Total','Teammates on the report'];
+  const columns=ast?['Player','Line','Over','Under','AVG','AST/36','L5','Season','Targets','Types','Lineup','Read','Chances','Volume']:['Player',...(all?['Stat']:[]),'Line','Over','Under','AVG',...(!all?[a==='Threes'?'3PA':'MIN','Volume']:[]),'Last Game','L5','L10','Season','Home','Away','Opp Allows','Type','Matchup','O','U','Pace','Spread','Total','Evidence','Teammates on the report'];
   return navProps()+box(title,`<p class="lede">Research ${all?'points, threes, assists, and rebounds':a.toLowerCase()} with real game logs, recent hit rates, and opponent context.</p>`+
     '','Click a player to open the game log. K marks a public Kalshi quote. DraftKings main lines fill markets without recent exchange quotes. Guard and forward sub-positions are inferred from box scores when the feed only lists G or F.')+
     slate({date:true})+tools(select('Position','position',positions)+toggles(['With A Line','Every Player'],'pricing')+(!S.f.allGames?btn('All games','flip','allGames'):''))+
@@ -351,7 +382,7 @@ function propTable(){
       (expanded?tools(search()+select('Game','gameFilter',['All games',...S.games.map(g=>[g.id,g.a+' @ '+g.h])]))+tools(bounds)+savedScreens:''),'','slate')+
     `<p class="tiny">${list.length} ${priced?'priced markets':'player and market rows'}${!S.odds.length?' · No player price feed connected. Season averages are available under Every Player.':''}</p>`+
     table(columns,rows,{cls:'wide',wrap:'box',sort:'nba-props',empty:priced?'No prices match these filters. Choose Every Player to see the public game logs.':'No players match these filters.',
-      groups:ast?[group('',6),group('Hit Rate – Over Tonight’s Line',2),group('Reads',4),group('Tonight’s Game',2)]:[group('',all?7:8),group('Hit Rate – Over Tonight’s Line',5),group('Reads',5),group('Tonight’s Game',4)]});
+      groups:ast?[group('',6),group('Hit Rate – Over Tonight’s Line',2),group('Reads',4),group('Tonight’s Game',2)]:[group('',all?7:8),group('Hit Rate – Over Tonight’s Line',5),group('Reads',5),group('Tonight’s Game',5)]});
 }
 const cardCats=['All','Points','Threes','Paint & Mid-Range','Rebounds','Turnovers','Free Throws','Pace & Total'];
 const features=[['Points','Scoring','ppg'],['Threes','Three-Point Volume','threes'],['Paint & Mid-Range','Paint Scoring','paint'],['Rebounds','Glass','oreb'],['Turnovers','Ball Security','tov'],['Free Throws','Free Throw Rate','ftr'],['Pace & Total','Pace','pace']];
@@ -510,6 +541,66 @@ function defenseLogs(stat,profile,key,byType){
   return result;
 }
 
+
+function rotationFor(code,roster,report){
+  const entries=roster.map(p=>({id:p.id,name:p.name,games:p.logs.map(r=>({id:r[0],date:r[1],team:r[2],minutes:r[5]}))}));
+  return rotationTeammates(code,entries,report??(Array.isArray(S.injuries?.[teamName(code)])?nbaInjuryReport(code):null),
+    played(source().tg?.[code]||[]).slice(-3).map(game=>game[0]));
+}
+
+function roleData(){
+  const m=reset();
+  if(m.role?.games===S.games&&m.role?.injuries===S.injuries){
+    const checked=S.f.nbaRoleInjuryChecked;
+    return {...m.role,checked:checked?formatQuoteTime(checked):null};
+  }
+  const historical=S.day<dateKey(), rows=[];
+  const cards=S.games.map(game=>({game,sides:[game.a,game.h].map(code=>{
+    const roster=players().filter(p=>p.team===code);
+    const report=historical?[]:nbaInjuryReport(code);
+    const line=projectedStarters(code,report,[]).starters;
+    const out=historical?[]:rotationFor(code,roster,report).filter(p=>p.current==='listed out');
+    const roleRows=roster.map(p=>{
+      const logs=currentStint(p.logs,code,S.day);
+      const teammates=out.filter(x=>x.id!==p.id);
+      const starter=line.find(x=>x.p.id===p.id);
+      const status=report.find(row=>nbaName(row.name)===nbaName(p.name))?.status;
+      const role=fbOutNow(status)?'out':starter?(starter.lastStarted?'starter':'new starter'):'other';
+      const absences=teammates.map(x=>({...sharedAvailability(logs,[x]),name:x.name}));
+      return {p,role,status,logs,absences,without:sharedAvailability(logs,teammates)};
+    });
+    rows.push(...roleRows);
+    return {code,starters:line,report:report.map(entry=>{
+      const key=nbaName(entry.name);
+      const beneficiaries=roleRows.flatMap(r=>{
+        const split=r.absences.find(x=>nbaName(x.name)===key);
+        const playerOut=report.some(i=>nbaName(i.name)===nbaName(r.p.name)&&fbOutNow(i.status));
+        if(playerOut||!split||Math.min(split.together.length,split.without.length)<3)return [];
+        const minutes=mean(split.without,x=>x[5])-mean(split.together,x=>x[5]);
+        return minutes>=1?[{name:r.p.name,minutes,n:split.without.length}]:[];
+      }).sort((a,b)=>b.minutes-a.minutes).slice(0,3);
+      return {...entry,player:roster.find(p=>nbaName(p.name)===key),beneficiaries};
+    })};
+  })}));
+  m.role={cards,players:rows,historical,games:S.games,injuries:S.injuries};
+  return roleData();
+}
+
+const roleStats=(logs,index)=>round(mean(logs.map(r=>r[index]).filter(Number.isFinite)));
+function playerRolePanel({p,logs,absences,without}){
+  const trend=roleTrend(logs,Number(S.f.nbaRoleWindow)||5);
+  const stats=[['Minutes','minutes'],['Field goal attempts','fga'],['Three-point attempts','three'],['Free throw attempts','fta'],
+    ['Points','points'],['Assists','assists'],['Rebounds','rebounds'],['Field goal percentage','fg']];
+  const data=table(['Stat','Recent · '+trend.recent.n+' games','Earlier · '+trend.prior.n+' games'],
+    stats.map(([label,key])=>[label,...[trend.recent,trend.prior].map(row=>key==='fg'?pct(row[key],1):round(row[key]))]),{cls:'compact',wrap:'box'});
+  const splits=absences.length?table(['Teammates','Games with / out','MIN with / out','FGA with / out','AST with / out','REB with / out'],
+    [...absences,...(absences.length>1&&without?[{...without,name:'All listed out together'}]:[])].map(
+      ({name,together,without})=>[esc(name),together.length+' / '+without.length,
+        ...[5,10,8,9].map(index=>roleStats(together,index)+' / '+roleStats(without,index))]),{cls:'compact',wrap:'box'}):'';
+  return '<p class="subtle">'+esc(p.team)+' team stint · '+trend.recent.starts+' recent starts, '+trend.prior.starts+' earlier starts.</p>'+
+    data+(splits?box('Teammate Availability',splits,'Comparisons begin at the latest first appearance among the selected teammates. The same games can appear in more than one row.'):'');
+}
+
 export function parlayData(quotes=S.odds){
   const memo=reset(), cacheKey=quotes===S.odds?'parlayData':quotes===S.f?.nbaPriceBoard?.builderQuotes?'builderData':null;
   const previous=cacheKey&&memo[cacheKey];
@@ -527,14 +618,8 @@ export function parlayData(quotes=S.odds){
     list.push(p);byTeam.set(p.team,list);
   }
   const logGame=r=>({id:r[0],date:r[1],team:r[2],minutes:r[5]});
-  const rotations=new Map([...byTeam].map(([teamCode,players])=>{
-    const name=teamName(teamCode);
-    const report=Array.isArray(S.injuries?.[name])?nbaInjuryReport(teamCode):null;
-    const entries=players.map(p=>({id:p.id,name:p.name,games:p.logs.map(logGame)}));
-    const rotation=rotationTeammates(teamCode,entries,report,
-      teamStat(teamCode).l.slice(-3).map(game=>game[0]));
-    return [teamCode,rotation];
-  }));
+  const rotations=new Map([...byTeam].map(([teamCode,players])=>[teamCode,rotationFor(teamCode,players)]));
+  const roleTrends=new Map(roster.map(p=>[p.id,roleTrend(currentStint(p.logs,p.team,S.day))]));
   const rows=roster.flatMap(player=>{
     const game=gamesFor(player.team), opp=game.a===player.team?game.h:game.a;
     const spread=gameNumber(game.odds?.spread)??gameNumber(game.odds?.details?.match(/([+-]\d+(?:\.\d+)?)\s*$/)?.[1]);
@@ -562,7 +647,7 @@ export function parlayData(quotes=S.odds){
         pace:mean([teamStat(player.team).game.pace,teamStat(opp).game.pace].filter(x=>x!=null)),
         threeRate:teamStat(player.team).o.tpr,out:isOut(status),uncertain:/day.to.day|questionable|doubtful|^dtd$/i.test(status||'')?status:null,
         injuryReport:Array.isArray(S.injuries?.[teamName(player.team)]),
-        lineup,absences:lineup.filter(x=>x.current==='listed out').map(({name,withoutTeammate})=>({
+        lineup,roleTrend:roleTrends.get(player.id),absences:lineup.filter(x=>x.current==='listed out').map(({name,withoutTeammate})=>({
           name,n:withoutTeammate.length,delta:withoutTeammate.length>=3?mean(withoutTeammate)-avg:null
         }))}));
     });
@@ -761,16 +846,17 @@ function fbCalibration(){
 }
 function basket(){
   const g=S.game;if(!g)return slate()+firstBasketView();
-  const first=source().first||{},sh=shots();
+  const first=source().first||{},sh=shots(),window=S.f.fbHistory||'Season';
   const roster=t=>players().filter(p=>p.team===t&&p.logs.some(x=>x[16])).sort((a,b)=>total(b.logs.slice(-5),x=>x[16])-total(a.logs.slice(-5),x=>x[16])||b.min-a.min).slice(0,5);
-  const item=(t,o)=>teamBanner(t,'Recent starters')+table(['Player','Shot Early','1st Shot','Scored 1st','Team Share','1st FG','Defense Type','Best'],roster(t).map(p=>{
+  const item=(t,o)=>teamBanner(t,'Recent starters')+table(['Player','Shot Early','1st Shot','Scored 1st','Team Share','1st FG','Took game’s 1st shot','Scored game’s 1st points','Defense Type','Best'],roster(t).map(p=>{
     const r=p.logs.filter(x=>x[16]&&first[x[0]]);
     const event=(k,teamOnly=false)=>rate(r,x=>(teamOnly?first[x[0]].by[t]?.[k]:first[x[0]][k])===p.id);
     const open=(sh.players[p.id]||[]).filter(x=>x[9]),all=sh.players[p.id]||[];
-    return [person(p),pct(div(open.length,all.length)),pct(event('firstShot')),pct(event('firstPts')),pct(event('shot',true)),pct(event('firstFg')),type(p.id),cell(pct(event('pts',true)),heat(event('pts',true),.14,.1))];
+    const recent=firstBasketHistory(currentStint(p.logs,t,S.day),first,p.id,o,window);
+    return [person(p),pct(div(open.length,all.length)),pct(event('firstShot')),pct(event('firstPts')),pct(event('shot',true)),pct(event('firstFg')),recent.tookFirstShot+'/'+recent.firstShots,recent.firstPoints+'/'+recent.n,type(p.id),cell(pct(event('pts',true)),heat(event('pts',true),.14,.1))];
   }),{sort:'basket-'+t});
   const history=t=>Object.values(first).filter(x=>x.date<S.day&&x.by[t]);
-  return slate()+firstBasketView()+hero(g)+tools(btn((S.hoops-1)+'–'+String(S.hoops).slice(-2),'noop','','on'))+box('Starters',
+  return slate()+firstBasketView()+hero(g)+tools(select('Opening history','fbHistory',['Season','Last 10','Last 5','Last 3','Head-to-head']))+box('Starters',
     '<p class="subtle">Starting candidates from recent box scores. First points include free throws.</p>'+grid(2,[item(g.a,g.h),item(g.h,g.a)]),'Click a player to see game-by-game stats.')+
     box('The Matchup',table([team(g.a),'The Tip',team(g.h)],[['Tip win rate','Season','Tip win rate'],[pct(rate(history(g.a),x=>x.tip===g.a)),'Jump ball',pct(rate(history(g.h),x=>x.tip===g.h))]]))+
     box('By Player Type: Every Letter Against Tonight’s Defense',table(['Team',...letters],[g.a,g.h].map(t=>[team(t),...letters.map(k=>history(t).filter(x=>x.by[t]?.pts&&type(x.by[t].pts)===k).length)]),{sort:'basket-types'}));
@@ -861,7 +947,90 @@ export function nbaPlayer(id,tab='Game Log'){
   const body=tab==='Shot Chart'?playerShotMatchup(player,opponent):tab==='Odds'?playerOddsPanel(player):log();
   dialog(player.name,teamBanner(player.team,player.pos+' · Type '+typeLabel(id))+nav+body,true);
 }
+
+function shotProfileEvidence(player,opponent,stat){
+  const archive=shots(), onlyThrees=stat==='Threes';
+  const accept=r=>eligibleShot(r)&&(!onlyThrees||r[6]===3);
+  const own=(archive.players[player.id]||[]).filter(r=>r[1]===player.team&&accept(r));
+  const summarize=rows=>{
+    const map=new Map();
+    for(const r of rows){
+      if(!r[8])continue;
+      const s=map.get(r[8])||{n:0,makes:0};
+      s.n++;s.makes+=r[7]*(r[6]===3?1.5:1);map.set(r[8],s);
+    }
+    return map;
+  };
+  const categories=summarize(own), defense=summarize((archive.def[opponent]||[]).filter(accept)),
+    league=reset()[onlyThrees?'leagueThreeMix':'leagueShotMix']??=summarize(archive.all.filter(accept));
+  if(!categories.size)return '';
+  const efg=row=>row?row.makes/row.n:null;
+  const splits=[...categories].sort((a,b)=>b[1].n-a[1].n).map(([kind,player])=>{
+    const opp=defense.get(kind), base=league.get(kind);
+    return {kind,player,opp,base,edge:player.n>=15&&opp?.n>=30&&base?efg(opp)-efg(base):null};
+  });
+  const supported=splits.filter(row=>row.edge!=null), covered=total(supported,row=>row.player.n);
+  const weighted=div(total(supported,row=>row.edge*row.player.n),covered);
+  const note=weighted==null?'':('<p class="subtle">Across '+covered+' of '+own.length+' player attempts in supported categories, the opponent allowed '+
+    signed(weighted*100)+' percentage points vs league average, weighted by the player’s shot mix.</p>');
+  const rows=splits.slice(0,5).map(({kind,player,opp,base,edge})=>[esc(kind),pct(player.n/own.length),
+    pct(efg(player),1)+' · '+player.n+' att',pct(efg(opp),1)+' · '+(opp?.n||0)+' att',pct(efg(base),1),
+    edge==null?'Small sample':signed(100*edge)+' pp']);
+  return box('Shot Mix vs '+opponent,note+table(['Shot type','Share of attempts','Player eFG%','Defense allowed eFG%','League eFG%','Defense vs league'],
+    rows,{cls:'compact',wrap:'box'}),'Shot types come from ESPN’s play descriptions. Differences are shown with at least 15 player attempts and 30 opponent attempts.');
+}
+
+function showPropEvidence([id,stat,side,line]){
+  const player=players().find(p=>p.id===id);
+  const game=player&&gamesFor(player.team);
+  if(!game||stat!=='PRA'&&!Object.hasOwn(nbaKeys,stat)||!['Over','Under'].includes(side)||!Number.isFinite(line)||line<0)return;
+  const opponent=game.a===player.team?game.h:game.a;
+  const detail={stat,side,line,opponent,tip:game.iso};
+  const role=roleData().players.find(row=>row.p.id===id);
+  if(!role)return;
+  const groups=evidenceGroups(player.logs,{opponent,team:player.team,venue:game.h===player.team?'home':'away',day:S.day,
+    teamGames:source().tg||{},without:role.without?.without});
+  const quoteSets=[...S.odds,...(S.f.nbaPriceBoard?.builderQuotes||[]),...(S.f.nbaPriceBoard?.comparisonQuotes||[]),...(S.f.nbaPropBoard?.book?.quotes||[]),...(S.f.nbaPropBoard?.exchange||[])];
+  const quotes=exactQuoteComparison(propQuotes(player,stat,quoteSets),detail);
+  if(stat==='PRA'){
+    const controls='<label class="field">PRA line <input id="nba-pra-line" type="number" step="0.5" min="0" max="150" value="'+esc(line)+'"></label>'+
+      btn('Compare PRA line','nbaPRAEvidence',JSON.stringify([id,side]),'outline');
+    dialog(player.name+' · PRA Research',tools(controls)+evidenceBody({player,detail,groups,quotes,role,rolePanel:playerRolePanel(role)}),true);
+    return;
+  }
+  const typeKey=type(id), key=nbaKeys[stat], pos=defenseLogs(stat,player.pos,key,false),
+    kind=typeKey!=='—'&&(stat==='Points'||stat==='Threes')?defenseLogs(stat,typeKey,key,true):null;
+  const posRank=pos.rank.get(opponent), typeRank=kind?.rank.get(opponent);
+  const position=posRank?esc(opponent+' vs '+player.pos+' · '+posRank.rank+'/'+posRank.total+
+    ' ('+pos.deltas.get(opponent).length+' team games, rank 1 allows least)'):'Position sample unavailable';
+  const typeRead=typeRank?esc('Type '+typeKey+' · '+typeRank.rank+'/'+typeRank.total+' · '+
+    signed(mean(kind.deltas.get(opponent)))+' per player game vs baseline · '+kind.deltas.get(opponent).length+' team games'):'';
+  const matchup=box('Defensive Matchup','<p>'+position+'</p>'+(typeRead?'<p>'+typeRead+'</p>':''))+
+    (stat==='Points'||stat==='Threes'?shotProfileEvidence(player,opponent,stat):'');
+  const assists=stat==='Assists'?assistPanel(player,opponent,line):'';
+  dialog(player.name+' · '+side+' '+line+' '+stat,evidenceBody({player,detail,groups,role,quotes,matchup,assists,
+    rolePanel:playerRolePanel(role)}),true);
+}
+
 export function nbaAction(act,v,target){
+  if(act==='nbaPropEvidence'){showPropEvidence(JSON.parse(v));return false;}
+  if(act==='nbaPRAEvidence'){
+    const [id,side]=JSON.parse(v),input=document.querySelector('#nba-pra-line');
+    if(input?.value&&input.checkValidity())showPropEvidence([id,'PRA',side,input.valueAsNumber]);
+    else input?.reportValidity();
+    return false;
+  }
+  if(act==='nbaRolePlayer'){
+    const row=roleData().players.find(x=>x.p.id===v);
+    if(row){
+      const avg=mean(row.logs.map(r=>propValue(r,'PRA')).filter(Number.isFinite));
+      dialog(row.p.name+' · Role Changes',playerRolePanel(row)+(avg==null?'':tools(btn('Research PRA','nbaPropEvidence',
+        JSON.stringify([v,'PRA','Over',Math.floor(avg)+.5]),'outline'))),true);
+    }
+    return false;
+  }
+  if(act==='nbaRoleRotations'&&source().tg?.[v]){showRotations(v,played(source().tg[v]),source().players||{});return false;}
+  if(act==='nbaRoleVerify'){const game=S.games.find(g=>String(g.id)===v);if(game)verifyStarters(game,source().players||{});return false;}
   if(S.route.id==='nba-parlays'&&act.startsWith('parlay'))return parlayAction(act,v,parlayData(),target);
   if(act==='nbaPropBound'){
     const [name,key]=v.split('|');
@@ -900,7 +1069,8 @@ export function nbaAction(act,v,target){
   return false;
 }
 export function nbaPage(){
-  return ({'nba-props':propTable,'nba-parlays':()=>parlayPage({...parlayData(),
+  return ({'nba-props':propTable,'nba-roles':()=>roleBoard({...roleData(),tracking:playerTracking(S.f.nbaTrackingStats,S.day),trackingThrough:S.f.nbaTrackingStats?.through}),
+    'nba-parlays':()=>parlayPage({...parlayData(),trendSample,compareQuotes:row=>propQuotes(row.player,row.stat,S.f.nbaPriceBoard?.comparisonQuotes||[]),
     alternates:S.f.nbaPriceBoard?.builderQuotes?.length?parlayData(S.f.nbaPriceBoard.builderQuotes).rows:[]}),
     league,keys,standouts,zones:zoneTargets,types:typePage,shotcharts:shotCharts,basket,court:kotc})[S.route.id]();
 }

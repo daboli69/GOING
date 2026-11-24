@@ -1,12 +1,14 @@
 // GOING UP Suggested Parlays: the shared parlay page (parlay-ui.mjs) with the NBA engine and filters.
-import {current as S,btn,esc,keep,local,playCheck,slate,tools} from './ui.mjs';
+import {current as S,box,btn,esc,keep,local,playCheck,select,slate,tools} from './ui.mjs';
 import {href} from './config.mjs';
 import {builderLegs,buildNbaTicket,defaults,evaluate,markets,nbaLegChance,weights} from './nba-parlay-engine.mjs';
 import {createParlays,parlayPool,parlayPoolSummary,timeLabel} from './parlay-ui.mjs';
 import {nbaTicketsKey,resolveNbaTicketLeg} from './nba-parlay-results.mjs';
+import {discrepancyTable,legEvidenceButton,milestoneGrid} from './nba-evidence-view.mjs';
 export {toAmerican,fromAmerican} from './parlay-ui.mjs';
 
 const poolDisplay={
+  actions:legEvidenceButton,
   chance:nbaLegChance,
   legText:leg=>leg.side+' '+leg.line+' '+leg.stat,
   tag:leg=>leg.context.type&&leg.context.type!=='—'?'Type '+leg.context.type:'Type unavailable',
@@ -22,7 +24,10 @@ function builderPool(data,cfg,taken){
     ...poolDisplay,title:'Builder Legs',
     intro:'<p class="subtle">Alternate overs only. Uses the matchup filters above and requires '+
       esc(Math.max(cfg.hit,70))+'% in both season and last-10 results at the alternate line. Kalshi prices are exchange quotes.</p>'+
-      tools(Object.entries(builderRanges).map(([key,[min,max]])=>btn(min+' to '+max,'parlayBuilderRange',key,key===range?'on':'')).join('')),
+      tools(Object.entries(builderRanges).map(([key,[min,max]])=>btn(min+' to '+max,'parlayBuilderRange',key,key===range?'on':'')).join(''))+
+      '<details data-parlay-ticket="milestones"><summary>Milestone hit rates</summary>'+tools(select('Milestone stat','nbaMilestoneStat',markets))+
+      milestoneGrid(data.rows.filter(row=>row.stat===(S.f.nbaMilestoneStat||'Points')),data.alternates??[])+
+      '<p class="subtle">Historical hits at each milestone. A price appears when a matching recent quote was captured.</p></details>',
     emptyText:report.priced?'No alternate overs in this range pass the current matchup and form filters.':
       'No recent alternate over prices in this range match a current main line on this slate.',
     legText:leg=>leg.milestone?leg.milestone+'+ '+leg.stat:poolDisplay.legText(leg),
@@ -31,14 +36,33 @@ function builderPool(data,cfg,taken){
     actions:leg=>{
       const play={sport:'nba',date:leg.date,game:leg.game,id:leg.player,team:leg.team,market:leg.stat,
         side:leg.side,line:leg.line,odds:leg.price,provider:leg.provider,title:leg.name+' · '+leg.stat};
-      return `<p><label class="field">${playCheck(play)} Save to My Plays</label></p>`;
+      return legEvidenceButton(leg)+ `<p><label class="field">${playCheck(play)} Save to My Plays</label></p>`;
     }
+  });
+}
+
+
+const contexts=['All eligible','Tonight’s venue','Head-to-head','Back-to-back','Current absences'];
+function fullList(data,report,ticket){
+  const context=S.f.nbaFullContext||contexts[0], min=Math.max(1,Number(S.f.nbaFullSample)||3);
+  const filtered=context===contexts[0]?report.eligible:report.eligible.filter(leg=>{
+    const sample=data.trendSample?.(leg,context);
+    return !!sample&&sample.n>=min;
+  });
+  return parlayPool({...report,eligible:filtered},ticket,{...poolDisplay,
+    intro:tools(select('Evidence filter','nbaFullContext',contexts)+select('Minimum decided games','nbaFullSample',[3,5,10,15])),
+    form:leg=>{
+      if(context===contexts[0])return poolDisplay.form(leg);
+      const r=data.trendSample?.(leg,context);
+      return poolDisplay.form(leg)+(r?' · '+context+' '+r.hits+'/'+r.n+(r.pushes?' ('+r.pushes+' push)':''):'');
+    },
+    emptyText:context===contexts[0]?'No priced legs pass the current filters.':'No eligible legs have that many games in this sample.'
   });
 }
 
 const nba=createParlays({
   settingsKey:'nba-parlay-settings',ticketsKey:nbaTicketsKey,liveDraft:true,prefill:false,resolveSavedLeg:resolveNbaTicketLeg,
-  engine:{defaults,weights,markets,evaluate},build:buildNbaTicket,rankByChance:true,
+  engine:{defaults,weights,markets,evaluate},build:buildNbaTicket,rankByChance:true,legAction:legEvidenceButton,
   weightNames:{form:'Hit rates',matchup:'Matchup',line:'Line vs average',context:'Game context',mix:'Stat variety'},
   fields:[{key:'hit',label:'Min. hit rate %',min:0,max:100},{key:'sample',label:'Min. type sample',min:1,max:30,integer:true},
     {key:'spread',label:'Max. spread',min:0,max:14.5,step:.5},{key:'total',label:'Min. total',min:0,max:300,step:.5}],
@@ -51,7 +75,8 @@ const nba=createParlays({
     (S.f.nbaPriceBoard?.source==='mirror'&&S.odds.length?'<p class="subtle">Main lines loaded from the separate NBA price feed.</p>':
       ['partial','unavailable'].includes(S.f.nbaPriceBoard?.source)&&S.odds.length?
         '<p class="subtle">Some DraftKings markets could not refresh. Recent verified main lines are shown where available.</p>':''),
-  afterTicket:(data,report,ticket,cfg,taken)=>builderPool(data,cfg,taken)+parlayPool(report,ticket,poolDisplay),
+  afterTicket:(data,report,ticket,cfg,taken)=>builderPool(data,cfg,taken)+fullList(data,report,ticket)+box('Same-Line Price Comparison',
+    '<details data-parlay-ticket="same-line-prices"><summary>Compare available sources</summary>'+discrepancyTable(data.rows,data.compareQuotes)+'</details>'),
   poolSummary:(report,cfg)=>parlayPoolSummary(report,cfg,'Tip time'),
   chance:nbaLegChance,
   chanceNote:'Sample-adjusted season rates with lineup context',
