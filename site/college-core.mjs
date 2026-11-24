@@ -69,30 +69,44 @@ export function collegeForecast(game,history){
   const awayPts=(scoring(a,'pf')+scoring(h,'pa'))/2;
   return {version:'college-v1',pHome,aN:a.n,hN:h.n,awayPts,homePts};
 }
+
+export const minCbbMarketGap=1;
+export function collegeMarketReads(sport,g){
+  const f=g.forecast,m=g.market;
+  if(!f||!m)return {spread:null,total:null};
+  const margin=sport==='cbb'?f.marketMargin:f.homePts-f.awayPts;
+  const cutoff=sport==='cbb'?minCbbMarketGap:0;
+  const read=(diff,a,b,quote,proj)=>{
+    const edge=Math.abs(diff);
+    const side=edge>0&&edge>=cutoff?(diff>0?a:b):null;
+    const line=quote[side||b].line;
+    return {side,line,odds:side?americanNumber(quote[side].odds):null,proj:proj(side),edge};
+  };
+  const spread=Number.isFinite(margin)&&Number.isFinite(m.spread?.home?.line)&&m.spread.away?.line===-m.spread.home.line?
+    read(margin+m.spread.home.line,'home','away',m.spread,side=>side==='away'?-margin:margin):null;
+  const total=Number.isFinite(f.homePts)&&Number.isFinite(f.awayPts)&&Number.isFinite(m.total?.line)&&m.total.line>0?
+    read(f.homePts+f.awayPts-m.total.line,'Over','Under',
+      {Over:{line:m.total.line,odds:m.total.over},Under:{line:m.total.line,odds:m.total.under}},()=>f.homePts+f.awayPts):null;
+  return {spread,total};
+}
+
 export function collegePicks(sport,g){
   const f=g.forecast;
   if(!f)return [];
   const market=g.market||{},picks=[];
-  const add=(tool,kind,name,side,line,odds,proj,prob,edge)=>{
+  const add=(tool,kind,name,side,line,odds,proj,prob,edge,version=f.version)=>{
     const rating=kind==='game'?(edge<3?'Under 3 pts':edge<7?'3 to under 7 pts':'7+ pts'):null;
     picks.push({k:['college',sport,g.id,tool].join('|'),sport,kind,game:g.id,date:g.date,start:g.start,
       a:g.away.id,h:g.home.id,awayName:g.away.name,homeName:g.home.name,market:name,side,line,odds,
-      provider:odds!=null?market.provider:null,proj,version:f.version,tools:{[tool]:{prob,edge,lean:true,rating}}});
+      provider:odds!=null?market.provider:null,proj,version,tools:{[tool]:{prob,edge,lean:true,rating}}});
   };
   const winner=f.pHome>0.5?'home':'away';
   if(f.pHome!==0.5)add(sport+'-baseline','model','Winner',winner,null,sport==='fbs'?market.moneyline?.[winner]??null:null,null,Math.max(f.pHome,1-f.pHome),null);
-  if(sport!=='fbs')return picks;
-  const margin=f.homePts-f.awayPts,total=f.homePts+f.awayPts;
-  const handicap=market.spread?.home?.line;
-  if(handicap!=null&&margin+handicap!==0){
-    const side=margin+handicap>0?'home':'away',quote=market.spread[side];
-    if(quote?.line!=null&&americanNumber(quote.odds)!=null)
-      add('fbs-spread','game','Spread',side,quote.line,quote.odds,side==='home'?margin:-margin,null,Math.abs(margin+handicap));
-  }
-  const line=market.total?.line;
-  if(line!=null&&total!==line){
-    const side=total>line?'Over':'Under',odds=market.total[side.toLowerCase()];
-    if(americanNumber(odds)!=null)add('fbs-total','game','Game total',side,line,odds,total,null,Math.abs(total-line));
+  if(sport==='fbs'||sport==='cbb'){
+    const {spread,total}=collegeMarketReads(sport,g);
+    if(spread?.side&&spread.odds!=null)add(sport+'-spread','game','Spread',spread.side,spread.line,spread.odds,spread.proj,null,spread.edge,
+      sport==='cbb'?'cbb-margin-v1':f.version);
+    if(total?.side&&total.odds!=null)add(sport+'-total','game','Game total',total.side,total.line,total.odds,total.proj,null,total.edge);
   }
   return picks;
 }

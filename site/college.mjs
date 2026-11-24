@@ -1,6 +1,6 @@
 import {current as S,esc,get,dataURL,today,dateLabel,et,tools,select,search,table,box,empty,round,pct,badge,espnLogo,btn,card,grid} from './ui.mjs';
 import {sections,href} from './config.mjs';
-import {collegePicks,collegePickLabel,collegeHomeElo,minCollegeGames} from './college-core.mjs';
+import {collegePicks,collegePickLabel,collegeMarketReads,collegeHomeElo,minCbbMarketGap,minCollegeGames} from './college-core.mjs';
 
 export const collegeLoad=(s,id)=>get(dataURL('college/'+s+(id==='college-players'?'-players':'')+'.json'),null);
 const fmt=(v,d=1)=>v==null?'—':round(v,d);
@@ -90,6 +90,7 @@ function gameLines(games){
 
 const shortSample=5, clearChance=.60, closeChance=.55;
 const forecastFilters=[['all','All games'],['clear','Clearer leans'],['close','Close calls'],['short','Short samples'],['none','No forecast']];
+const forecastOrders=[['winner','Winner leans'],['spread','Spread gap'],['total','Total gap']];
 function cbbForecast(g,a,h,now){
   const f=g.forecast, upcoming=g.status==='scheduled'&&Date.parse(g.start)>now;
   const aN=f?.aN??a?.n??0,hN=f?.hN??h?.n??0;
@@ -104,7 +105,29 @@ function cbbForecast(g,a,h,now){
   return {kind,chance,pick,aN,hN};
 }
 
-function cbbCard({g,a,h,f}){
+function cbbMarketPanel(g,{spread,total}){
+  const m=g.market,margin=g.forecast.marketMargin;
+  const projection=Number.isFinite(margin)?margin===0?'Even margin':(margin>0?g.home.code:g.away.code)+' by '+fmt(Math.abs(margin)):'—';
+  const line=m?.spread?.home?.line,bookSpread=line==null?null:g.home.code+' '+signed(line);
+  const bookTotal=m?.total?.line>0?String(m.total.line):null;
+  const projectedTotal=Number.isFinite(g.forecast.homePts)&&Number.isFinite(g.forecast.awayPts)?fmt(g.forecast.homePts+g.forecast.awayPts):'—';
+  const label=(read,fallback)=>{
+    if(!read)return fallback;
+    if(!read.side)return 'Near the line';
+    const side=read.side==='home'?g.home.name:read.side==='away'?g.away.name:read.side;
+    return side+' '+(['home','away'].includes(read.side)?signed(read.line):read.line)+(read.odds==null?'':' ('+signed(read.odds)+')');
+  };
+  const market=(title,read,book,model,missing)=>{
+    const details=[book?'Book '+book:'',model!=='—'?'Model '+model:'',read?.side?fmt(read.edge)+' pts from line':''].filter(Boolean);
+    return `<div><span class="tiny">${title}</span><strong>${esc(label(read,missing))}</strong>
+      ${details.length?`<p class="tiny">${esc(details.join(' · '))}</p>`:''}</div>`;
+  };
+  return `<div class="cbb-market-reads">${market('Spread',spread,bookSpread,projection,line==null?'No spread posted':'No projected margin')}${
+    market('Game total',total,bookTotal,projectedTotal,bookTotal?'No projected total':'No total posted')}</div>`+
+    (m?.provider&&Number.isFinite(Date.parse(g.marketAt))?`<p class="tiny">${esc(m.provider)} via ESPN · Checked ${esc(stamp(g.marketAt))}</p>`:'');
+}
+
+function cbbCard({g,a,h,f,markets}){
   const caption=`<p class="subtle cbb-matchup">${matchup(g)}</p><p class="tiny">${esc(status(g))}${g.neutral?' · Neutral site':''}</p>`;
   if(f.kind==='none')return card('No pregame forecast',caption+`<p class="subtle">${esc(f.reason)}</p>`,'cbb-forecast-card');
   const flag=f.kind==='clear'?badge('Clearer lean','g'):f.kind==='short'?badge('Short sample'):f.kind==='close'?badge('Close call'):'';
@@ -115,15 +138,15 @@ function cbbCard({g,a,h,f}){
   const evidence=table(['Team comparison',esc(g.away.code),esc(g.home.code)],[
     ['Completed games',f.aN,f.hN],['Season Elo',fmt(a?.elo,0),fmt(h?.elo,0)],['Season record',record(a),record(h)],
     ['Last five · average margin',signed(fmt(a?.recentMargin)),signed(fmt(h?.recentMargin))],
-    ['Projected score',fmt(g.forecast.awayPts),fmt(g.forecast.homePts)]
+    ['Score projection for total',fmt(g.forecast.awayPts),fmt(g.forecast.homePts)]
   ],{cls:'cbb-forecast-evidence'});
   const body=`<div class="cbb-forecast-pick"><div><span class="tiny">${lean?'Projected winner':'Even matchup'}</span>
     ${lean?`<h3>${team(lean)}</h3>`:''}</div><div><strong>${percent(f.chance)}</strong><span class="tiny">Model win chance</span></div></div>`+
     caption+`<p class="cbb-forecast-samples">${esc(g.away.code)} <strong>${f.aN}</strong> games ·
-      ${esc(g.home.code)} <strong>${f.hN}</strong> games ${flag}</p>
+      ${esc(g.home.code)} <strong>${f.hN}</strong> games ${flag}</p>`+cbbMarketPanel(g,markets)+`
     <details data-cbb-forecast="${esc(g.id)}"><summary>Forecast evidence</summary>
       <p class="subtle">${esc(reason)} ${esc(venue)}.</p>${evidence}
-      <p class="tiny">Recent margin and projected score provide matchup context.</p>
+      <p class="tiny">Recent form provides context. The total uses the scoring baseline above. The spread uses a separate opponent-adjusted margin.</p>
     </details>`;
   return card('',body,'cbb-forecast-card');
 }
@@ -132,21 +155,24 @@ function cbbBoard(games,teams,checked,updated){
   const now=Date.now(),byTeam=new Map(teams.map(t=>[t.id,t]));
   const rows=games.map(g=>{
     const a=byTeam.get(g.away.id),h=byTeam.get(g.home.id);
-    return {g,a,h,f:cbbForecast(g,a,h,now)};
+    const f=cbbForecast(g,a,h,now);
+    return {g,a,h,f,markets:f.kind==='none'?{}:collegeMarketReads('cbb',g)};
   });
-  const filter=S.f.cbbForecastFilter||'all';
+  const filter=S.f.cbbForecastFilter||'all',order=S.f.cbbForecastOrder||'winner';
+  const gap=r=>r.markets[order]?.side?r.markets[order].edge:-1;
   const filtered=rows.filter(r=>filter==='all'||r.f.kind===filter)
-    .sort((a,b)=>Number(b.f.kind==='clear')-Number(a.f.kind==='clear')||(b.f.chance??0)-(a.f.chance??0)||a.g.start.localeCompare(b.g.start));
+    .sort((a,b)=>(order==='winner'?0:gap(b)-gap(a))||Number(b.f.kind==='clear')-Number(a.f.kind==='clear')||
+      (b.f.chance??0)-(a.f.chance??0)||a.g.start.localeCompare(b.g.start));
   const limit=S.f['rows:cbb-forecast']||12, shown=filtered.slice(0,limit);
   const forecasts=rows.filter(r=>r.f.chance!=null).length;
-  return box('Model picks',tools(select('Show','cbbForecastFilter',forecastFilters))+
+  return box('Model picks',tools(select('Winner filter','cbbForecastFilter',forecastFilters)+select('Sort by','cbbForecastOrder',forecastOrders))+
     `<p class="subtle">${forecasts} of ${rows.length} games have a pregame forecast${forecasts&&updated?' · Model snapshot '+esc(stamp(updated)):''}.</p>`+
-    `<p class="tiny">Clearer leans appear first and have at least ${pct(clearChance)} model win chance and ${shortSample} completed games per team. Model win chances are uncalibrated.</p>`+
+    `<p class="tiny">Clearer winner leans use at least ${pct(clearChance)} model win chance and ${shortSample} completed games per team. Spread and total leans compare projected points with the posted line. Differences under ${minCbbMarketGap} point are marked near the line.</p>`+
     (shown.length?grid(2,shown.map(cbbCard),'cbb-forecast-grid'):
       empty(checked?'No games match these filters.':'No schedule snapshot for this day.'))+
     (filtered.length>limit?tools(btn('Show '+Math.min(12,filtered.length-limit)+' more','moreRows','cbb-forecast:'+(limit+12))+
       `<span class="subtle">${limit} of ${filtered.length}</span>`):''),
-    `The winner estimate uses season Elo and adds ${collegeHomeElo} Elo for home court. It needs at least ${minCollegeGames} completed games per team. Short samples use fewer than ${shortSample} games for either team. Close calls are below ${pct(closeChance)}.`);
+    `The winner estimate uses season Elo and adds ${collegeHomeElo} Elo for home court. Win chances are uncalibrated. Spread projections adjust past margins for opponent strength and home court. Total projections blend scoring and points allowed. Each projection needs at least ${minCollegeGames} completed games per team. Short samples use fewer than ${shortSample} games for either team. Close winner calls are below ${pct(closeChance)}.`);
 }
 
 export function collegePage(){

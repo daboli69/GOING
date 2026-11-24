@@ -3,6 +3,7 @@ import {mkdir,readFile,rename,writeFile} from 'node:fs/promises';
 import {collegeSports,collegeSeason,collegeHistory,collegeForecast} from '../site/college-core.mjs';
 import {collegeScoreboard,collegeResultRow,csvObjects,basketballFinals,basketballPlayers,playerFields,easternDate,footballForm} from './college-feeds.mjs';
 import {ESPN} from '../site/feeds.mjs';
+import {fitCbbMargins} from './cbb-margin.mjs';
 
 const cache=new URL('../.cache/college/',import.meta.url),out=new URL('../site/data/college/',import.meta.url);
 await Promise.all([mkdir(cache,{recursive:true}),mkdir(out,{recursive:true})]);
@@ -66,13 +67,17 @@ async function make(s){
   }
   const completed=[...finals.values()].filter(g=>collegeSeason(s,g.date)===year);
   const history=collegeHistory(completed),games=[...matches.values()].sort((a,b)=>a.start.localeCompare(b.start)||a.id.localeCompare(b.id));
+  const cbbMargin=s==='cbb'?fitCbbMargins(completed):null;
   if(players){
     const finished=new Set(completed.map(g=>g.id));
     await write(new URL(s+'-players.json',out),JSON.stringify({season:year,checked:players.at,players:basketballPlayers(players.data,finished)}));
   }
   for(const g of games){
     if(collegeSeason(s,g.date)!==year)continue;
-    if(g.status==='scheduled'&&Date.parse(g.start)>now)g.forecast=collegeForecast(g,history);
+    if(g.status==='scheduled'&&Date.parse(g.start)>now){
+      g.forecast=collegeForecast(g,history);
+      if(cbbMargin&&g.forecast)g.forecast.marketMargin=cbbMargin(g);
+    }
     if(form){
       const asOf=Math.min(now,Date.parse(g.start));
       g.form=[g.away,g.home].map(t=>form.data[t.id]?.find(x=>x.start<=asOf)??null);

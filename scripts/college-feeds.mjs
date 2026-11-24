@@ -6,7 +6,7 @@ export const easternDate=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/N
 const team=t=>({id:String(t.id),name:t.shortDisplayName||t.displayName,code:t.abbreviation});
 const line=v=>/^pk$/i.test(v)?0:number(v);
 const totalLine=v=>number(typeof v==='string'?v.replace(/^[ou]\s*/i,''):v);
-function footballMarket(od){
+function collegeMarket(od){
   if(!od?.provider?.name)return null;
   const a=od.pointSpread?.away?.close,h=od.pointSpread?.home?.close;
   const over=od.total?.over?.close,under=od.total?.under?.close;
@@ -28,7 +28,8 @@ export function collegeScoreboard(payload,sport){
     const status=collegeStatus(t,c.timeValid);
     return [{id:String(e.id),date,start,status,neutral:c.neutralSite===true,detail:t.shortDetail||t.description,
       away:team(a.team),home:team(h.team),aScore:['final','live'].includes(status)?number(a.score):null,
-      hScore:['final','live'].includes(status)?number(h.score):null,market:sport==='fbs'&&status==='scheduled'?footballMarket(c.odds?.[0]):null}];
+      hScore:['final','live'].includes(status)?number(h.score):null,
+      market:(sport==='fbs'||sport==='cbb')&&status==='scheduled'?collegeMarket(c.odds?.[0]):null}];
   });
 }
 
