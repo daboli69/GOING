@@ -185,6 +185,10 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .cbb-forecast-pick>div:last-child strong{display:block;font:700 1.45rem var(--heading);font-variant-numeric:tabular-nums}
 .cbb-forecast-samples{font-size:.85rem}
 .cbb-forecast-samples .badge{margin-inline-start:.3rem}
+.cbb-market-reads{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:.55rem 0}
+.cbb-market-reads>div{border:1px solid var(--edge);border-radius:7px;padding:7px;background:var(--panel);overflow-wrap:anywhere}
+.cbb-market-reads strong{display:block}
+.cbb-market-reads p{margin-bottom:0}
 .cbb-forecast-card details{border-top:1px solid var(--edge);margin-top:.5rem;padding-top:.45rem}
 .cbb-forecast-card summary{cursor:pointer;color:var(--accent-text);font-weight:700}
 .board.cbb-forecast-evidence{font-size:.83rem}

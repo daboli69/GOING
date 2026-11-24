@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {collegeScoreboard,collegeResultRow,fetchCollegeResults,csvObjects,basketballPlayers} from '../scripts/college-feeds.mjs';
-import {collegeHistory,collegeForecast,collegePicks,collegeCaptureKey,collegeSettlement,collegeSeason} from '../site/college-core.mjs';
+import {collegeHistory,collegeForecast,collegeMarketReads,collegePicks,collegeCaptureKey,collegeSettlement,collegeSeason} from '../site/college-core.mjs';
 import {collegePage} from '../site/college.mjs';
 import {current as S} from '../site/ui.mjs';
 import {blank,add,roi} from '../site/track-core.mjs';
+import {fitCbbMargins} from '../scripts/cbb-margin.mjs';
 
 const away={id:'1',name:'Away U',code:'AU'},home={id:'2',name:'Home U',code:'HU'};
 const espnTeam=(t,homeAway)=>({homeAway,team:{id:t.id,abbreviation:t.code,displayName:t.name},score:'0'});
@@ -25,12 +26,14 @@ test('college scoreboard uses ESPN IDs, Eastern dates, and signed team quotes fr
   assert.equal(g.aScore,null);
   assert.deepEqual(g.market.spread.home,{line:-3.5,odds:-115});
   assert.equal(g.market.moneyline.away,null);
+  assert.deepEqual(collegeScoreboard({events:[event]},'cbb')[0].market,g.market);
   assert.equal(collegeScoreboard({events:[event]},'cwb')[0].market,null);
   const done=structuredClone(event);
   done.competitions[0].status=status('STATUS_FINAL','post',true);
   const [f]=collegeScoreboard({events:[done]},'fbs');
   assert.equal(f.status,'final');
   assert.equal(f.market,null);
+  assert.equal(collegeScoreboard({events:[done]},'cbb')[0].market,null);
   const tbd=structuredClone(event);
   tbd.competitions[0].timeValid=false;
   assert.equal(collegeScoreboard({events:[tbd]},'fbs')[0].status,'other');
@@ -90,14 +93,48 @@ test('college tracking uses final scores and only books hypothetical units at ac
   assert.deepEqual(collegeSettlement(total,{status:'final',aScore:24,hScore:31}),{result:'push',value:55});
   assert.equal(collegeSettlement(winner,{status:'canceled'}).result,'void');
   assert.equal(collegeSettlement(winner,{status:'live',aScore:24,hScore:27}),null);
-  const [cbb]=collegePicks('cbb',g);
-  assert.equal(collegePicks('cbb',g).length,1);
+  const [cbb]=collegePicks('cbb',{...g,market:null});
+  assert.equal(collegePicks('cbb',{...g,market:null}).length,1);
   assert.equal(cbb.odds,null);
   const record=blank();
   add(record,{...cbb,result:'won'},.6);
   assert.equal(record.won,1);
   assert.equal(roi(record),null);
   assert.equal(collegePicks('fbs',{...g,market:null}).length,1);
+});
+
+test('CBB spread and total reads are independent of the outright winner and retain the quoted lines',()=>{
+  const [g]=collegeScoreboard({events:[event]},'cbb');
+  g.forecast={version:'college-v1',pHome:.70,marketMargin:2,homePts:30,awayPts:26};
+  const {spread,total}=collegeMarketReads('cbb',g);
+  assert.deepEqual(spread,{side:'away',line:3.5,odds:105,proj:-2,edge:1.5});
+  assert.deepEqual(total,{side:'Over',line:55,odds:-110,proj:56,edge:1});
+  const picks=collegePicks('cbb',g);
+  assert.deepEqual(picks.map(p=>[p.market,p.side]),[['Winner','home'],['Spread','away'],['Game total','Over']]);
+  assert.equal(picks[1].version,'cbb-margin-v1');
+  assert.deepEqual(collegeSettlement(picks[2],{status:'final',aScore:27,hScore:28}),{result:'push',value:55});
+  g.forecast.marketMargin=4;
+  g.forecast.homePts=29;
+  assert.equal(collegeMarketReads('cbb',g).spread.side,null);
+  assert.equal(collegeMarketReads('cbb',g).total.side,null);
+  g.forecast.marketMargin=5;
+  g.forecast.homePts=27;
+  g.market.total.under=null;
+  assert.equal(collegeMarketReads('cbb',g).total.side,'Under');
+  assert.equal(collegeMarketReads('cbb',g).total.odds,null);
+  assert.deepEqual(collegePicks('cbb',g).map(p=>p.market),['Winner','Spread']);
+});
+
+test('CBB margin fit uses opponent history and applies home points only at a confirmed home site',()=>{
+  const finals=Array.from({length:3},()=>({away,home,aScore:70,hScore:82,neutral:true,status:'final'}));
+  const unplayed={...finals[0],hScore:170,status:'scheduled'};
+  const predict=fitCbbMargins([...finals,unplayed]);
+  const neutral=predict({away,home,neutral:true});
+  assert.ok(neutral>0&&neutral<12);
+  assert.equal(predict({away,home,neutral:false}),neutral+3);
+  assert.equal(predict({away:home,home:away,neutral:true}),-neutral);
+  assert.equal(predict({away:{id:'other'},home,neutral:false}),null);
+  assert.equal(fitCbbMargins(finals.slice(0,2))({away,home}),null);
 });
 
 test('player leaderboards aggregate finished appearances and keep missing stats empty',()=>{
