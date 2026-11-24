@@ -401,7 +401,7 @@ function updateField(k,v){
     S.f.trackerHistoryLimit=40;
     if(k.startsWith('tracker'))S.sort=null;
   }
-  if(S.route.sport==='cbb'&&S.route.id==='college-slate'&&['collegeDay','cbbForecastFilter','cbbForecastOrder','search'].includes(k))delete S.f['rows:cbb-forecast'];
+  if(S.route.sport==='cbb'&&S.route.id==='college-slate'&&['collegeDay','cbbForecastFilter','cbbForecastOrder','cbbWinnerOdds','search'].includes(k))delete S.f['rows:cbb-forecast'];
   if(S.route.id==='myplays'&&lastDialog==='wheel'&&$('#dialog').open){wheel(false);return;}
   render();
 }
