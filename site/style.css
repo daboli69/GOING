@@ -175,6 +175,21 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .sgp-defense-method summary{color:var(--accent-text);font-weight:700;cursor:pointer}
 
 .gta-featured[hidden]{display:none}
+.cbb-forecast-grid{gap:10px;align-items:start}
+.cbb-forecast-card p{margin:.4rem 0;overflow-wrap:anywhere}
+.cbb-forecast-card .team-inline{white-space:normal}
+.cbb-forecast-card .cbb-matchup{display:flex;flex-wrap:wrap;align-items:center;gap:.2rem .4rem}
+.cbb-forecast-pick{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.cbb-forecast-pick h3{margin:0}
+.cbb-forecast-pick>div:last-child{text-align:right;flex:none}
+.cbb-forecast-pick>div:last-child strong{display:block;font:700 1.45rem var(--heading);font-variant-numeric:tabular-nums}
+.cbb-forecast-samples{font-size:.85rem}
+.cbb-forecast-samples .badge{margin-inline-start:.3rem}
+.cbb-forecast-card details{border-top:1px solid var(--edge);margin-top:.5rem;padding-top:.45rem}
+.cbb-forecast-card summary{cursor:pointer;color:var(--accent-text);font-weight:700}
+.board.cbb-forecast-evidence{font-size:.83rem}
+.board.cbb-forecast-evidence td{white-space:normal}
+
 .gta-board .gta-subject{min-width:10rem}
 .gta-board .gta-price{min-width:6.5rem}
 .gta-board small{color:var(--sub)}

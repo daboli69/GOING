@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {collegeScoreboard,collegeResultRow,fetchCollegeResults,csvObjects,basketballPlayers} from '../scripts/college-feeds.mjs';
 import {collegeHistory,collegeForecast,collegePicks,collegeCaptureKey,collegeSettlement,collegeSeason} from '../site/college-core.mjs';
+import {collegePage} from '../site/college.mjs';
+import {current as S} from '../site/ui.mjs';
 import {blank,add,roi} from '../site/track-core.mjs';
 
 const away={id:'1',name:'Away U',code:'AU'},home={id:'2',name:'Home U',code:'HU'};
@@ -44,6 +46,37 @@ test('baselines withhold small samples and home adjustment is absent at a neutra
   assert.ok(collegeForecast({away,home},history).pHome>neutral.pHome);
   assert.equal(collegeSeason('fbs','2027-01-07'),2026);
   assert.equal(collegeSeason('cwb','2026-11-13'),2027);
+});
+
+test('CBB winner forecasts surface the pick and distinguish short samples, even games, and closed pregame windows',t=>{
+  const day='2026-11-24',now=Date.parse(day+'T16:00Z');
+  t.mock.method(Date,'now',()=>now);
+  const {route,data,f}=S;
+  const a={...away,n:8,elo:1580,wins:7,losses:1,recentMargin:10};
+  const h={...home,n:6,elo:1490,wins:3,losses:3,recentMargin:-2};
+  const g={id:'clear',date:day,start:day+'T22:00Z',status:'scheduled',neutral:true,away,home,
+    forecast:{pHome:.36,aN:8,hN:6,awayPts:78,homePts:72}};
+  const games=[{...g,id:'short',forecast:{...g.forecast,pHome:.22,aN:3}},
+    {...g,id:'even',forecast:{...g.forecast,pHome:.50}},
+    {...g,id:'started',start:day+'T15:00Z'},
+    g];
+  try{
+    Object.assign(S,{route:{sport:'cbb',id:'college-slate',title:'Winner Forecasts'},f:{collegeDay:day},
+      data:{updated:new Date(now).toISOString(),coverage:{[day]:new Date(now).toISOString()},games,teams:[a,h]}});
+    const page=collegePage();
+    assert.match(page,/Projected winner[\s\S]*Away U[\s\S]*64\.0%/);
+    assert.match(page,/Away U leads by 90 adjusted Elo points/);
+    assert.match(page,/Even matchup/);
+    assert.match(page,/Pregame window closed/);
+    assert.ok(page.indexOf('64.0%')<page.indexOf('78.0%'),'clearer leans appear before a high-probability short sample');
+    S.f.cbbForecastFilter='short';
+    const short=collegePage();
+    assert.match(short,/Short sample/);
+    assert.match(short,/78\.0%/);
+    assert.doesNotMatch(short,/64\.0%/);
+    S.f.cbbForecastFilter='none';
+    assert.doesNotMatch(collegePage(),/Forecast evidence/);
+  }finally{Object.assign(S,{route,data,f});}
 });
 
 test('college tracking uses final scores and only books hypothetical units at actual quotes',()=>{
