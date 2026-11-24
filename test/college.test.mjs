@@ -82,6 +82,28 @@ test('CBB winner forecasts surface the pick and distinguish short samples, even 
   }finally{Object.assign(S,{route,data,f});}
 });
 
+test('CBB winner odds filter uses the projected winner’s own moneyline and includes exactly -200',t=>{
+  const day='2026-11-24',now=Date.parse(day+'T16:00Z');
+  t.mock.method(Date,'now',()=>now);
+  const {route,data,f}=S;
+  const game=(id,pHome,homePrice,awayPrice)=>({id,date:day,start:day+'T22:00Z',status:'scheduled',away,home,
+    forecast:{pHome,aN:6,hN:6},market:{moneyline:{home:homePrice,away:awayPrice}}});
+  try{
+    Object.assign(S,{route:{sport:'cbb',id:'college-slate',title:'Winner Forecasts'},f:{collegeDay:day},
+      data:{updated:new Date(now).toISOString(),coverage:{[day]:new Date(now).toISOString()},teams:[],
+        games:[game('at-limit',.7,-200,180),game('shorter',.8,-210,190),game('plus',.4,-300,225),
+          game('unpriced',.7,null,150),game('even',.5,-110,-110)]}});
+    const board=collegePage();
+    assert.match(board,/data-cbb-forecast="shorter"/);
+    assert.match(board,/data-cbb-forecast="unpriced"/);
+    S.f.cbbWinnerOdds='-200';
+    const filtered=collegePage();
+    assert.deepEqual([...filtered.matchAll(/data-cbb-forecast="([^"]+)"/g)].map(m=>m[1]),['at-limit','plus']);
+    assert.match(filtered,/Moneyline <strong>-200/);
+    assert.match(filtered,/Moneyline <strong>\+225/);
+  }finally{Object.assign(S,{route,data,f});}
+});
+
 test('college tracking uses final scores and only books hypothetical units at actual quotes',()=>{
   const [g]=collegeScoreboard({events:[event]},'fbs');
   g.forecast={version:'college-v1',pHome:.6,homePts:32,awayPts:24};
