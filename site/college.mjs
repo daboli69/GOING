@@ -1,6 +1,6 @@
-import {current as S,esc,get,dataURL,today,dateLabel,et,tools,select,search,table,box,empty,round,pct,badge,espnLogo} from './ui.mjs';
+import {current as S,esc,get,dataURL,today,dateLabel,et,tools,select,search,table,box,empty,round,pct,badge,espnLogo,btn,card,grid} from './ui.mjs';
 import {sections,href} from './config.mjs';
-import {collegePicks,collegePickLabel,minCollegeGames} from './college-core.mjs';
+import {collegePicks,collegePickLabel,collegeHomeElo,minCollegeGames} from './college-core.mjs';
 
 export const collegeLoad=(s,id)=>get(dataURL('college/'+s+(id==='college-players'?'-players':'')+'.json'),null);
 const fmt=(v,d=1)=>v==null?'—':round(v,d);
@@ -87,13 +87,75 @@ function gameLines(games){
     rows,{sort:'college-lines',empty:'No scheduled games in this view.'}),
     'Pregame moneyline, spread and total when the ESPN feed supplies them. A dash indicates a missing quote or forecast. The tracker grades priced sides from pregame snapshots.');
 }
+
+const shortSample=5, clearChance=.60, closeChance=.55;
+const forecastFilters=[['all','All games'],['clear','Clearer leans'],['close','Close calls'],['short','Short samples'],['none','No forecast']];
+function cbbForecast(g,a,h,now){
+  const f=g.forecast, upcoming=g.status==='scheduled'&&Date.parse(g.start)>now;
+  const aN=f?.aN??a?.n??0,hN=f?.hN??h?.n??0;
+  if(!upcoming)return {kind:'none',reason:g.status==='scheduled'?'Pregame window closed.':
+    ['live','final'].includes(g.status)?'See the tracker for recorded pregame picks.':'A confirmed future tip is required.'};
+  if(Math.min(aN,hN)<minCollegeGames)return {kind:'none',
+    reason:`Needs ${minCollegeGames} completed games per team. ${g.away.code}: ${aN} · ${g.home.code}: ${hN}.`};
+  if(!Number.isFinite(f?.pHome)||f.pHome<=0||f.pHome>=1)return {kind:'none',reason:'A pregame forecast is unavailable for this matchup.'};
+  const chance=Math.max(f.pHome,1-f.pHome);
+  const kind=Math.min(aN,hN)<shortSample?'short':chance<closeChance?'close':chance>=clearChance?'clear':'lean';
+  const pick=chance===.5?null:f.pHome>.5?g.home:g.away;
+  return {kind,chance,pick,aN,hN};
+}
+
+function cbbCard({g,a,h,f}){
+  const caption=`<p class="subtle cbb-matchup">${matchup(g)}</p><p class="tiny">${esc(status(g))}${g.neutral?' · Neutral site':''}</p>`;
+  if(f.kind==='none')return card('No pregame forecast',caption+`<p class="subtle">${esc(f.reason)}</p>`,'cbb-forecast-card');
+  const flag=f.kind==='clear'?badge('Clearer lean','g'):f.kind==='short'?badge('Short sample'):f.kind==='close'?badge('Close call'):'';
+  const venue=g.neutral?'Neutral site\u00a0·\u00a00 home Elo':g.home.code+' home court\u00a0·\u00a0+'+collegeHomeElo+' Elo';
+  const gap=Number.isFinite(a?.elo)&&Number.isFinite(h?.elo)?h.elo-a.elo+(g.neutral?0:collegeHomeElo):null, lean=f.pick;
+  const reason=gap==null?'Winner estimate uses season Elo and the venue.':!lean?'The adjusted Elo ratings are even.':
+    lean.name+' leads by '+fmt(Math.abs(gap),0)+' adjusted Elo points.';
+  const evidence=table(['Team comparison',esc(g.away.code),esc(g.home.code)],[
+    ['Completed games',f.aN,f.hN],['Season Elo',fmt(a?.elo,0),fmt(h?.elo,0)],['Season record',record(a),record(h)],
+    ['Last five · average margin',signed(fmt(a?.recentMargin)),signed(fmt(h?.recentMargin))],
+    ['Projected score',fmt(g.forecast.awayPts),fmt(g.forecast.homePts)]
+  ],{cls:'cbb-forecast-evidence'});
+  const body=`<div class="cbb-forecast-pick"><div><span class="tiny">${lean?'Projected winner':'Even matchup'}</span>
+    ${lean?`<h3>${team(lean)}</h3>`:''}</div><div><strong>${percent(f.chance)}</strong><span class="tiny">Model win chance</span></div></div>`+
+    caption+`<p class="cbb-forecast-samples">${esc(g.away.code)} <strong>${f.aN}</strong> games ·
+      ${esc(g.home.code)} <strong>${f.hN}</strong> games ${flag}</p>
+    <details data-cbb-forecast="${esc(g.id)}"><summary>Forecast evidence</summary>
+      <p class="subtle">${esc(reason)} ${esc(venue)}.</p>${evidence}
+      <p class="tiny">Recent margin and projected score provide matchup context.</p>
+    </details>`;
+  return card('',body,'cbb-forecast-card');
+}
+
+function cbbBoard(games,teams,checked,updated){
+  const now=Date.now(),byTeam=new Map(teams.map(t=>[t.id,t]));
+  const rows=games.map(g=>{
+    const a=byTeam.get(g.away.id),h=byTeam.get(g.home.id);
+    return {g,a,h,f:cbbForecast(g,a,h,now)};
+  });
+  const filter=S.f.cbbForecastFilter||'all';
+  const filtered=rows.filter(r=>filter==='all'||r.f.kind===filter)
+    .sort((a,b)=>Number(b.f.kind==='clear')-Number(a.f.kind==='clear')||(b.f.chance??0)-(a.f.chance??0)||a.g.start.localeCompare(b.g.start));
+  const limit=S.f['rows:cbb-forecast']||12, shown=filtered.slice(0,limit);
+  const forecasts=rows.filter(r=>r.f.chance!=null).length;
+  return box('Model picks',tools(select('Show','cbbForecastFilter',forecastFilters))+
+    `<p class="subtle">${forecasts} of ${rows.length} games have a pregame forecast${forecasts&&updated?' · Model snapshot '+esc(stamp(updated)):''}.</p>`+
+    `<p class="tiny">Clearer leans appear first and have at least ${pct(clearChance)} model win chance and ${shortSample} completed games per team. Model win chances are uncalibrated.</p>`+
+    (shown.length?grid(2,shown.map(cbbCard),'cbb-forecast-grid'):
+      empty(checked?'No games match these filters.':'No schedule snapshot for this day.'))+
+    (filtered.length>limit?tools(btn('Show '+Math.min(12,filtered.length-limit)+' more','moreRows','cbb-forecast:'+(limit+12))+
+      `<span class="subtle">${limit} of ${filtered.length}</span>`):''),
+    `The winner estimate uses season Elo and adds ${collegeHomeElo} Elo for home court. It needs at least ${minCollegeGames} completed games per team. Short samples use fewer than ${shortSample} games for either team. Close calls are below ${pct(closeChance)}.`);
+}
+
 export function collegePage(){
   const {sport,id}=S.route,fbs=sport==='fbs',section=sections[sport],snapshot=S.data;
   const head=`<h1>${esc(S.route.title)} <span class="muted">· ${esc(section.league)}</span></h1>`;
   if(!snapshot)return head+box('',empty('College data has not been published yet.'));
   const q=(S.f.search||'').trim().toLowerCase();
   if(id==='college-players')return head+playerPage(snapshot,q);
-  const dates=Object.keys(snapshot.coverage).sort(),day=S.f.collegeDay||(dates.includes(today)?today:dates.at(-1));
+  const dates=Object.keys(snapshot.coverage).sort(),day=S.f.collegeDay??=(dates.includes(today)?today:dates.at(-1));
   const checked=snapshot.coverage[day];
   const games=snapshot.games.filter(g=>g.date===day&&matchesSearch(q,g.away.name,g.home.name,g.away.code,g.home.code));
   const tracker=`<a class="pill" href="${href('tracker.html')}?sport=${sport.toUpperCase()}">View ${esc(section.league)} tracker</a>`;
@@ -104,6 +166,8 @@ export function collegePage(){
   if(id==='college-lines')return head+controls+meta+gameLines(games);
   const active=games.find(g=>g.id===S.f.collegeGame)||games[0];
   const opts=games.map(g=>[g.id,`${g.away.name} ${g.neutral?'vs':'at'} ${g.home.name}`]);
+  const keys=active?tools(select('Compare matchup','collegeGame',opts))+comparison(active,snapshot.teams,fbs,snapshot.formAt):'';
+  if(sport==='cbb')return head+controls+meta+cbbBoard(games,snapshot.teams,checked,snapshot.updated)+keys;
   const rows=games.map(g=>{
     const a=findTeam(snapshot.teams,g.away.id),h=findTeam(snapshot.teams,g.home.id),f=g.forecast;
     return [matchup(g),esc(status(g)),record(a)+' / '+record(h),winner(g),f?`${fmt(f.awayPts)}–${fmt(f.homePts)}`:'—',
@@ -112,5 +176,5 @@ export function collegePage(){
   return head+controls+meta+box(fbs?'Game previews':'Slate standouts',table(['Matchup','Status','Away / home record','Winner baseline','Projected score','Last 5 margin · away / home','Site'],rows,
     {sort:'college-slate',empty:checked?'No games match this slate and search.':'No schedule snapshot for this day.'}),
     `The season-only baseline uses Elo for winner estimates and blends scoring averages for projected scores. It needs at least ${minCollegeGames} completed games per team. The winner percentages are uncalibrated. The tracker records forecasts before the game and grades them against final scores.`)+
-    (active?tools(select('Compare matchup','collegeGame',opts))+comparison(active,snapshot.teams,fbs,snapshot.formAt):'');
+    keys;
 }

@@ -64,6 +64,8 @@ function render(options={}){
   const nbaDetails='details[data-parlay-ticket],details[data-parlay-weights]';
   const opened=S.route.id==='nba-parlays'&&options.keepPosition?
     new Set([...main.querySelectorAll(nbaDetails)].filter(x=>x.open).map(x=>x.dataset.parlayTicket??'')):null;
+  const cbbDetails=S.route.sport==='cbb'&&S.route.id==='college-slate'?
+    new Set([...main.querySelectorAll('details[data-cbb-forecast][open]')].map(x=>x.dataset.cbbForecast)):null;
   const injuryDetails=main.querySelector('details[data-nfl-injuries]');
   if(injuryDetails&&S.route.id==='nfl-parlays')S.f.nflInjuriesOpen=injuryDetails.open;
   const active=document.activeElement;
@@ -77,6 +79,7 @@ function render(options={}){
     catch(e){console.error(e);main.innerHTML=box('',empty('This view could not be rendered.')+tools(btn('Try again','retry','')));}
   }
   if(opened)for(const panel of main.querySelectorAll(nbaDetails))panel.open=opened.has(panel.dataset.parlayTicket??'');
+  if(cbbDetails?.size)for(const panel of main.querySelectorAll('details[data-cbb-forecast]'))panel.open=cbbDetails.has(panel.dataset.cbbForecast);
   const next=main.querySelector('.matchup-row');
   if(next){next.scrollLeft=scroll;if(options.scrollGame)next.querySelector('.game.on')?.scrollIntoView({block:'nearest',inline:'nearest'});}
   if(focus){
@@ -398,6 +401,7 @@ function updateField(k,v){
     S.f.trackerHistoryLimit=40;
     if(k.startsWith('tracker'))S.sort=null;
   }
+  if(S.route.sport==='cbb'&&S.route.id==='college-slate'&&['collegeDay','cbbForecastFilter','search'].includes(k))delete S.f['rows:cbb-forecast'];
   if(S.route.id==='myplays'&&lastDialog==='wheel'&&$('#dialog').open){wheel(false);return;}
   render();
 }

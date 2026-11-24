@@ -21,6 +21,7 @@ export function collegeStatus(type,timeValid=true){
   return 'other';
 }
 export const minCollegeGames=3;
+export const collegeHomeElo=45;
 const expected=(a,b)=>1/(1+10**((b-a)/400));
 const avg=(rows,get)=>{
   const values=rows.map(get).filter(Number.isFinite);
@@ -62,7 +63,7 @@ export function collegeHistory(finals){
 export function collegeForecast(game,history){
   const a=history.teams[game.away.id],h=history.teams[game.home.id];
   if(!a||!h||Math.min(a.n,h.n)<minCollegeGames)return null;
-  const pHome=expected(h.elo+(game.neutral?0:45),a.elo);
+  const pHome=expected(h.elo+(game.neutral?0:collegeHomeElo),a.elo);
   const scoring=(t,key)=>(t[key]*t.n+history.leaguePoints*4)/(t.n+4);
   const homePts=(scoring(h,'pf')+scoring(a,'pa'))/2;
   const awayPts=(scoring(a,'pf')+scoring(h,'pa'))/2;
