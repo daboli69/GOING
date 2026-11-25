@@ -162,13 +162,13 @@ const freshLine=(row,now)=>{
   return active(row.game)&&tip>now&&stamp<=now&&now-stamp<=120*60000&&Number.isFinite(row.quote.line);
 };
 
-export function builderLegs(mainRows,alternateRows,cfg,{minPrice,maxPrice,now=Date.now(),taken}){
+export function builderLegs(mainRows,alternateRows,cfg,{minPrice,maxPrice,now=Date.now(),taken,requireMain=true}){
   const main=new Map(mainRows.filter(row=>row.quote.provider==='DraftKings'&&freshLine(row,now))
     .map(row=>[playerMarket(row),row.quote.line]));
   const priced=new Map();
   for(const row of alternateRows){
     const {quote,stat}=row, mainLine=main.get(playerMarket(row));
-    if(mainLine==null||quote.line>=mainLine||!cfg.stats.includes(stat)||!freshLine(row,now))continue;
+    if((mainLine==null?requireMain:quote.line>=mainLine)||!cfg.stats.includes(stat)||!freshLine(row,now))continue;
     if(quote.provider!=='Kalshi'&&(quote.provider!=='DraftKings'||quote.milestone!==quote.line+.5))continue;
     const price=Number(quote.over);
     if(!Number.isInteger(price)||price<minPrice||price>maxPrice)continue;

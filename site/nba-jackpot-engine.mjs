@@ -9,10 +9,10 @@ const minLegs=2;
 const product=values=>values.reduce((value,p)=>value*p,1);
 
 export function jackpotProps(rows,alternates,logs,now){
-  const main=rows.filter(row=>row.quote.provider==='DraftKings'&&!row.uncertain&&row.quote.line%1===.5);
+  const main=rows.filter(row=>row.quote.provider==='DraftKings'&&!row.uncertain);
   const milestones=alternates.filter(row=>row.quote.provider==='DraftKings'&&!row.uncertain);
-  const regular=evaluate(main,screening,{now}).eligible;
-  const alt=builderLegs(main,milestones,screening,{now,minPrice:-Number.MAX_SAFE_INTEGER,maxPrice:-100}).eligible;
+  const regular=evaluate(main.filter(row=>row.quote.line%1===.5),screening,{now}).eligible;
+  const alt=builderLegs(main,milestones,screening,{now,minPrice:-Number.MAX_SAFE_INTEGER,maxPrice:-100,requireMain:false}).eligible;
   return [...regular,...alt].map(leg=>{
     const history=currentStint(logs[leg.player]||[],leg.team,leg.date), trend=roleTrend(history);
     const minutes=trend.recent.minutes;
@@ -70,27 +70,37 @@ function pricedGroup(group,support){
   return {chance,decimal,...support,game:group[0].game};
 }
 
+export const nbaJackpotTicketKey=legs=>legs.map(leg=>leg.key).sort().join('~');
+const compareTickets=(a,b)=>Math.abs(a.chance-b.chance)>1e-12?b.chance-a.chance:b.decimal-a.decimal;
+
 // Bounds use the independent products, which always upper-bound our estimated chance and combined odds.
-export function findNbaJackpot(pool,{logs={},minimum=jackpotMinimum,limit=100000}={}){
-  const candidates=pool.filter(leg=>leg.kind==='prop'&&leg.chance>0&&leg.chance<1&&Number.isFinite(leg.decimal)&&leg.decimal>1)
+export function findNbaJackpot(pool,{logs={},minimum=jackpotMinimum,limit=100000,count=1,skip=new Set()}={}){
+  const candidates=[...new Map(pool.filter(leg=>leg.kind==='prop'&&leg.chance>0&&leg.chance<1&&Number.isFinite(leg.decimal)&&leg.decimal>1)
+    .map(leg=>[leg.key,leg])).values()]
     .map(leg=>({leg,weight:Math.log(leg.decimal),loss:-Math.log(leg.chance)}))
     .sort((a,b)=>b.weight/b.loss-a.weight/a.loss||b.leg.chance-a.leg.chance);
   const n=candidates.length, suffix=Array(n+1).fill(0), target=Math.log(minimum), evidence=groupEvidence(logs);
   for(let i=n-1;i>=0;i--)suffix[i]=suffix[i+1]+candidates[i].weight;
   const selected=[], used=new Set(), groups=new Map();
-  let best=null, examined=0, limited=false;
+  const tickets=[];
+  let examined=0, limited=false;
+  const cutoff=()=>tickets.length===count?tickets[count-1]:null;
   function walk(start,weight,loss,price,chance){
+    const worst=cutoff();
     if(selected.length>=minLegs&&price>=minimum-1e-10&&
-      (!best||chance>best.chance+1e-12||Math.abs(chance-best.chance)<=1e-12&&price>best.decimal)){
-      best={legs:[...selected],chance,decimal:price,groups:[...groups.values()].map(g=>g.estimated)};
+      (!worst||compareTickets({chance,decimal:price},worst)<0)&&!skip.has(nbaJackpotTicketKey(selected))){
+      tickets.push({legs:[...selected],chance,decimal:price,groups:[...groups.values()].map(g=>g.estimated)});
+      tickets.sort(compareTickets);
+      if(tickets.length>count)tickets.pop();
     }
     for(let i=start;i<n&&n-i+selected.length>=minLegs;i++){
       const {leg,weight:addedWeight,loss:addedLoss}=candidates[i];
       const remaining=Math.max(0,target-weight);
       if(suffix[i]+1e-12<remaining)break;
+      const bound=cutoff()?.chance??0;
       // Even a fractional use of the remaining legs at their best efficiency cannot beat this bound.
-      if(best&&Math.exp(-loss-remaining*addedLoss/addedWeight)<best.chance-1e-12)break;
-      if(used.has(leg.marketKey)||best&&Math.exp(-loss-addedLoss)<best.chance-1e-12)continue;
+      if(Math.exp(-loss-remaining*addedLoss/addedWeight)<bound-1e-12)break;
+      if(used.has(leg.marketKey)||Math.exp(-loss-addedLoss)<bound-1e-12)continue;
       if(examined>=limit){limited=true;return;}
       examined++;
       const old=groups.get(leg.game), legs=old?[...old.legs,leg]:[leg], support=evidence(legs);
@@ -107,5 +117,5 @@ export function findNbaJackpot(pool,{logs={},minimum=jackpotMinimum,limit=100000
     }
   }
   walk(0,0,0,1,1);
-  return {ticket:best,examined,limited};
+  return {ticket:tickets[0]??null,tickets,examined,limited};
 }

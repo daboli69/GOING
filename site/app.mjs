@@ -612,6 +612,7 @@ document.addEventListener('click',e=>{
   if(act==='backup'){backup();return;}
   if(act==='photoCol'){photoState.columns=v;photo();return;}
   if(S.route.sport==='mlb'&&M.mlb){const r=M.mlb.action(act,v);if(r){if(typeof r==='string')toast(r);render();return;}}
+  if(S.route.id==='nba-jackpot'&&act.startsWith('nbaJackpot')&&M.nba?.action(act,v,t)){render({keepPosition:true});return;}
   if(M[S.route.sport]?.action?.(act,v,t)&&(act.startsWith('parlay')||act.startsWith('fb')||act.startsWith('td')||act.startsWith('nbaProp')))render();
 });
 document.addEventListener('input',e=>{
