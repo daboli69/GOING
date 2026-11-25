@@ -5,7 +5,7 @@ import {lineupEffect,rotationTeammates,teammateSplits} from '../site/nba-lineup-
 import {captureLegs,finalPlayers,gradeLeg,observeLeg} from '../site/nba-parlay-tracking.mjs';
 import {chooseQuotes} from '../scripts/market-data.mjs';
 import {gradeNbaPropSettlement,loadNbaPropSettlements} from '../scripts/nba-prop-settlement.mjs';
-import {parlayPage,savedParlayTickets} from '../site/nba-parlays.mjs';
+import {parlayAction,parlayPage,savedParlayTickets} from '../site/nba-parlays.mjs';
 import {current as S} from '../site/ui.mjs';
 
 const now=Date.parse('2026-11-12T16:00Z');
@@ -108,15 +108,25 @@ test('Full List ranks the entire eligible pool by adjusted hit rate, even when g
   t.mock.method(Date,'now',()=>now);
   const {f,route,day}=S;
   const sample=[4,4,...Array(18).fill(9)];
-  const rows=[row({player:{...row().player,id:'short',name:'Short sample'},
-      form:{...row().form,season:Array(10).fill(9)}}),
+  const main=row({player:{...row().player,id:'short',name:'Short sample'},quote:{...row().quote,provider:'DraftKings'},
+    form:{...row().form,season:Array(10).fill(9)}});
+  const alternate={...main,quote:{...main.quote,line:5.5,over:-220,provider:'Kalshi'}};
+  const rows=[main,
     ...Array.from({length:13},(_,i)=>row({player:{...row().player,id:'long'+i,name:'Long sample '+i},
       form:{...row().form,season:sample},quote:{...row().quote,over:'+120'}})),
     row({player:{...row().player,id:'out',name:'Cut player'},out:true})];
   try{
     Object.assign(S,{f:{},route:{sport:'nba'},day:'2026-11-12'});
-    const html=parlayPage({rows,games:[],roster:[]});
-    const pool=/<ol class="parlay-pool">([\s\S]*?)<\/ol>/.exec(html)?.[1];
+    const html=parlayPage({rows,alternates:[alternate],games:[],roster:[]});
+    const mainStart=html.indexOf('id="nba-main-legs"'), builderStart=html.indexOf('id="nba-builder-legs"');
+    assert.ok(mainStart>0&&mainStart<builderStart);
+    assert.match(html,/data-act="parlayPoolJump"[^>]*>View Full List/);
+    const mainSection=html.slice(mainStart,builderStart), builderSection=html.slice(builderStart);
+    assert.match(mainSection,/Full List · Main Lines/);
+    assert.match(mainSection,/Over 6\.5 Points · -110 DraftKings/);
+    assert.doesNotMatch(mainSection,/Over 5\.5 Points/);
+    assert.match(builderSection,/Over 5\.5 Points · -220 Kalshi/);
+    const pool=/<ol class="parlay-pool">([\s\S]*?)<\/ol>/.exec(mainSection)?.[1];
     assert.ok(pool);
     assert.equal([...pool.matchAll(/<li>/g)].length,14);
     assert.ok(pool.indexOf('Long sample 0')<pool.indexOf('Short sample'));
@@ -125,6 +135,21 @@ test('Full List ranks the entire eligible pool by adjusted hit rate, even when g
     assert.match(pool,/Type A edge/);
     assert.match(pool,/>Type A<\/span>/);
     assert.doesNotMatch(pool,/Cut player/);
+  }finally{Object.assign(S,{f,route,day});}
+});
+
+test('the main-line list can be restored when an evidence filter hides all qualifying legs',t=>{
+  t.mock.method(Date,'now',()=>now);
+  const {f,route,day}=S;
+  const priced=row({quote:{...row().quote,provider:'DraftKings'}});
+  const data={rows:[priced],games:[],roster:[],trendSample:()=>null};
+  try{
+    Object.assign(S,{f:{nbaFullContext:'Head-to-head'},route:{sport:'nba'},day:'2026-11-12'});
+    const filtered=parlayPage(data);
+    assert.match(filtered,/Show full main-line pool/);
+    assert.match(filtered,/No qualifying legs meet this evidence filter/);
+    assert.equal(parlayAction('parlayFullListReset','',data),true);
+    assert.match(parlayPage(data),/Over 6\.5 Points · -110 DraftKings/);
   }finally{Object.assign(S,{f,route,day});}
 });
 
