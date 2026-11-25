@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {findJackpotTickets,jackpotCandidates,jackpotLegKey,jackpotLegs,jackpotPrice,jackpotReplacements,jackpotTicketKey,jackpotBeforeKickoff,jackpotSlates,tdDefenseProfile} from '../site/nfl-td-jackpot.mjs';
+import {findJackpotTickets,jackpotCandidates,jackpotLegKey,jackpotLegs,jackpotPrice,makeJackpotTicket,jackpotReplacements,jackpotTicketKey,jackpotBeforeKickoff,jackpotSlates,tdDefenseProfile} from '../site/nfl-td-jackpot.mjs';
 
 import {tdBoardData} from '../site/nfl.mjs';
 import {tdJackpotAction,tdJackpotPage} from '../site/nfl-td-jackpot-page.mjs';
+import {fitTdCoScoring} from '../site/nfl-td-jackpot-estimates.mjs';
 import {current as S} from '../site/ui.mjs';
 
 const jackpotTickets=(rows,source)=>findJackpotTickets(jackpotLegs(rows,source));
@@ -66,13 +67,13 @@ test('the jackpot page switches days without mixing drafts and labels Thursday a
   const other={...row('sunday',{...sunday,date:'2026-11-29'}),counts:{},opp:'MIA'};
   const quotes=thursday.map(thursdayQuote);
   try{
-    Object.assign(S,{year:2026,week:12,route:{sport:'nfl'},f:{jackpotDay:'Thursday'},odds:quotes,data:{schedule:[]}});
+    Object.assign(S,{year:2026,week:12,route:{sport:'nfl'},f:{jackpotDay:'Thursday'},odds:quotes,data:{schedule:[]},tdLog:null});
     const html=tdJackpotPage({rows:[...thursday,other]});
     assert.match(html,/value="Thursday" selected/);
-    assert.match(html,/Thursday research slate/);
+    assert.match(html,/Top Thursday TD parlays/);
     assert.match(html,/Thursday scorers/);
     assert.doesNotMatch(html,/Player sunday/);
-    assert.match(html,/\+1000 estimated combined odds/);
+    assert.match(html,/\+1000 projected odds/);
     const draft=S.f.jackpotState.slates.Thursday;
     S.f.jackpotDay='Sunday';
     const sundayPage=tdJackpotPage({rows:[...thursday,other]});
@@ -81,72 +82,73 @@ test('the jackpot page switches days without mixing drafts and labels Thursday a
     assert.match(sundayPage,/Player sunday/);
     assert.doesNotMatch(sundayPage,/Player thursday/);
     S.f.jackpotDay='Thursday';
-    assert.match(tdJackpotPage({rows:thursday}),/\+1000 estimated combined odds/);
+    assert.match(tdJackpotPage({rows:thursday}),/\+1000 projected odds/);
     assert.equal(S.f.jackpotState.slates.Thursday,draft);
-    assert.equal(tdJackpotAction('tdJackpotRegenerate','["reference"]',{rows:thursday}),true);
+    assert.equal(tdJackpotAction('tdJackpotRegenerate','["thursday"]',{rows:thursday}),true);
     assert.match(tdJackpotPage({rows:thursday}),/player rules and \+1000 minimum/);
   }finally{Object.assign(S,old);}
 });
 
-test('same-game drafts enforce the requested game count and do not infer book prices or joint chances',()=>{
-  const candidates=['a','b','c','d','e','f','g','h'].map((id,i)=>row(id,thanksgiving[Math.floor(i/4)],.8-i*.05));
-  const pool=jackpotLegs(candidates,'fanatics',{allowUnpriced:true});
-  for(const [format,gameCount] of [['sgp',1],['sgpx',2]]){
-    const tickets=findJackpotTickets(pool,{format,minimumOdds:1000});
-    assert.equal(tickets.length,4);
-    for(const ticket of tickets){
-      assert.equal(new Set(ticket.legs.map(leg=>leg.row.game.id)).size,gameCount);
-      assert.equal(new Set(ticket.legs.map(leg=>leg.row.id)).size,3);
-      assert.equal(ticket.decimal,null);
-      assert.equal(ticket.chance,null);
-    }
-    const [first]=tickets;
-    const old=jackpotLegKey(first.legs[2]);
-    const replacements=jackpotReplacements(first,old,pool,1000,format);
-    assert.ok(replacements.length);
-    assert.ok(replacements.every(({ticket})=>new Set(ticket.legs.map(leg=>leg.row.game.id)).size===gameCount));
-  }
-  assert.deepEqual(findJackpotTickets(pool),[]);
-  assert.deepEqual(findJackpotTickets([...pool.slice(0,2),{...pool[0]}],{format:'sgp'}),[]);
-  assert.equal(jackpotLegs(candidates,'fanatics',{allowUnpriced:true,blocked:new Set(['a'])}).length,7);
+test('Thursday ranks every supported format by estimated hit chance at the +1000 reference floor',()=>{
+  const candidates=Array.from({length:9},(_,i)=>({...row(String(i),thanksgiving[Math.floor(i/3)],.72-i*.06),
+    reference:{over:'+190',yes:.35}}));
+  const coScoring={games:20,factors:{'2 team':1.10,'3 team':1.15}};
+  const pool=jackpotLegs(candidates,'reference',{exactAsk:true});
+  const picks=findJackpotTickets(pool,{minimumOdds:1000,coScoring,limit:100});
+  assert.deepEqual(new Set(picks.map(t=>t.format)),new Set(['SGP','SGPx','One per game']));
+  assert.ok(picks.every((t,i)=>t.decimal>=11&&(!i||picks[i-1].chance>=t.chance)));
+  assert.equal(picks[0].format,'SGP');
+  assert.ok(Math.abs(picks[0].chance-.72*.66*.60)<1e-12);
+  assert.ok(Math.abs(picks[0].decimal-1/(.35**3*1.15))<1e-12);
+  assert.equal(makeJackpotTicket([pool[0],pool[0],pool[1]],1000,coScoring),null);
+
+  const nearCut=[{...pool[0],decimal:1/.4},{...pool[1],decimal:1/.4},{...pool[3],decimal:1/.55}];
+  assert.ok(makeJackpotTicket(nearCut,1000,{factors:{'2 team':1}}));
+  assert.equal(makeJackpotTicket(nearCut,1000,coScoring),null); // Positive dependence shortens the payout.
+  assert.equal(makeJackpotTicket(nearCut,1000,{factors:{}}),null);
+  assert.ok(makeJackpotTicket([pool[0],pool[3],pool[6]],1000,{factors:{}}));
 });
 
-test('Thursday uses an exact-ticket Fanatics quote for the minimum and hides same-game controls on Sunday',t=>{
+function priorBoard(i){
+  const date='2026-11-'+String(12+i).padStart(2,'0');
+  return {game:'prior-'+i,date,a:'CHI',h:'DET',tip:date+'T18:00Z',capturedAt:date+'T17:00Z',graded:date+'T22:00Z',
+    players:['a','b','c','d'].map((id,j)=>[id,id,j<3?'CHI':'DET','RB',.3]),tds:i%2?[]:['a','b','c','d']};
+}
+
+test('the joint scoring fit excludes same-day, late and ungraded forecasts and shrinks co-hits',()=>{
+  const valid=Array.from({length:10},(_,i)=>priorBoard(i));
+  const extra=[{...priorBoard(0),game:'late',capturedAt:'2026-11-12T19:00Z'},
+    {...priorBoard(0),game:'not-graded',graded:null},{...priorBoard(0),game:'same-day',date:'2026-11-22'}];
+  const fit=fitTdCoScoring([...valid,...extra],'2026-11-22',beforeThanksgiving);
+  assert.equal(fit.games,10);
+  assert.ok(fit.factors['2 team']>1&&fit.factors['2 team']<1.1);
+  assert.ok(fit.factors['3 mixed']>1&&fit.factors['3 mixed']<1.1);
+  assert.deepEqual(fitTdCoScoring(valid.slice(0,3),'2026-11-22',beforeThanksgiving).factors,{});
+});
+
+test('Thursday renders one automatic board without game, format or manual price fields',t=>{
   t.mock.method(Date,'now',()=>beforeThanksgiving);
   const old={...S};
-  const rows=Array.from({length:8},(_,i)=>{
-    const game=thanksgiving[Math.floor(i/4)];
-    return {...row('scorer'+i,game,.8-i*.05),counts:{},opp:game.h};
+  const rows=Array.from({length:9},(_,i)=>{
+    const game=thanksgiving[Math.floor(i/3)];
+    return {...row('scorer'+i,game,.72-i*.06),counts:{},opp:game.h};
   });
+  const quotes=rows.map(p=>quote(p,{over:'+186',yes:.35,capturedAt:'2026-11-25T17:30Z'}));
   try{
-    Object.assign(S,{year:2026,week:12,route:{sport:'nfl'},f:{jackpotDay:'Thursday',jackpotFormat:'sgp',jackpotGame:thanksgiving[0].id},
-      odds:[],data:{schedule:[]}});
-    const page=tdJackpotPage({rows});
-    assert.match(page,/value="sgp" selected/);
-    assert.match(page,/Fanatics SGP drafts/);
-    assert.match(page,/Waiting for the Fanatics betslip price/);
-    assert.doesNotMatch(page,/model estimate for all three to score|estimated combined odds/);
-
-    const quoteKey='jackpotSlipPrice:'+jackpotTicketKey(rows.slice(0,3).map(r=>({row:r})));
-    S.f[quoteKey]='+999';
-    let priced=tdJackpotPage({rows});
-    assert.match(priced,/\+999 is below the \+1000 minimum/);
-    S.f[quoteKey]='+1000';
-    priced=tdJackpotPage({rows});
-    assert.match(priced,/\+1000 meets the \+1000 minimum/);
-    assert.equal([...priced.matchAll(/meets the \+1000 minimum/g)].length,1);
-    assert.equal([...priced.matchAll(/Waiting for the Fanatics betslip price/g)].length,3);
-
-    S.f.jackpotFormat='sgpx';
-    const mixed=tdJackpotPage({rows});
-    assert.match(mixed,/Fanatics SGPx drafts/);
-    assert.match(mixed,/across two Thursday games/);
-    assert.doesNotMatch(mixed,/meets the \+1000 minimum/);
+    Object.assign(S,{year:2026,week:12,route:{sport:'nfl'},f:{jackpotDay:'Thursday'},odds:quotes,data:{schedule:[]},
+      tdLog:{live:Array.from({length:10},(_,i)=>priorBoard(i))}});
+    const html=tdJackpotPage({rows});
+    const tickets=markup=>markup.split('Top Thursday TD parlays')[1].split('Thursday scorers')[0];
+    assert.match(tickets(html),/projected odds · SGP/);
+    assert.match(tickets(html),/model estimate for all three to score/);
+    assert.match(tickets(html),/Scorer0/i);
+    assert.doesNotMatch(html,/data-field="jackpotPrice:|jackpotSlipPrice|jackpotFormat|jackpotGame/);
+    S.odds=quotes.slice(1);
+    assert.doesNotMatch(tickets(tdJackpotPage({rows})),/Scorer0/i); // A withdrawn quote removes the leg without regenerating.
     S.f.jackpotDay='Sunday';
-    const sundayPage=tdJackpotPage({rows});
-    assert.doesNotMatch(sundayPage,/Ticket format|Fanatics SGPx drafts|Combined Fanatics odds/);
-    assert.match(sundayPage,/combined odds of \+2000 or higher/);
-    assert.equal(tdJackpotAction('tdJackpotRegenerate','["sgpx"]',{rows}),false);
+    const sunday=rows.slice(0,3).map((r,i)=>({...r,game:{...thanksgiving[i],date:'2026-11-29'}}));
+    assert.match(tdJackpotPage({rows:sunday}),/Fanatics price for/);
+    assert.equal(tdJackpotAction('tdJackpotRegenerate','["thursday"]',{rows:sunday}),false);
   }finally{Object.assign(S,old);}
 });
 
