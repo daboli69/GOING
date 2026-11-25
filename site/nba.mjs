@@ -3,6 +3,7 @@ import {total,mean,round,pct,div,rate,heat,signed,seasonLimit,distanceZone} from
 import {current as S,esc,box,plain,grid,card,metric,logo,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,person,market,basePlay,propOdds,gameDay,gamesFor,final,dialog,badge,action,local,keep,et,dateKey,dateAdd} from './ui.mjs';
 import {courtDefense,courtField,courtThresholds,pra} from './nba-court.mjs';
 import {parlayPage,parlayAction} from './nba-parlays.mjs';
+import {nbaJackpotPage} from './nba-jackpot-page.mjs';
 import {openingTables,teamFirst,shotTables,makeEdge,earlyShares,blendShare,scorerShares,fairChances,impliedChance,americanFrom,roundRobin,regression,convictionTier} from './first-basket.mjs';
 import {propQuotes} from './ui.mjs';
 import {allowedRanks,markets} from './nba-parlay-engine.mjs';
@@ -1070,6 +1071,9 @@ export function nbaAction(act,v,target){
 }
 export function nbaPage(){
   return ({'nba-props':propTable,'nba-roles':()=>roleBoard({...roleData(),tracking:playerTracking(S.f.nbaTrackingStats,S.day),trackingThrough:S.f.nbaTrackingStats?.through}),
+    'nba-jackpot':()=>nbaJackpotPage({rows:parlayData().rows,
+      alternates:S.f.nbaPriceBoard?.builderQuotes?.length?parlayData(S.f.nbaPriceBoard.builderQuotes).rows:[],
+      games:S.games.map(game=>({...game,date:S.day})),logs:source().pg||{},feeds:S.f.nbaJackpotFeeds}),
     'nba-parlays':()=>parlayPage({...parlayData(),trendSample,compareQuotes:row=>propQuotes(row.player,row.stat,S.f.nbaPriceBoard?.comparisonQuotes||[]),
     alternates:S.f.nbaPriceBoard?.builderQuotes?.length?parlayData(S.f.nbaPriceBoard.builderQuotes).rows:[]}),
     league,keys,standouts,zones:zoneTargets,types:typePage,shotcharts:shotCharts,basket,court:kotc})[S.route.id]();
