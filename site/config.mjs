@@ -61,7 +61,7 @@ export const viewDefaults={
   'nba-models':{nbaAccuracyWindow:'all',nbaMarketView:'All games'},
   'nba-parlays':{nbaMilestoneStat:'Points',nbaFullContext:'All eligible',nbaFullSample:'3'},
   'nba-roles':{nbaRoleView:'Workload',nbaRoleWindow:'5',nbaRoleGame:'all',nbaInjuryFilter:'All',nbaRoleStat:'PRA'},
-  'nfl-td-jackpot':{jackpotDay:'Sunday',jackpotDefense:'rush',jackpotOpp:'',jackpotMinChance:'0',jackpotQuestionable:'No'},
+  'nfl-td-jackpot':{jackpotDay:'Sunday',jackpotFormat:'parlay',jackpotGame:'',jackpotDefense:'rush',jackpotOpp:'',jackpotMinChance:'0',jackpotQuestionable:'No'},
   'nfl-tdboard':{tdMarket:'Anytime TD',tdPos:'All',tdMinEdge:'4',tdMinOdds:'',tdMaxOdds:'',tdMinRz:'0',tdMinSnap:'0',tdMaxSpread:'20',tdMinTotal:'0',
     tdWeather:'Any',tdNoQ:'No',tdDue:'No',tdDst:'Yes',tdHold:'20',tdShow:'Top 40',tdLegs:'3',tdPerGame:'Yes',tdStack:'No'},
   basket:{fbHistory:'Season',fbMinEdge:'2',fbRatio:'1.2',fbHold:'30',fbRR:'3',fbBy:'2',fbShow:'Top 30'},
