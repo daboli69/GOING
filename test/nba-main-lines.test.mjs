@@ -30,10 +30,15 @@ test('DraftKings captures quoted pregame milestones as exact alternate Overs',()
   const offer={marketId:market.id,label:'4+',milestoneValue:4,tags:['SGP'],
     displayOdds:{american:'−240'},participants:offers[0].participants};
   const data={events:[event],markets:[alt],selections:[offer,{...offer,milestoneValue:6},
-    {...offer,label:'7+',milestoneValue:7,isSuspended:true},{...offer,label:'9+',milestoneValue:9,tags:[]}]};
+    {...offer,label:'8+',milestoneValue:8,displayOdds:{american:'+180'}},
+    {...offer,label:'7+',milestoneValue:7,isSuspended:true},{...offer,label:'9+',milestoneValue:9,tags:[]},
+    {...offer,label:'10+',milestoneValue:10,displayOdds:{american:'+90'}}]};
   assert.deepEqual(draftKingsMilestones(data,'Points',[game],now),[{
     player:'Kris Dunn',team:'LAC',market:'Points',line:3.5,milestone:4,date:game.date,a:'UTAH',h:'LAC',
     over:'-240',provider:'DraftKings',capturedAt:new Date(now).toISOString()
+  },{
+    player:'Kris Dunn',team:'LAC',market:'Points',line:7.5,milestone:8,date:game.date,a:'UTAH',h:'LAC',
+    over:'+180',provider:'DraftKings',capturedAt:new Date(now).toISOString()
   }]);
   assert.deepEqual(draftKingsMilestones(data,'Points',[{...game,status:'LIVE'}],now),[]);
   assert.equal(draftKingsMainLines(data,'Points',[game],now),null);

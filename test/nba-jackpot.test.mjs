@@ -7,14 +7,15 @@ import {current as S} from '../site/ui.mjs';
 const date='2026-11-25', now=Date.parse(date+'T15:00Z'), tip=date+'T23:00Z';
 const leg=(key,game,chance,decimal,options={})=>({key,game,marketKey:key,chance,decimal,kind:'prop',...options});
 
-test('the jackpot search checks different lengths, honors +2000, and rejects opposing outcomes',()=>{
+test('the jackpot search honors the three-leg and +2000 minimums and rejects opposing outcomes',()=>{
   const a=leg('a','a',.85,5), b=leg('b','b',.68,4.5);
   const opposed=leg('opp','a',.9,15,{marketKey:'a'});
   const other=leg('c','c',.64,1.8);
   const result=findNbaJackpot([a,b,opposed,other]);
   assert.equal(result.limited,false);
-  assert.deepEqual(result.ticket.legs.map(x=>x.key).sort(),['b','opp']);
-  assert.ok(Math.abs(result.ticket.chance-.9*.68)<1e-12);
+  assert.deepEqual(result.ticket.legs.map(x=>x.key).sort(),['b','c','opp']);
+  assert.ok(Math.abs(result.ticket.chance-.9*.68*.64)<1e-12);
+  assert.equal(findNbaJackpot([a,b]).ticket,null);
   const favorite=Array.from({length:7},(_,i)=>leg('fav'+i,'game'+i,.9,1.6));
   assert.equal(findNbaJackpot(favorite).ticket.legs.length,7);
   assert.equal(findNbaJackpot(favorite.slice(0,6)).ticket,null);
@@ -29,7 +30,7 @@ test('the bounded search yields the same best cross-game solution as exhaustive 
     const expected=[];
     for(let mask=1;mask<(1<<pool.length);mask++){
       const subset=pool.filter((_,i)=>mask&(1<<i));
-      if(subset.length<2||new Set(subset.map(x=>x.game)).size<subset.length)continue;
+      if(subset.length<3||new Set(subset.map(x=>x.game)).size<subset.length)continue;
       const price=subset.reduce((p,x)=>p*x.decimal,1), chance=subset.reduce((p,x)=>p*x.chance,1);
       if(price<21)continue;
       expected.push({chance,price,key:nbaJackpotTicketKey(subset)});
@@ -45,16 +46,18 @@ test('the bounded search yields the same best cross-game solution as exhaustive 
 test('a same-game grouping needs enough earlier shared games and prices positive co-hits conservatively',()=>{
   const one=leg('p1','one',.65,5,{player:'1',team:'ATL',date,stat:'Points',line:8.5,side:'Over'});
   const two=leg('p2','one',.65,5.5,{player:'2',team:'ATL',date,stat:'Rebounds',line:4.5,side:'Over'});
+  const three=leg('p3','other',.7,2);
   const log=(i,day,played)=>['past'+i,day,'ATL','BOS','home',30,played?14:6,0,0,played?7:3];
   const prior=Array.from({length:10},(_,i)=>log(i,'2026-11-'+String(1+i).padStart(2,'0'),i<5));
   const today=log(10,date,true);
-  const ticket=findNbaJackpot([one,two],{logs:{1:[...prior,today],2:[...prior,today]}}).ticket;
-  assert.equal(ticket.groups[0].n,10);
-  assert.equal(ticket.groups[0].hits,5);
-  assert.ok(ticket.decimal>=21&&ticket.decimal<27.5);
-  assert.ok(Math.abs(ticket.chance-.65**2)<1e-12);
-  assert.equal(findNbaJackpot([one,{...two,decimal:5}],{logs:{1:prior,2:prior}}).ticket,null);
-  assert.equal(findNbaJackpot([one,two],{logs:{1:prior.slice(0,7),2:prior}}).ticket,null);
+  const ticket=findNbaJackpot([one,two,three],{logs:{1:[...prior,today],2:[...prior,today]}}).ticket;
+  const shared=ticket.groups.find(group=>group.game==='one');
+  assert.equal(shared.n,10);
+  assert.equal(shared.hits,5);
+  assert.ok(ticket.decimal>=21&&ticket.decimal<55);
+  assert.ok(Math.abs(ticket.chance-.65**2*.7)<1e-12);
+  assert.equal(findNbaJackpot([one,{...two,decimal:2},three],{logs:{1:prior,2:prior}}).ticket,null);
+  assert.equal(findNbaJackpot([one,two,three],{logs:{1:prior.slice(0,7),2:prior}}).ticket,null);
 });
 
 const results=[6,6,6,14,14,14,14,14,14,14];
@@ -96,6 +99,21 @@ test('a seven-leg builder ticket can reach the minimum from verified quotes even
   assert.deepEqual(jackpotProps([],[unverified],{},now),[]);
 });
 
+test('quoted plus-money alternates can form a three-leg ticket above their main line and season average',()=>{
+  const rows=[propRow(1),propRow(2),propRow(3)];
+  const form=[10,10,10,10,10,10,14,14,14,14];
+  const alternates=rows.map(row=>({...row,form:{...row.form,season:form,last10:form,venue:form},
+    quote:{...row.quote,line:12.5,milestone:13,over:'+180',under:null}}));
+  const pool=jackpotProps(rows,alternates,{},now);
+  const ticket=findNbaJackpot(pool).ticket;
+  assert.equal(ticket.legs.length,3);
+  assert.ok(ticket.decimal>=21);
+  assert.ok(ticket.legs.every(leg=>leg.price==='+180'&&leg.line===12.5&&leg.milestone===13));
+  assert.ok(ticket.legs.every(leg=>Math.abs(leg.chance-(4+10/2.8)/20)<1e-10));
+  const stale={...alternates[0],quote:{...alternates[0].quote,capturedAt:date+'T12:59Z'}};
+  assert.deepEqual(jackpotProps([],[stale],{},now),[]);
+});
+
 test('the jackpot regenerates after blocking an exact leg or whole player and restores blocks after reload',t=>{
   const previous={day:S.day,route:S.route,f:S.f}, stored=new Map();
   const localStorageDescriptor=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
@@ -119,7 +137,7 @@ test('the jackpot regenerates after blocking an exact leg or whole player and re
   S.f={};
   assert.doesNotMatch(shown(render()),/Player 1 Over/);
   nbaJackpotAction('nbaJackpotBlockPlayer','["2","Player 2"]');
-  assert.match(render(),/No complete \+2000 ticket/);
+  assert.match(render(),/No \+2000 ticket with at least 3 player props/);
   nbaJackpotAction('nbaJackpotUnblockLeg',first.key);
   assert.match(shown(render()),/Player 1 Over/);
   assert.doesNotMatch(shown(render()),/Player 2 Over/);
@@ -128,8 +146,8 @@ test('the jackpot regenerates after blocking an exact leg or whole player and re
 });
 
 test('game lines cannot qualify a ticket or outrank a qualifying player-prop ticket',()=>{
-  const a=leg('a','a',.65,5), b=leg('b','b',.60,4.5);
+  const a=leg('a','a',.65,5), b=leg('b','b',.60,4.5), c=leg('c','c',.70,1.5);
   const gameLines=['Moneyline','Spread','Total'].map(stat=>leg(stat,stat,.98,10,{kind:'game',stat}));
-  assert.equal(findNbaJackpot([...gameLines,a]).ticket,null);
-  assert.deepEqual(findNbaJackpot([...gameLines,a,b]).ticket.legs.map(x=>x.key).sort(),['a','b']);
+  assert.equal(findNbaJackpot([...gameLines,a,b]).ticket,null);
+  assert.deepEqual(findNbaJackpot([...gameLines,a,b,c]).ticket.legs.map(x=>x.key).sort(),['a','b','c']);
 });

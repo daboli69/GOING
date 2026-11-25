@@ -11,17 +11,19 @@ export const defaults={legs:6,stats:markets,side:'Both',hit:60,sample:5,spread:6
 const active=g=>['FUT','PRE'].includes(g.status);
 const typed=stat=>stat==='Points'||stat==='Threes';
 
-export const nbaLegChance=leg=>clamp(adjustedLegChance(leg)+(leg.context?.lineup?.adjustment??0),0,1);
+export const nbaLegChance=(leg,priorChance=.5)=>clamp(adjustedLegChance(leg,5,priorChance)+(leg.context?.lineup?.adjustment??0),0,1);
 export function buildNbaTicket(legs,cfg,options={}){
   return buildMixedTicket(legs,cfg,{...options,rules:{...options.rules,rank:nbaLegChance}});
 }
 
 export function assess(row,side,cfg,context){
   const {quote,player,game,stat,avg,form,reads}=row;
+  const {longerThresholds}=context;
   const over=side==='Over', direction=over?1:-1;
   const price=quote[over?'over':'under'], prob=implied(price);
   const leg={date:row.date,game:String(game.id),tip:game.iso,player:player.id,name:player.name,
     team:player.team,opp:row.opp,stat,side,line:quote.line,price,provider:quote.provider,
+    ...(quote.milestone!=null?{milestone:quote.milestone}:{}),
     capturedAt:quote.capturedAt||null,reasons:[],flags:[],score:0};
   const checks={};
   const check=(rule,reason)=>{checks[rule]=reason;};
@@ -68,15 +70,16 @@ export function assess(row,side,cfg,context){
 
   const gap=avg!=null&&Number.isFinite(leg.line)?direction*(avg-leg.line):null;
   if(gap!=null){
-    check('Line vs average',gap<0?'Line vs season average':null);
-    if(gap>=0)leg.reasons.push('Line '+leg.line+' vs avg '+format(avg));
+    check('Line vs average',gap<0&&!longerThresholds?'Line vs season average':null);
+    if(gap>=0||longerThresholds)leg.reasons.push('Line '+leg.line+' vs avg '+format(avg));
   }
   const season=record(form.season,leg.line,side), last10=record(form.last10,leg.line,side), venue=record(form.venue,leg.line,side);
   check('History',season.n<5||form.last10.length<10?'Too few recent game logs':null);
-  if(!checks.History)check('Hit rate',last10.rate==null||season.rate<cfg.hit/100||last10.rate<cfg.hit/100?'Season or L10 hit rate':null);
-  check('Venue split',venue.n<3||venue.rate<.5?'Home or away split':null);
+  if(!checks.History&&!longerThresholds)check('Hit rate',last10.rate==null||season.rate<cfg.hit/100||last10.rate<cfg.hit/100?'Season or L10 hit rate':null);
+  check('Venue split',venue.n<3||!longerThresholds&&venue.rate<.5?'Home or away split':null);
   const forSide=reads.filter(x=>direction*(x-leg.line)>0).length, against=reads.filter(x=>direction*(x-leg.line)<0).length;
-  if(reads.length)check('Reads',against>forSide?'Reads favor the other side':null);
+  if(reads.length&&!longerThresholds)check('Reads',against>forSide?'Reads favor the other side':null);
+  if(longerThresholds&&against>forSide)leg.flags.push('Most reads are below this threshold');
   if(!checks['Venue split'])leg.reasons.push((game.h===leg.team?'Home':'Away')+' '+percent(venue.rate)+' ('+venue.hits+'/'+venue.n+')');
 
   if(!typed(stat)){
@@ -137,7 +140,7 @@ export function assess(row,side,cfg,context){
   return leg;
 }
 
-export function evaluate(rows,cfg,{now=Date.now(),taken=new Set()}={}){
+export function evaluate(rows,cfg,{now=Date.now(),taken=new Set(),longerThresholds=false}={}){
   const totals=new Map(rows.filter(r=>r.total!=null&&active(r.game)&&Date.parse(r.game.iso)>now)
     .map(r=>[String(r.game.id),r.total]));
   const floor=totals.size>=3?Math.min(...totals.values()):null;
@@ -147,7 +150,7 @@ export function evaluate(rows,cfg,{now=Date.now(),taken=new Set()}={}){
   for(const row of rows){
     if(!cfg.stats.includes(row.stat))continue;
     for(const side of sides){
-      const leg=assess(row,side,cfg,{now,taken,lowTotals});
+      const leg=assess(row,side,cfg,{now,taken,lowTotals,longerThresholds});
       screened.push(leg);
       if(leg.cut)cuts.set(leg.cut,(cuts.get(leg.cut)||0)+1);
       else eligible.push(leg);
@@ -181,7 +184,7 @@ export function builderLegs(mainRows,alternateRows,cfg,{minPrice,maxPrice,now=Da
   const {eligible}=evaluate(rows,{...cfg,side:'Over',hit:Math.max(cfg.hit,70),minOdds:1,maxOdds:2},{now,taken});
   return {priced:priced.size,eligible:eligible.map(leg=>{
     const row=priced.get([[leg.date,leg.game,leg.player,leg.stat].join('|'),leg.line,leg.provider].join('|'));
-    return {...leg,mainLine:row.mainLine,milestone:row.quote.milestone};
+    return {...leg,mainLine:row.mainLine};
   })};
 }
 

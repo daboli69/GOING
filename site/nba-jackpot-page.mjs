@@ -2,12 +2,14 @@ import {current as S,box,empty,esc,grid,metric,slate,tools,btn,local,keep,toast}
 import {american,pct} from './math.mjs';
 import {timeLabel} from './parlay-ui.mjs';
 import {legEvidenceButton} from './nba-evidence-view.mjs';
-import {findNbaJackpot,jackpotProps,nbaJackpotTicketKey} from './nba-jackpot-engine.mjs';
+import {findNbaJackpot,jackpotMinLegs,jackpotProps,nbaJackpotTicketKey} from './nba-jackpot-engine.mjs';
 
 const oddsText=price=>Number(price)>0?'+'+Number(price):String(price);
 const label=leg=>leg.name+' '+leg.side+' '+leg.line+' '+leg.stat;
 const matchup=leg=>leg.team+' vs '+leg.opp;
-const builderCount=legs=>legs.filter(leg=>leg.milestone!=null).length;
+const isAlternate=leg=>leg.milestone!=null;
+const isBuilder=leg=>isAlternate(leg)&&Number(leg.price)<0;
+const builderCount=legs=>legs.filter(isBuilder).length;
 const legBlocksKey=()=>'nba-jackpot-legs:'+S.day;
 const playerBlocksKey='nba-jackpot-players';
 const blocks=key=>new Map(S.f[key]??local(key,[]));
@@ -59,7 +61,8 @@ function ticketCard(ticket){
     metric('Estimated hit chance',pct(ticket.chance,1),'All legs'),
     metric('Ticket',ticket.legs.length+' legs',format+(builders?' · '+builders+' builder':''))])+notes+
     '<ol class="parlay-pool">'+ticket.legs.map(leg=>'<li><div class="parlay-pool-row"><div><strong>'+esc(label(leg))+'</strong>'+
-      '<div>'+esc(matchup(leg)+' · '+oddsText(leg.price)+' '+leg.provider+(leg.milestone!=null?' · Builder milestone':''))+'</div></div>'+
+      '<div>'+esc(matchup(leg)+' · '+oddsText(leg.price)+' '+leg.provider+
+        (isBuilder(leg)?' · Builder milestone':isAlternate(leg)?' · Plus-money alternate':''))+'</div></div>'+
       '<strong>'+pct(leg.chance,1)+'</strong></div>'+
       '<p class="subtle">'+esc('Season '+leg.form.season.hits+'/'+leg.form.season.n+' · L10 '+
         leg.form.last10.hits+'/'+leg.form.last10.n+' · Quoted '+timeLabel(leg.capturedAt))+'</p>'+
@@ -75,13 +78,15 @@ export function nbaJackpotPage({rows,alternates,logs},now=Date.now()){
   let {tickets,limited}=findNbaJackpot(props,{logs,count:3,skip:state.skipped});
   const cycled=state.skipped.size&&!tickets.length&&!limited;
   if(cycled){state.skipped.clear();({tickets,limited}=findNbaJackpot(props,{logs,count:3}));}
-  const scope=props.length+' eligible player props · '+builderCount(props)+' builder lines';
+  const builders=builderCount(props), plus=props.filter(isAlternate).length-builders;
+  const scope=props.length+' eligible player props · '+builders+' builder lines · '+plus+' plus-money alternates';
   const summary='<p class="subtle">'+esc(scope+(limited?' · Search limit reached. Showing the best results found.':''))+'</p>';
   const header='<h1>Fanatics NBA Jackpot</h1>'+slate({navOnly:true,date:true})+
     tools(btn('Check for updates','nbaParlayCheck',''))+
-    '<p class="subtle">GOING compares player-prop parlays of different lengths for the highest estimated hit chance at +2000 or longer. '+
+    '<p class="subtle">GOING ranks parlays with '+jackpotMinLegs+' or more player props at +2000 or longer by estimated hit chance. '+
     'DraftKings prices are references. Fanatics sets the actual betslip price and offer eligibility.</p>';
   const explanation='<p class="subtle">Player legs use Suggested Parlays’ matchup, type, form and lineup checks, with a small adjustment when similar-minute games support it. '+
+    'Plus-money milestones use hit rates at the quoted line, with small samples pulled toward the price-implied chance. '+
     'Same-game player combinations use prior shared games to estimate how often the lines hit together.</p>';
   const controls=tools((tickets.length?btn('Find more tickets','nbaJackpotNext',JSON.stringify(tickets.map(ticket=>nbaJackpotTicketKey(ticket.legs))),'outline'):'')+
     (state.skipped.size?btn('Back to top tickets','nbaJackpotTop','','outline'):''));
@@ -90,6 +95,6 @@ export function nbaJackpotPage({rows,alternates,logs},now=Date.now()){
     american(1/ticket.decimal)+' projected · '+pct(ticket.chance,1)+' estimated hit chance')+'</summary>'+ticketCard(ticket)+'</details>').join('');
   const notice=cycled?'<p role="status" class="subtle">No further tickets met +2000. Showing the top tickets again.</p>':'';
   return header+blockControls(legs,players)+box('Best estimated +2000 parlay',summary+controls+notice+(best?ticketCard(best):
-    empty('No complete +2000 ticket was found with the current pregame props and blocks.'))+explanation)+
+    empty('No +2000 ticket with at least '+jackpotMinLegs+' player props was found with the current prices and blocks.'))+explanation)+
     (otherTickets?box('Alternative tickets',otherTickets):'');
 }

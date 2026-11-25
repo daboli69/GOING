@@ -85,10 +85,10 @@ export function buildMixedTicket(legs,cfg,{locked=[],avoid=new Set(),excluded=ne
   return {ticket:[...best.slice(0,locked.length),...ranked],invalidLock:false};
 }
 
-// prior: wins and losses added to the season record (GOING UP 5, GOING LONG 8).
-export function adjustedLegChance(leg,prior=5){
+// With a 50% prior, add `prior` wins and losses to the season record.
+export function adjustedLegChance(leg,prior=5,priorChance=.5){
   const {hits,n}=leg.form.season;
-  return (hits+prior)/(n+2*prior);
+  return (hits+2*prior*priorChance)/(n+2*prior);
 }
 
 export function ticketMath(ticket,prior=5,chance=()=>null){
