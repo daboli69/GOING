@@ -2,7 +2,7 @@ import {current as S,box,btn,cell,dateLabel,dialog,empty,esc,grid,keep,local,per
 import {american,pct,round,signed} from './math.mjs';
 import {impliedChance} from './nfl-td.mjs';
 import {nflTeams} from './config.mjs';
-import {findJackpotTickets,jackpotCandidates,jackpotKey,jackpotLegKey,jackpotLegs,jackpotPrice,jackpotReplacements,
+import {findJackpotTickets,jackpotCandidates,jackpotSlates,jackpotKey,jackpotLegKey,jackpotLegs,jackpotPrice,jackpotReplacements,
   jackpotTicketKey,makeJackpotTicket,tdDefenseMetrics,tdDefenseProfile} from './nfl-td-jackpot.mjs';
 
 const odds=value=>value>0?'+'+value:String(value);
@@ -45,32 +45,34 @@ function reasons(row,profile){
 
 const limit=4, blockKey='td-jackpot-blocks';
 const sourceNames={fanatics:'Fanatics price tickets',reference:'Kalshi reference tickets'};
+const slateDay=()=>Object.hasOwn(jackpotSlates,S.f.jackpotDay)?S.f.jackpotDay:'Sunday';
+const slateMinimum=()=>jackpotSlates[slateDay()].minimumOdds;
 const timeLabel=value=>Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-US',{
   timeZone:'America/New_York',weekday:'short',hour:'numeric',minute:'2-digit',timeZoneName:'short'
 }).format(new Date(value)):null;
 
 function inputs(data){
   const entered=Object.fromEntries(Object.entries(S.f).filter(([key])=>key.startsWith('jackpotPrice:')).map(([key,value])=>[key.slice(13),value]));
-  const rows=jackpotCandidates(data.rows,S.odds||[],entered,Date.now());
+  const rows=jackpotCandidates(data.rows,S.odds||[],entered,Date.now(),slateDay());
   const saved=S.f.jackpotBlocks??local(blockKey,[]);
   const blocks=new Map((Array.isArray(saved)?saved:[]).filter(x=>Array.isArray(x)&&typeof x[0]==='string'&&typeof x[1]==='string'));
   return {rows,blocks,prefs:{blocked:new Set(blocks.keys()),minimum:Number(S.f.jackpotMinChance)/100||0,questionable:S.f.jackpotQuestionable==='Yes'}};
 }
 function state(){
   const period=S.year+'-'+S.week;
-  if(S.f.jackpotState?.period!==period)S.f.jackpotState={period,drafts:{},messages:{}};
-  return S.f.jackpotState;
+  if(S.f.jackpotState?.period!==period)S.f.jackpotState={period,slates:{}};
+  return S.f.jackpotState.slates[slateDay()]??={drafts:{},messages:{}};
 }
 const cardKey=ticket=>jackpotTicketKey(ticket.legs);
 function remember(source,tickets){
   state().drafts[source]=tickets.map(ticket=>ticket.legs.map(jackpotLegKey));
 }
-function currentTickets(source,eligible){
+function currentTickets(source,eligible,minimumOdds){
   const byKey=new Map(eligible.map(leg=>[jackpotLegKey(leg),leg])), prior=state().drafts[source]||[];
-  const kept=prior.map(keys=>makeJackpotTicket(keys.map(key=>byKey.get(key)))).filter(Boolean);
+  const kept=prior.map(keys=>makeJackpotTicket(keys.map(key=>byKey.get(key)),minimumOdds)).filter(Boolean);
   const skip=new Set(kept.map(cardKey));
-  const tickets=[...kept,...findJackpotTickets(eligible,{limit:limit-kept.length,skip})];
-  if(kept.length<prior.length)state().messages[source]='Rechecked the draft against the current pool. Unavailable legs and tickets below +2000 were removed.';
+  const tickets=[...kept,...findJackpotTickets(eligible,{limit:limit-kept.length,skip,minimumOdds})];
+  if(kept.length<prior.length)state().messages[source]='Rechecked the draft against the current pool. Unavailable legs and tickets below '+odds(minimumOdds)+' were removed.';
   remember(source,tickets);
   return tickets;
 }
@@ -99,12 +101,13 @@ export function tdJackpotAction(act,value,data){
 
   const [source,key,oldLeg,newLeg]=JSON.parse(value);
   if(!Object.hasOwn(sourceNames,source))return false;
-  const eligible=jackpotLegs(rows,source,prefs), current=currentTickets(source,eligible);
+  const minimumOdds=slateMinimum(), minimumLabel=odds(minimumOdds);
+  const eligible=jackpotLegs(rows,source,prefs), current=currentTickets(source,eligible,minimumOdds);
   if(act==='tdJackpotRegenerate'){
-    const alternatives=findJackpotTickets(eligible,{skip:new Set(current.map(cardKey))});
+    const alternatives=findJackpotTickets(eligible,{skip:new Set(current.map(cardKey)),minimumOdds});
     if(alternatives.length)remember(source,[...alternatives,...current].slice(0,limit));
     state().messages[source]=alternatives.length?alternatives.length+' different '+(alternatives.length===1?'ticket':'tickets')+' generated.':
-      'No different tickets meet the current prices, player rules and +2000 minimum.';
+      'No different tickets meet the current prices, player rules and '+minimumLabel+' minimum.';
     return true;
   }
 
@@ -114,7 +117,7 @@ export function tdJackpotAction(act,value,data){
     return true;
   }
   const profile=defense();
-  const options=jackpotReplacements(ticket,oldLeg,eligible);
+  const options=jackpotReplacements(ticket,oldLeg,eligible,minimumOdds);
   const choice=options.find(x=>jackpotLegKey(x.leg)===newLeg);
   if(act==='tdJackpotChoose'&&choice){
     const swapped=cardKey(choice.ticket);
@@ -126,33 +129,34 @@ export function tdJackpotAction(act,value,data){
   const previous=ticket.legs.find(l=>jackpotLegKey(l)===oldLeg);
   if(!previous)return false;
   const note=act==='tdJackpotChoose'?'<p role="status">That replacement is no longer available. The list has been updated.</p>':'';
-  dialog('Swap '+previous.row.p.name,note+'<p class="subtle">The other two legs stay in place. Replacements keep the estimated ticket at +2000 or higher.</p>'+
+  dialog('Swap '+previous.row.p.name,note+'<p class="subtle">The other two legs stay in place. Replacements keep the estimated ticket at '+minimumLabel+' or higher.</p>'+
     table(['Player','Price','Ticket odds','TD chance','Matchup',''],options.map(({leg,ticket:next})=>{
       const row=leg.row;
       return [esc(row.p.name+' · '+row.team),odds(leg.price),american(1/next.decimal),pct(row.anytime,1),esc(reasons(row,profile).slice(0,4).join(' · ')),
         nextAction('Use '+esc(row.p.name),'tdJackpotChoose',[source,key,oldLeg,jackpotLegKey(leg)])];
-    }),{wrap:'box',empty:'No new replacement meets the current prices, player rules and +2000 minimum.'}),true);
+    }),{wrap:'box',empty:'No new replacement meets the current prices, player rules and '+minimumLabel+' minimum.'}),true);
   return true;
 }
 
 function tickets(rows,source,profile,prefs){
   const eligible=jackpotLegs(rows,source,prefs);
-  const picks=currentTickets(source,eligible);
+  const minimumOdds=slateMinimum();
+  const picks=currentTickets(source,eligible,minimumOdds);
   const fanatics=source==='fanatics', label=sourceNames[source];
   const active=state().messages[source];
   const controls=tools(nextAction(fanatics?'Regenerate Fanatics tickets':'Regenerate Kalshi tickets','tdJackpotRegenerate',[source])+
     '<span class="subtle">'+eligible.length+' eligible priced players · '+new Set(eligible.map(leg=>leg.row.game.id)).size+' games</span>')+
     (active?'<p class="subtle" role="status">'+esc(active)+'</p>':'');
-  if(!picks.length)return box(label,controls+empty(fanatics?'No ticket qualifies at these prices and filters. Enter Fanatics Anytime TD prices across at least three Sunday games.':
-    'No three-game ticket reaches +2000 using current Kalshi reference prices and filters.'));
+  if(!picks.length)return box(label,controls+empty(fanatics?'No ticket qualifies at these prices and filters. Enter Fanatics Anytime TD prices across at least three '+slateDay()+' games.':
+    'No three-game ticket reaches '+odds(minimumOdds)+' using current Kalshi reference prices and filters.'));
   return box(label,controls+grid(2,picks.map(ticket=>'<div class="card"><h3>'+american(1/ticket.decimal)+' estimated combined odds</h3>'+
     '<p class="subtle">'+pct(ticket.chance,1)+' model estimate for all three to score</p>'+
     '<ul class="jackpot-legs">'+ticket.legs.map(({row,price})=>'<li><strong>'+esc(row.p.name)+'</strong> '+odds(price)+' · '+esc(row.team+' vs '+row.opp)+
       '<br><small>'+esc(pct(row.anytime,1)+' TD chance · '+priceEdge(row,price)+' · '+reasons(row,profile).join(' · '))+'</small>'+
       tools(nextAction('Swap '+esc(row.p.name),'tdJackpotSwap',[source,cardKey(ticket),jackpotKey(row)])+
         btn('Block '+esc(row.p.name),'tdJackpotBlock',String(row.id),'outline'),'tight')+'</li>').join('')+'</ul></div>'))+
-    '<p class="subtle">'+(fanatics?'Confirm the combined odds, eligible games and offer in the Fanatics betslip.':
-      'Market comparison using Kalshi asks. Enter Fanatics prices to build tickets for the promo.')+
+    '<p class="subtle">'+(fanatics?'Confirm the combined odds in the Fanatics betslip.':
+      'Market comparison using Kalshi asks. Enter Fanatics prices to compare ticket odds.')+
     ' The model estimate multiplies the three individual TD chances.</p>');
 }
 
@@ -161,8 +165,12 @@ export function tdJackpotPage(data){
   const profile=defense();
   const opponents=Object.keys(nflTeams).sort();
   const keys=Object.keys(tdDefenseMetrics),metric=tdDefenseMetrics[S.f.jackpotDefense]?S.f.jackpotDefense:'rush';
-  const header='<h1>Fanatics TD Jackpot</h1>'+slate({navOnly:true})+tools(btn('Check for updates','nflParlayCheck',''))+
-    '<p class="subtle">Three different anytime TD scorers from three Sunday games, with combined odds of +2000 or higher. Winning entries share the jackpot under the offer in your Fanatics app.</p>';
+  const day=slateDay();
+  const offer=day==='Thursday'?'Thursday research slate. Check your Fanatics offer for Thursday eligibility.':
+    'Winning entries share the jackpot under the terms in your Fanatics app.';
+  const header='<h1>Fanatics TD Jackpot</h1>'+slate({navOnly:true})+tools(
+    select('Game day','jackpotDay',Object.keys(jackpotSlates))+btn('Check for updates','nflParlayCheck',''))+
+    '<p class="subtle">Three different anytime TD scorers from three '+day+' games, with combined odds of '+odds(slateMinimum())+' or higher. '+offer+'</p>';
   const asOf=timeLabel(S.nflAvailability?.reportAt);
   const options=box('Ticket filters',tools(select('Minimum TD chance','jackpotMinChance',
     [['0','Any'],['15','15%'],['20','20%'],['25','25%'],['30','30%']])+select('Allow questionable players','jackpotQuestionable',['No','Yes']))+
@@ -172,7 +180,7 @@ export function tdJackpotPage(data){
       btn('Clear blocks','tdJackpotClear','','outline')):'<p class="subtle">Block a player on a ticket or on the scorer board. Blocks are saved in this browser.</p>'));
   const dates=[...new Set(rows.map(row=>row.game.date))];
   const visible=rows.filter(row=>(!S.f.jackpotOpp||row.opp===S.f.jackpotOpp)&&(!S.f.search||row.p.name.toLowerCase().includes(S.f.search.toLowerCase())));
-  const candidates=rows.length?box('Sunday scorers · '+esc(dates.map(date=>dateLabel(date,true)).join(' / ')),
+  const candidates=rows.length?box(day+' scorers · '+esc(dates.map(date=>dateLabel(date,true)).join(' / ')),
     tools(select('Opponent','jackpotOpp',[['','All defenses'],...opponents])+
       '<input type="search" data-field="search" aria-label="Find a scorer" placeholder="Find a scorer" value="'+esc(S.f.search||'')+'">')+
     table(['Player','Opponent','TD chance','Matchup and usage','Kalshi','Fanatics price','Ticket pool'],visible.map(row=>{
@@ -184,7 +192,7 @@ export function tdJackpotPage(data){
       return [person(row.p),team(row.opp),pct(row.anytime,1),esc(reasons(row,profile).join(' · ')),priceText(row.reference),cell(input,'jackpot-edit'),btn((blocked?'Unblock ':'Block ')+esc(row.p.name),blocked?'tdJackpotUnblock':'tdJackpotBlock',String(row.id),'outline')];
     }),{wrap:'box',empty:'No scorers match this filter.'})+
     '<p class="subtle">Enter Fanatics Anytime TD odds from your betslip. Prices stay on this page until you leave. Questionable and doubtful players remain visible for research.</p>'):
-    box('Sunday scorers',empty('No pregame Sunday scorers are available for this week. Change weeks to view another slate.'));
+    box(day+' scorers',empty('No pregame '+day+' scorers are available for this week. Try another game day or week.'));
   const defenses=box('Defensive weaknesses',
     tools(select('Sort by','jackpotDefense',keys.map(key=>[key,tdDefenseMetrics[key]])))+
     table(['Defense','Games',...keys.map(key=>tdDefenseMetrics[key]+' / game')],opponents.sort((a,b)=>
@@ -197,5 +205,8 @@ export function tdJackpotPage(data){
         })];
       }),{wrap:'box'})+
     '<p class="subtle">Prior completed games with play-by-play this season. Ranks start after three games and pull small samples toward the league average. Red-zone receiving TDs use the snap location.</p>');
-  return header+options+(rows.length?tickets(rows,'fanatics',profile,prefs)+tickets(rows,'reference',profile,prefs):'')+candidates+defenses;
+  const gameCount=new Set(rows.map(row=>row.game.id)).size;
+  const ticketPanels=gameCount>=3?tickets(rows,'fanatics',profile,prefs)+tickets(rows,'reference',profile,prefs):
+    gameCount?box('Ticket builder',empty('Building a ticket requires three pregame '+day+' games. Browse the scorers below.')):'';
+  return header+options+ticketPanels+candidates+defenses;
 }

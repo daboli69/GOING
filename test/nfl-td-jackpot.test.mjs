@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {findJackpotTickets,jackpotCandidates,jackpotLegKey,jackpotLegs,jackpotPrice,jackpotReplacements,jackpotTicketKey,sundayBeforeKickoff,tdDefenseProfile} from '../site/nfl-td-jackpot.mjs';
+import {findJackpotTickets,jackpotCandidates,jackpotLegKey,jackpotLegs,jackpotPrice,jackpotReplacements,jackpotTicketKey,jackpotBeforeKickoff,jackpotSlates,tdDefenseProfile} from '../site/nfl-td-jackpot.mjs';
 
 import {tdBoardData} from '../site/nfl.mjs';
+import {tdJackpotAction,tdJackpotPage} from '../site/nfl-td-jackpot-page.mjs';
 import {current as S} from '../site/ui.mjs';
 
 const jackpotTickets=(rows,source)=>findJackpotTickets(jackpotLegs(rows,source));
@@ -14,12 +15,77 @@ const quote=(p,patch={})=>({date:p.game.date,a:p.game.a,h:p.game.h,player:p.p.na
   over:'+200',provider:'Kalshi',capturedAt:'2026-11-21T17:30Z',...patch});
 
 test('jackpot uses Eastern Sunday before kickoff and excludes inactive or closed games',()=>{
-  assert.ok(sundayBeforeKickoff(sunday,now)); // Sunday night kickoff falls on Monday UTC.
-  assert.equal(sundayBeforeKickoff(sunday,Date.parse('2026-11-23T01:20Z')),false);
-  assert.equal(sundayBeforeKickoff({...sunday,date:'2026-11-23'},now),false);
-  assert.equal(sundayBeforeKickoff({...sunday,status:'Postponed'},now),false);
+  assert.ok(jackpotBeforeKickoff(sunday,now)); // Sunday night kickoff falls on Monday UTC.
+  assert.equal(jackpotBeforeKickoff(sunday,Date.parse('2026-11-23T01:20Z')),false);
+  assert.equal(jackpotBeforeKickoff({...sunday,date:'2026-11-23'},now),false);
+  assert.equal(jackpotBeforeKickoff({...sunday,status:'Postponed'},now),false);
   const rows=jackpotCandidates([row('a'),{...row('b'),status:'Out'},{...row('c'),status:'Questionable'}],[],{},now);
   assert.deepEqual(rows.map(x=>x.id),['a','c']);
+});
+
+const thanksgiving=[
+  {id:'2026_12_CHI_DET',date:'2026-11-26',time:'13:00',a:'CHI',h:'DET'},
+  {id:'2026_12_PHI_DAL',date:'2026-11-26',time:'16:30',a:'PHI',h:'DAL'},
+  {id:'2026_12_KC_BUF',date:'2026-11-26',time:'20:20',a:'KC',h:'BUF'}
+];
+const beforeThanksgiving=Date.parse('2026-11-25T18:00Z');
+const thursdayQuote=(p,i)=>quote(p,{over:i===2?'+175':'+100',capturedAt:'2026-11-25T17:30Z'});
+
+test('Thursday includes all three Thanksgiving games and uses Eastern kickoff boundaries',()=>{
+  const thursday=thanksgiving.map((game,i)=>row('thursday'+i,game));
+  const sundayRow=row('sunday',{...sunday,date:'2026-11-29'});
+  const fridayRow=row('friday',{...sunday,date:'2026-11-27'});
+  const rows=[...thursday,sundayRow,fridayRow];
+  assert.deepEqual(jackpotCandidates(rows,[],{},beforeThanksgiving,'Thursday').map(r=>r.id),thursday.map(r=>r.id));
+  assert.deepEqual(jackpotCandidates(rows,[],{},beforeThanksgiving).map(r=>r.id),['sunday']);
+  const thursdayNightInUtc=Date.parse('2026-11-27T01:20Z');
+  assert.equal(jackpotBeforeKickoff(thanksgiving[2],thursdayNightInUtc-1,'Thursday'),true);
+  assert.equal(jackpotBeforeKickoff(thanksgiving[2],thursdayNightInUtc,'Thursday'),false);
+  assert.equal(jackpotBeforeKickoff({...thanksgiving[0],status:'Postponed'},beforeThanksgiving,'Thursday'),false);
+  const quotes=thursday.map(thursdayQuote);
+  const candidates=jackpotCandidates(rows,quotes,{},beforeThanksgiving,'Thursday');
+  const eligible=jackpotLegs(candidates,'reference');
+  const {minimumOdds}=jackpotSlates.Thursday;
+  assert.equal(minimumOdds,1000);
+  const [ticket]=findJackpotTickets(eligible,{minimumOdds});
+  assert.equal(ticket.decimal,11);
+  assert.equal(findJackpotTickets(eligible).length,0);
+  assert.equal(findJackpotTickets(eligible.slice(1),{minimumOdds}).length,0);
+  assert.equal(jackpotLegs(candidates,'fanatics').length,0);
+  const substitutes=[{...row('replacement',thanksgiving[2]),reference:{over:'+175'}},
+    {...row('below',thanksgiving[2]),reference:{over:'+174'}}];
+  const original=ticket.legs.find(leg=>leg.row.game.id===thanksgiving[2].id);
+  const replacements=jackpotReplacements(ticket,jackpotLegKey(original),jackpotLegs(substitutes,'reference'),minimumOdds);
+  assert.deepEqual(replacements.map(x=>x.leg.row.id),['replacement']);
+});
+
+test('the jackpot page switches days without mixing drafts and labels Thursday as research',t=>{
+  t.mock.method(Date,'now',()=>beforeThanksgiving);
+  const old={...S};
+  const thursday=thanksgiving.map((game,i)=>({...row('thursday'+i,game),counts:{},opp:game.h}));
+  const other={...row('sunday',{...sunday,date:'2026-11-29'}),counts:{},opp:'MIA'};
+  const quotes=thursday.map(thursdayQuote);
+  try{
+    Object.assign(S,{year:2026,week:12,route:{sport:'nfl'},f:{jackpotDay:'Thursday'},odds:quotes,data:{schedule:[]}});
+    const html=tdJackpotPage({rows:[...thursday,other]});
+    assert.match(html,/value="Thursday" selected/);
+    assert.match(html,/Thursday research slate/);
+    assert.match(html,/Thursday scorers/);
+    assert.doesNotMatch(html,/Player sunday/);
+    assert.match(html,/\+1000 estimated combined odds/);
+    const draft=S.f.jackpotState.slates.Thursday;
+    S.f.jackpotDay='Sunday';
+    const sundayPage=tdJackpotPage({rows:[...thursday,other]});
+    assert.match(sundayPage,/combined odds of \+2000 or higher/);
+    assert.match(sundayPage,/Building a ticket requires three pregame Sunday games/);
+    assert.match(sundayPage,/Player sunday/);
+    assert.doesNotMatch(sundayPage,/Player thursday/);
+    S.f.jackpotDay='Thursday';
+    assert.match(tdJackpotPage({rows:thursday}),/\+1000 estimated combined odds/);
+    assert.equal(S.f.jackpotState.slates.Thursday,draft);
+    assert.equal(tdJackpotAction('tdJackpotRegenerate','["reference"]',{rows:thursday}),true);
+    assert.match(tdJackpotPage({rows:thursday}),/player rules and \+1000 minimum/);
+  }finally{Object.assign(S,old);}
 });
 
 test('source prices require the exact fixture, timestamp and anytime scoring line',()=>{

@@ -3,8 +3,8 @@ import {nflOut} from './nfl-workload.mjs';
 import {impliedChance,offenseTd} from './nfl-td.mjs';
 import {final} from './ui.mjs';
 
-const minimumDecimal=21;
 const jackpotQuoteAge=120*60_000;
+export const jackpotSlates={Sunday:{weekday:0,minimumOdds:2000},Thursday:{weekday:4,minimumOdds:1000}};
 export const tdDefenseMetrics={
   rush:'Rushing TDs',goalLine:'Rush TDs from the 5 or closer',pass:'Receiving TDs',redZonePass:'Receiving TDs from the red zone',
   RB:'RB receiving TDs',WR:'WR receiving TDs',TE:'TE receiving TDs'
@@ -57,9 +57,9 @@ export function tdDefenseProfile(schedule,events,players,year,week){
   return {teams:totals,league,ranked:ranked.length};
 }
 
-export function sundayBeforeKickoff(game,now){
+export function jackpotBeforeKickoff(game,now,day='Sunday'){
   const start=Date.parse(kickoff(game.date,game.time));
-  return new Date(game.date+'T12:00:00Z').getUTCDay()===0&&start>now&&!final(game)&&
+  return new Date(game.date+'T12:00:00Z').getUTCDay()===jackpotSlates[day]?.weekday&&start>now&&!final(game)&&
     !['LIVE','CRIT','IN','STARTED','POST','CANCELED','CANCELLED','POSTPONED','PPD','SUSPENDED'].includes(String(game.status||'').toUpperCase());
 }
 
@@ -78,8 +78,8 @@ function matchingQuote(row,quotes,provider,allowName){
     (!q.game||String(q.game)===String(game.id))&&(!q.team||q.team===team)&&
     (q.id!=null?String(q.id)===String(id):allowName&&nflName(q.player)===nflName(p.name)))??null;
 }
-export function jackpotCandidates(rows,quotes,entered,now){
-  const candidates=rows.filter(row=>sundayBeforeKickoff(row.game,now)&&row.p?.name&&row.p.name!=='Unknown player'&&
+export function jackpotCandidates(rows,quotes,entered,now,day='Sunday'){
+  const candidates=rows.filter(row=>jackpotBeforeKickoff(row.game,now,day)&&row.p?.name&&row.p.name!=='Unknown player'&&
     Number.isFinite(row.anytime)&&row.anytime>0&&row.anytime<=1&&!nflOut(row.status));
   const names=new Map();
   for(const row of candidates){
@@ -110,20 +110,21 @@ export function jackpotLegs(rows,source,{blocked=new Set(),minimum=0,questionabl
 export const jackpotLegKey=leg=>jackpotKey(leg.row);
 export const jackpotTicketKey=legs=>legs.map(jackpotLegKey).sort().join('~');
 const conflict=(a,b)=>a.row.game.id===b.row.game.id||String(a.row.id)===String(b.row.id);
+const meetsMinimum=(decimal,minimumOdds)=>decimal>=1+minimumOdds/100-1e-10;
 
-export function makeJackpotTicket(legs){
+export function makeJackpotTicket(legs,minimumOdds=jackpotSlates.Sunday.minimumOdds){
   if(legs.length!==3||legs.some(leg=>!leg))return null;
   const [a,b,c]=legs;
   if(conflict(a,b)||conflict(a,c)||conflict(b,c))return null;
   const decimal=legs.reduce((value,leg)=>value*leg.decimal,1);
-  if(decimal<minimumDecimal-1e-10)return null;
+  if(!meetsMinimum(decimal,minimumOdds))return null;
   return {legs,decimal,chance:legs.reduce((value,leg)=>value*leg.row.anytime,1)};
 }
 
 const compareTickets=(a,b)=>b.chance-a.chance||b.decimal-a.decimal;
 
-// Three Sunday games make the estimated price a product of single-game decimal quotes.
-export function findJackpotTickets(eligible,{limit=4,skip=new Set()}={}){
+// Estimate combined odds using decimal quotes from three distinct games.
+export function findJackpotTickets(eligible,{limit=4,skip=new Set(),minimumOdds=jackpotSlates.Sunday.minimumOdds}={}){
   if(limit<=0)return [];
   const tickets=[];
   for(let i=0;i<eligible.length-2;i++){
@@ -136,7 +137,7 @@ export function findJackpotTickets(eligible,{limit=4,skip=new Set()}={}){
         if(tickets.length===limit&&chance<tickets.at(-1).chance)break;
         if(conflict(a,c)||conflict(b,c))continue;
         const legs=[a,b,c],decimal=a.decimal*b.decimal*c.decimal;
-        if(decimal<minimumDecimal-1e-10||skip.size&&skip.has(jackpotTicketKey(legs)))continue;
+        if(!meetsMinimum(decimal,minimumOdds)||skip.size&&skip.has(jackpotTicketKey(legs)))continue;
         tickets.push({legs,decimal,chance});
         tickets.sort(compareTickets);
         if(tickets.length>limit)tickets.pop();
@@ -146,14 +147,14 @@ export function findJackpotTickets(eligible,{limit=4,skip=new Set()}={}){
   return tickets;
 }
 
-export function jackpotReplacements(ticket,previousKey,eligible){
+export function jackpotReplacements(ticket,previousKey,eligible,minimumOdds=jackpotSlates.Sunday.minimumOdds){
   const slot=ticket?.legs.findIndex(leg=>jackpotLegKey(leg)===previousKey)??-1;
   if(slot<0)return [];
   const original=ticket.legs[slot];
   return eligible.flatMap(leg=>{
     if(String(leg.row.id)===String(original.row.id))return [];
     const legs=ticket.legs.with(slot,leg);
-    const next=makeJackpotTicket(legs);
+    const next=makeJackpotTicket(legs,minimumOdds);
     return next?[{leg,ticket:next}]:[];
   }).sort((a,b)=>compareTickets(a.ticket,b.ticket));
 }
