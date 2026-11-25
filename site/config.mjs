@@ -59,7 +59,6 @@ export const viewDefaults={
   td:{view:'Season TDs'},'nfl-preview':{view:'Full Preview',scheme:'Raw Stats',nflDefenseGroup:'top'},drives:{view:'Opening Drive',window:'Season'},'nfl-best':{view:'Receiving',rating:'All Ratings',gameFilter:'All games'},
   keys:{view:'Summary',window:'Season'},standouts:{cat:'All',window:'Season'},league:{window:'Season'},
   'nba-models':{nbaAccuracyWindow:'all',nbaMarketView:'All games'},
-  'nba-jackpot':{nbaJackpotRules:'open'},
   'nba-parlays':{nbaMilestoneStat:'Points',nbaFullContext:'All eligible',nbaFullSample:'3'},
   'nba-roles':{nbaRoleView:'Workload',nbaRoleWindow:'5',nbaRoleGame:'all',nbaInjuryFilter:'All',nbaRoleStat:'PRA'},
   'nfl-td-jackpot':{jackpotDay:'Sunday',jackpotDefense:'rush',jackpotOpp:'',jackpotMinChance:'0',jackpotQuestionable:'No'},
