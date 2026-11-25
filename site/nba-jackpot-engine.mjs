@@ -4,16 +4,21 @@ import {clamp,legKey,record} from './parlay-core.mjs';
 import {implied} from './math.mjs';
 
 export const jackpotMinimum=21;
+export const jackpotMinLegs=3;
 const screening={...defaults,spread:14.5,skipTickets:false,minOdds:1,maxOdds:Number.MAX_VALUE};
-const minLegs=2;
 const product=values=>values.reduce((value,p)=>value*p,1);
 
 export function jackpotProps(rows,alternates,logs,now){
   const main=rows.filter(row=>row.quote.provider==='DraftKings'&&!row.uncertain);
   const milestones=alternates.filter(row=>row.quote.provider==='DraftKings'&&!row.uncertain);
   const regular=evaluate(main.filter(row=>row.quote.line%1===.5),screening,{now}).eligible;
-  const alt=builderLegs(main,milestones,screening,{now,minPrice:-Number.MAX_SAFE_INTEGER,maxPrice:-100,requireMain:false}).eligible;
-  return [...regular,...alt].map(leg=>{
+  const builders=builderLegs(main,milestones,screening,{now,minPrice:-Number.MAX_SAFE_INTEGER,maxPrice:-100,requireMain:false}).eligible;
+  // Higher milestones trade hit chance for price. Keep matchup and sample checks, and rank the exact-line records.
+  const plus=milestones.filter(({quote})=>Number.isSafeInteger(quote.milestone)&&quote.milestone>=1&&
+    quote.milestone===quote.line+.5&&Number.isSafeInteger(Number(quote.over))&&Number(quote.over)>=100);
+  const longer=evaluate(plus,{...screening,side:'Over'},{now,longerThresholds:true}).eligible;
+  const eligible=new Map([...builders,...longer,...regular].map(leg=>[legKey(leg),leg]));
+  return [...eligible].map(([key,leg])=>{
     const history=currentStint(logs[leg.player]||[],leg.team,leg.date), trend=roleTrend(history);
     const minutes=trend.recent.minutes;
     const adjustment=trend.comparable&&Math.abs(trend.minutes)>=2&&Number.isFinite(minutes);
@@ -22,8 +27,9 @@ export function jackpotProps(rows,alternates,logs,now){
     const change=comparable?.n>=5?clamp((comparable.rate-leg.form.season.rate)*.20*comparable.n/(comparable.n+8),-.025,.025):0;
     const minutesNote=Number.isFinite(minutes)?'Recent minutes '+minutes.toFixed(1)+
       (trend.comparable?' vs '+trend.prior.minutes.toFixed(1)+' earlier in this team stint':''):'Minutes sample unavailable';
-    return {...leg,kind:'prop',key:legKey(leg),marketKey:[leg.game,leg.player,leg.stat].join('|'),chance:clamp(nbaLegChance(leg)+change,.001,.999),
-      decimal:1/implied(leg.price),reasons:[...leg.reasons,minutesNote,
+    const impliedChance=implied(leg.price), prior=leg.milestone!=null&&Number(leg.price)>0?impliedChance:.5;
+    return {...leg,kind:'prop',key,marketKey:[leg.game,leg.player,leg.stat].join('|'),chance:clamp(nbaLegChance(leg,prior)+change,.001,.999),
+      decimal:1/impliedChance,reasons:[...leg.reasons,minutesNote,
         ...(comparable?.n>=5?[comparable.hits+'/'+comparable.n+' at similar minutes']:[])]};
   });
 }
@@ -87,13 +93,13 @@ export function findNbaJackpot(pool,{logs={},minimum=jackpotMinimum,limit=100000
   const cutoff=()=>tickets.length===count?tickets[count-1]:null;
   function walk(start,weight,loss,price,chance){
     const worst=cutoff();
-    if(selected.length>=minLegs&&price>=minimum-1e-10&&
+    if(selected.length>=jackpotMinLegs&&price>=minimum-1e-10&&
       (!worst||compareTickets({chance,decimal:price},worst)<0)&&!skip.has(nbaJackpotTicketKey(selected))){
       tickets.push({legs:[...selected],chance,decimal:price,groups:[...groups.values()].map(g=>g.estimated)});
       tickets.sort(compareTickets);
       if(tickets.length>count)tickets.pop();
     }
-    for(let i=start;i<n&&n-i+selected.length>=minLegs;i++){
+    for(let i=start;i<n&&n-i+selected.length>=jackpotMinLegs;i++){
       const {leg,weight:addedWeight,loss:addedLoss}=candidates[i];
       const remaining=Math.max(0,target-weight);
       if(suffix[i]+1e-12<remaining)break;

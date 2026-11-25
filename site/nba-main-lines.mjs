@@ -73,7 +73,7 @@ export function draftKingsMilestones(payload,stat,games,now=Date.now()){
   for(const offer of payload.selections){
     const game=byMarket.get(offer.marketId), target=offer.milestoneValue, over=price(offer.displayOdds?.american);
     if(!game||offer.isSuspended||!offer.tags?.includes('SGP')||!Number.isSafeInteger(target)||target<1||
-      offer.label!==target+'+'||!(Number(over)<=-100))continue;
+      offer.label!==target+'+'||!over)continue;
     const person=offer.participants?.find(p=>p.type==='Player');
     const playerTeam=person?.venueRole==='HomePlayer'?game.h:person?.venueRole==='AwayPlayer'?game.a:null;
     if(!playerTeam||!person.name||!person.id)continue;
