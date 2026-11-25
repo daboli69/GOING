@@ -15,12 +15,14 @@ const poolDisplay={
   form:({form:{season,last10}})=>`Season ${season.hits}/${season.n} · Last 10 ${last10.hits}/${last10.n}`,
   note:'Season rates are pulled toward 50% for small samples. A qualifying teammate split can move the estimate by up to 3 percentage points. Future results can differ.'
 };
+const poolIds={main:'nba-main-legs',builder:'nba-builder-legs'};
+const poolSection=(name,body)=>'<div class="nba-parlay-pool-section" id="'+poolIds[name]+'" tabindex="-1">'+body+'</div>';
 const builderRangeKey='nba-builder-range';
 const builderRanges={core:[-300,-200],wider:[-400,-150],heavier:[-500,-300]};
 function builderPool(data,cfg,taken){
   const savedRange=local(builderRangeKey,'core'), range=Object.hasOwn(builderRanges,savedRange)?savedRange:'core';
   const [minPrice,maxPrice]=builderRanges[range], report=builderLegs(data.rows,data.alternates??[],cfg,{minPrice,maxPrice,taken});
-  return parlayPool(report,[],{
+  return poolSection('builder',parlayPool(report,[],{
     ...poolDisplay,title:'Builder Legs',
     intro:'<p class="subtle">Alternate overs only. Uses the matchup filters above and requires '+
       esc(Math.max(cfg.hit,70))+'% in both season and last-10 results at the alternate line. Kalshi prices are exchange quotes.</p>'+
@@ -38,26 +40,28 @@ function builderPool(data,cfg,taken){
         side:leg.side,line:leg.line,odds:leg.price,provider:leg.provider,title:leg.name+' · '+leg.stat};
       return legEvidenceButton(leg)+ `<p><label class="field">${playCheck(play)} Save to My Plays</label></p>`;
     }
-  });
+  }));
 }
-
 
 const contexts=['All eligible','Tonight’s venue','Head-to-head','Back-to-back','Current absences'];
 function fullList(data,report,ticket){
-  const context=S.f.nbaFullContext||contexts[0], min=Math.max(1,Number(S.f.nbaFullSample)||3);
-  const filtered=context===contexts[0]?report.eligible:report.eligible.filter(leg=>{
+  const context=contexts.includes(S.f.nbaFullContext)?S.f.nbaFullContext:contexts[0], min=Math.max(1,Number(S.f.nbaFullSample)||3);
+  const isFull=context===contexts[0];
+  const filtered=isFull?report.eligible:report.eligible.filter(leg=>{
     const sample=data.trendSample?.(leg,context);
     return !!sample&&sample.n>=min;
   });
-  return parlayPool({...report,eligible:filtered},ticket,{...poolDisplay,
-    intro:tools(select('Evidence filter','nbaFullContext',contexts)+select('Minimum decided games','nbaFullSample',[3,5,10,15])),
+  const controls=select('Evidence filter','nbaFullContext',contexts)+(isFull?'':select('Minimum decided games','nbaFullSample',[3,5,10,15])+
+    btn('Show full main-line pool','parlayFullListReset','','outline'));
+  return poolSection('main',parlayPool({...report,eligible:filtered},ticket,{...poolDisplay,title:'Full List · Main Lines',
+    intro:'<p class="subtle">DraftKings main lines</p>'+tools(controls),
     form:leg=>{
-      if(context===contexts[0])return poolDisplay.form(leg);
+      if(isFull)return poolDisplay.form(leg);
       const r=data.trendSample?.(leg,context);
       return poolDisplay.form(leg)+(r?' · '+context+' '+r.hits+'/'+r.n+(r.pushes?' ('+r.pushes+' push)':''):'');
     },
-    emptyText:context===contexts[0]?'No priced legs pass the current filters.':'No eligible legs have that many games in this sample.'
-  });
+    emptyText:!report.eligible.length?'No main lines pass the current filters.':'No qualifying legs meet this evidence filter.'
+  }));
 }
 
 const nba=createParlays({
@@ -70,12 +74,13 @@ const nba=createParlays({
   period:()=>S.day,periodLabel:()=>S.day,
   nav:()=>slate({navOnly:true,date:true}),
   intro:()=>tools(`<a class="pill" href="${href('up/parlay-tracker.html')}">Parlay Leg Tracker</a>`+
-    btn('Check for updates','nbaParlayCheck',''))+
+    btn('Check for updates','nbaParlayCheck','')+
+    btn('View Full List','parlayPoolJump','main','outline')+btn('View Builder Legs','parlayPoolJump','builder','outline'))+
     '<p class="subtle">DraftKings main lines · Qualifying legs are ranked by estimated hit chance. Both includes an Over and an Under when they fit the same ticket.</p>'+
     (S.f.nbaPriceBoard?.source==='mirror'&&S.odds.length?'<p class="subtle">Main lines loaded from the separate NBA price feed.</p>':
       ['partial','unavailable'].includes(S.f.nbaPriceBoard?.source)&&S.odds.length?
         '<p class="subtle">Some DraftKings markets could not refresh. Recent verified main lines are shown where available.</p>':''),
-  afterTicket:(data,report,ticket,cfg,taken)=>builderPool(data,cfg,taken)+fullList(data,report,ticket)+box('Same-Line Price Comparison',
+  afterTicket:(data,report,ticket,cfg,taken)=>fullList(data,report,ticket)+builderPool(data,cfg,taken)+box('Same-Line Price Comparison',
     '<details data-parlay-ticket="same-line-prices"><summary>Compare available sources</summary>'+discrepancyTable(data.rows,data.compareQuotes)+'</details>'),
   poolSummary:(report,cfg)=>parlayPoolSummary(report,cfg,'Tip time'),
   chance:nbaLegChance,
@@ -93,6 +98,16 @@ const nba=createParlays({
 export const savedParlayTickets=nba.savedTickets;
 export const parlayPage=data=>nba.page(data);
 export function parlayAction(act,value,data,target){
+  if(act==='parlayPoolJump'&&Object.hasOwn(poolIds,value)){
+    const panel=document.getElementById(poolIds[value]);
+    panel?.focus({preventScroll:true});
+    panel?.scrollIntoView();
+    return false;
+  }
+  if(act==='parlayFullListReset'){
+    S.f.nbaFullContext=contexts[0];
+    return true;
+  }
   if(act==='parlayBuilderRange'){
     if(Object.hasOwn(builderRanges,value))keep(builderRangeKey,value);
     return true;
