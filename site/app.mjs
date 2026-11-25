@@ -148,8 +148,13 @@ const nflParlayInputs=(year,id)=>Promise.all([nflModelViews.has(id)?readSnapshot
   nflModelViews.has(id)?readSnapshot('live/weather-nfl.json'):null,readSnapshot('live/nfl-availability.json'),
   nflProjectionViews.has(id)?readSnapshot('live/nfl-projections.json'):null,
   // TD Board calibration: the saved pregame boards and the backtest.
-  id==='nfl-tdboard'?Promise.all([get(dataURL('tracker/td-board-index.json'),{}).then(i=>Promise.all((i.months||[]).map(m=>get(dataURL('tracker/td-board-'+m+'.json'),[])))).then(x=>x.flat()).catch(()=>[]),
-    get(dataURL('tracker/td-board-backtest.json'),null).then(x=>x?.games||[])]).then(([live,backtest])=>({live,backtest})):null])
+  ['nfl-tdboard','nfl-td-jackpot'].includes(id)?Promise.all([get(dataURL('tracker/td-board-index.json'),{}).then(i=>{
+    const months=i.months||[];
+    const selected=id==='nfl-td-jackpot'?months.slice(-3):months;
+    return Promise.all(selected.map(m=>get(dataURL('tracker/td-board-'+m+'.json'),[])));
+  }).then(x=>x.flat()).catch(()=>[]),
+    id==='nfl-tdboard'?get(dataURL('tracker/td-board-backtest.json'),null).then(x=>x?.games||[]):[]])
+    .then(([live,backtest])=>({live,backtest})):null])
   .then(([models,extra,weather,availability,projections,tdLog])=>({models,extra,weather,tdLog,injuries:availability?.teams,availability,projections}));
 const injuriesFor=s=>readSnapshot('live/injuries-'+s+'.json').then(x=>object(x)?x:
   readJson(`${ESPN}/${sportPath[s]}/injuries`).then(j=>Array.isArray(j?.injuries)?compactInjuries(j):{}));

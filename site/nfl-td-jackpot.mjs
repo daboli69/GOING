@@ -2,10 +2,10 @@ import {kickoff,nflName} from './nfl-availability.mjs';
 import {nflOut} from './nfl-workload.mjs';
 import {impliedChance,offenseTd} from './nfl-td.mjs';
 import {final} from './ui.mjs';
+import {thursdayOdds} from './nfl-td-jackpot-estimates.mjs';
 
 const jackpotQuoteAge=120*60_000;
 export const jackpotSlates={Sunday:{weekday:0,minimumOdds:2000},Thursday:{weekday:4,minimumOdds:1000}};
-export const jackpotFormats={parlay:'One scorer per game',sgp:'Same Game (SGP)',sgpx:'Same Game Plus (SGPx)'};
 export const tdDefenseMetrics={
   rush:'Rushing TDs',goalLine:'Rush TDs from the 5 or closer',pass:'Receiving TDs',redZonePass:'Receiving TDs from the red zone',
   RB:'RB receiving TDs',WR:'WR receiving TDs',TE:'TE receiving TDs'
@@ -100,55 +100,55 @@ export function jackpotCandidates(rows,quotes,entered,now,day='Sunday'){
   }).sort((a,b)=>b.anytime-a.anytime||a.p.name.localeCompare(b.p.name));
 }
 
-export function jackpotLegs(rows,source,{blocked=new Set(),minimum=0,questionable=false,allowUnpriced=false}={}){
+export function jackpotLegs(rows,source,{blocked=new Set(),minimum=0,questionable=false,exactAsk=false}={}){
   return rows.flatMap(row=>{
     const price=jackpotPrice(row[source]?.over);
     const available=!row.status||questionable&&/^questionable$/i.test(row.status);
-    if((price==null&&!allowUnpriced)||!available||blocked.has(String(row.id))||row.anytime<minimum)return [];
-    return [{row,price,decimal:price==null?null:1/impliedChance(price)}];
+    if(price==null||!available||blocked.has(String(row.id))||row.anytime<minimum)return [];
+    const ask=row[source]?.yes;
+    const implied=exactAsk&&typeof ask==='number'&&ask>0&&ask<1?ask:impliedChance(price);
+    return [{row,price,decimal:1/implied}];
   }).sort((a,b)=>b.row.anytime-a.row.anytime);
 }
 export const jackpotLegKey=leg=>jackpotKey(leg.row);
 export const jackpotTicketKey=legs=>legs.map(jackpotLegKey).sort().join('~');
-const gamesPerFormat={parlay:3,sgp:1,sgpx:2};
 const meetsMinimum=(decimal,minimumOdds)=>decimal>=1+minimumOdds/100-1e-10;
 
-export function makeJackpotTicket(legs,minimumOdds=jackpotSlates.Sunday.minimumOdds,format='parlay'){
+export function makeJackpotTicket(legs,minimumOdds=jackpotSlates.Sunday.minimumOdds,coScoring){
   if(legs.length!==3||legs.some(leg=>!leg))return null;
   const [a,b,c]=legs;
   const aId=String(a.row.id),bId=String(b.row.id),cId=String(c.row.id);
   if(aId===bId||aId===cId||bId===cId)return null;
   const aGame=a.row.game.id,bGame=b.row.game.id,cGame=c.row.game.id;
-  const gameCount=1+Number(aGame!==bGame)+Number(cGame!==aGame&&cGame!==bGame);
-  if(gameCount!==gamesPerFormat[format])return null;
-  if(format!=='parlay'){
-    // Individual forecasts rank drafts. Same-game exposure does not give us a joint probability or price.
-    return {legs,decimal:null,chance:null,score:legs.reduce((sum,leg)=>sum+leg.row.anytime,0)};
+  if(coScoring){
+    const estimate=thursdayOdds(legs,coScoring);
+    return estimate&&meetsMinimum(estimate.decimal,minimumOdds)?{legs,...estimate}:null;
   }
+  if(aGame===bGame||aGame===cGame||bGame===cGame)return null;
   const decimal=legs.reduce((value,leg)=>value*leg.decimal,1);
   if(!meetsMinimum(decimal,minimumOdds))return null;
   return {legs,decimal,chance:legs.reduce((value,leg)=>value*leg.row.anytime,1)};
 }
 
-const ticketRank=ticket=>ticket.chance??ticket.score;
-const compareTickets=(a,b)=>ticketRank(b)-ticketRank(a)||b.decimal-a.decimal;
+export const compareJackpotTickets=(a,b)=>b.chance-a.chance||b.decimal-a.decimal;
 
-export function findJackpotTickets(eligible,{limit=4,skip=new Set(),minimumOdds=jackpotSlates.Sunday.minimumOdds,format='parlay'}={}){
+export function findJackpotTickets(eligible,{limit=4,skip=new Set(),minimumOdds=jackpotSlates.Sunday.minimumOdds,coScoring}={}){
   if(limit<=0)return [];
-  const independent=format==='parlay', tickets=[];
+  const tickets=[];
   for(let i=0;i<eligible.length-2;i++){
     const a=eligible[i];
     for(let j=i+1;j<eligible.length-1;j++){
       const b=eligible[j], sameGame=a.row.game.id===b.row.game.id;
-      if((independent&&sameGame)||(format==='sgp'&&!sameGame)||String(a.row.id)===String(b.row.id))continue;
-      const pairRank=independent?a.row.anytime*b.row.anytime:a.row.anytime+b.row.anytime;
+      if((!coScoring&&sameGame)||String(a.row.id)===String(b.row.id))continue;
+      const pairChance=a.row.anytime*b.row.anytime;
       for(let k=j+1;k<eligible.length;k++){
-        const c=eligible[k], rank=independent?pairRank*c.row.anytime:pairRank+c.row.anytime;
-        if(tickets.length===limit&&rank<ticketRank(tickets.at(-1)))break;
-        const ticket=makeJackpotTicket([a,b,c],minimumOdds,format);
+        const c=eligible[k];
+        // A change in game shape can change the dependence adjustment, so search all Thursday combinations.
+        if(!coScoring&&tickets.length===limit&&pairChance*c.row.anytime<tickets.at(-1).chance)break;
+        const ticket=makeJackpotTicket([a,b,c],minimumOdds,coScoring);
         if(!ticket||skip.size&&skip.has(jackpotTicketKey(ticket.legs)))continue;
         tickets.push(ticket);
-        tickets.sort(compareTickets);
+        tickets.sort(compareJackpotTickets);
         if(tickets.length>limit)tickets.pop();
       }
     }
@@ -156,14 +156,14 @@ export function findJackpotTickets(eligible,{limit=4,skip=new Set(),minimumOdds=
   return tickets;
 }
 
-export function jackpotReplacements(ticket,previousKey,eligible,minimumOdds=jackpotSlates.Sunday.minimumOdds,format='parlay'){
+export function jackpotReplacements(ticket,previousKey,eligible,minimumOdds=jackpotSlates.Sunday.minimumOdds,coScoring){
   const slot=ticket?.legs.findIndex(leg=>jackpotLegKey(leg)===previousKey)??-1;
   if(slot<0)return [];
   const original=ticket.legs[slot];
   return eligible.flatMap(leg=>{
     if(String(leg.row.id)===String(original.row.id))return [];
     const legs=ticket.legs.with(slot,leg);
-    const next=makeJackpotTicket(legs,minimumOdds,format);
+    const next=makeJackpotTicket(legs,minimumOdds,coScoring);
     return next?[{leg,ticket:next}]:[];
-  }).sort((a,b)=>compareTickets(a.ticket,b.ticket));
+  }).sort((a,b)=>compareJackpotTickets(a.ticket,b.ticket));
 }
