@@ -3,7 +3,7 @@ import {total,mean,round,pct,div,rate,heat,signed,seasonLimit,distanceZone} from
 import {current as S,esc,box,plain,grid,card,metric,logo,team,teamName,teamBanner,table,cell,group,tools,btn,toggle,toggles,select,search,info,empty,slate,hero,versus,injuryList,oddsNote,person,market,basePlay,propOdds,gameDay,gamesFor,final,dialog,badge,action,local,keep,et,dateKey,dateAdd} from './ui.mjs';
 import {courtDefense,courtField,courtThresholds,pra} from './nba-court.mjs';
 import {parlayPage,parlayAction} from './nba-parlays.mjs';
-import {nbaJackpotPage} from './nba-jackpot-page.mjs';
+import {nbaJackpotAction,nbaJackpotPage} from './nba-jackpot-page.mjs';
 import {openingTables,teamFirst,shotTables,makeEdge,earlyShares,blendShare,scorerShares,fairChances,impliedChance,americanFrom,roundRobin,regression,convictionTier} from './first-basket.mjs';
 import {propQuotes} from './ui.mjs';
 import {allowedRanks,markets} from './nba-parlay-engine.mjs';
@@ -1033,6 +1033,7 @@ export function nbaAction(act,v,target){
   if(act==='nbaRoleRotations'&&source().tg?.[v]){showRotations(v,played(source().tg[v]),source().players||{});return false;}
   if(act==='nbaRoleVerify'){const game=S.games.find(g=>String(g.id)===v);if(game)verifyStarters(game,source().players||{});return false;}
   if(S.route.id==='nba-parlays'&&act.startsWith('parlay'))return parlayAction(act,v,parlayData(),target);
+  if(S.route.id==='nba-jackpot'&&act.startsWith('nbaJackpot'))return nbaJackpotAction(act,v);
   if(act==='nbaPropBound'){
     const [name,key]=v.split('|');
     const bounds=S.f.propBounds??={};
