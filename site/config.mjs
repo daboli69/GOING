@@ -30,7 +30,7 @@ export const menus={
     Matchups:[['Slate Standouts','up/standouts.html','standouts'],['League Stats Chart','up/league.html','league'],['Matchup Keys','up/matchup-keys.html','keys'],['Role Changes','up/role-changes.html','nba-roles'],['Market Watch','up/market-watch.html','market-watch'],['Zone Matchup Targets','up/zones.html','zones'],['Player Types','up/types.html','types'],['Shot Charts','up/shot-charts.html','shotcharts']],
     Props:[['All Props','up/all-props.html','nba-props'],['Points','up/points.html','nba-props'],['Threes','up/threes.html','nba-props'],['Assists','up/assists.html','nba-props'],['Rebounds','up/rebounds.html','nba-props'],['Assist Spots','up/assist-spots.html','nba-props'],['1st Basket','up/first-basket.html','basket']],
     Parlays:[['Suggested Parlays','up/suggested-parlays.html','nba-parlays'],['Parlay Leg Tracker','up/parlay-tracker.html','nba-parlay-tracker']],
-    Promos:[['King of the Court','up/promo-tools.html','court']]
+    Promos:[['King of the Court','up/promo-tools.html','court'],['Fanatics NBA Jackpot','up/fanatics-nba-jackpot.html','nba-jackpot']]
   },
   nhl:{
     Previews:[['Game Previews','goal/','nhl-preview'],['Line Matchups','goal/lines.html','nhl-lines'],['Market Watch','goal/market-watch.html','market-watch']],
@@ -59,6 +59,7 @@ export const viewDefaults={
   td:{view:'Season TDs'},'nfl-preview':{view:'Full Preview',scheme:'Raw Stats',nflDefenseGroup:'top'},drives:{view:'Opening Drive',window:'Season'},'nfl-best':{view:'Receiving',rating:'All Ratings',gameFilter:'All games'},
   keys:{view:'Summary',window:'Season'},standouts:{cat:'All',window:'Season'},league:{window:'Season'},
   'nba-models':{nbaAccuracyWindow:'all',nbaMarketView:'All games'},
+  'nba-jackpot':{nbaJackpotRules:'open'},
   'nba-parlays':{nbaMilestoneStat:'Points',nbaFullContext:'All eligible',nbaFullSample:'3'},
   'nba-roles':{nbaRoleView:'Workload',nbaRoleWindow:'5',nbaRoleGame:'all',nbaInjuryFilter:'All',nbaRoleStat:'PRA'},
   'nfl-td-jackpot':{jackpotDay:'Sunday',jackpotDefense:'rush',jackpotOpp:'',jackpotMinChance:'0',jackpotQuestionable:'No'},
