@@ -1073,7 +1073,7 @@ export function nbaPage(){
   return ({'nba-props':propTable,'nba-roles':()=>roleBoard({...roleData(),tracking:playerTracking(S.f.nbaTrackingStats,S.day),trackingThrough:S.f.nbaTrackingStats?.through}),
     'nba-jackpot':()=>nbaJackpotPage({rows:parlayData().rows,
       alternates:S.f.nbaPriceBoard?.builderQuotes?.length?parlayData(S.f.nbaPriceBoard.builderQuotes).rows:[],
-      games:S.games.map(game=>({...game,date:S.day})),logs:source().pg||{},feeds:S.f.nbaJackpotFeeds}),
+      logs:source().pg||{}}),
     'nba-parlays':()=>parlayPage({...parlayData(),trendSample,compareQuotes:row=>propQuotes(row.player,row.stat,S.f.nbaPriceBoard?.comparisonQuotes||[]),
     alternates:S.f.nbaPriceBoard?.builderQuotes?.length?parlayData(S.f.nbaPriceBoard.builderQuotes).rows:[]}),
     league,keys,standouts,zones:zoneTargets,types:typePage,shotcharts:shotCharts,basket,court:kotc})[S.route.id]();

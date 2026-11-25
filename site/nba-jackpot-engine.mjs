@@ -5,6 +5,7 @@ import {implied} from './math.mjs';
 
 export const jackpotMinimum=21;
 const screening={...defaults,spread:14.5,skipTickets:false,minOdds:1,maxOdds:Number.MAX_VALUE};
+const minLegs=2;
 const product=values=>values.reduce((value,p)=>value*p,1);
 
 export function jackpotProps(rows,alternates,logs,now){
@@ -43,7 +44,6 @@ function groupEvidence(logs){
   };
   return group=>{
     if(group.length===1)return {lift:1};
-    if(group.some(leg=>leg.kind!=='prop'))return null;
     const key=group.map(leg=>leg.key).sort().join('~');
     if(samples.has(key))return samples.get(key);
     const histories=group.map(outcomes);
@@ -71,8 +71,8 @@ function pricedGroup(group,support){
 }
 
 // Bounds use the independent products, which always upper-bound our estimated chance and combined odds.
-export function findNbaJackpot(pool,{logs={},minimum=jackpotMinimum,minLegs=2,limit=100000}={}){
-  const candidates=pool.filter(leg=>leg.chance>0&&leg.chance<1&&Number.isFinite(leg.decimal)&&leg.decimal>1)
+export function findNbaJackpot(pool,{logs={},minimum=jackpotMinimum,limit=100000}={}){
+  const candidates=pool.filter(leg=>leg.kind==='prop'&&leg.chance>0&&leg.chance<1&&Number.isFinite(leg.decimal)&&leg.decimal>1)
     .map(leg=>({leg,weight:Math.log(leg.decimal),loss:-Math.log(leg.chance)}))
     .sort((a,b)=>b.weight/b.loss-a.weight/a.loss||b.leg.chance-a.leg.chance);
   const n=candidates.length, suffix=Array(n+1).fill(0), target=Math.log(minimum), evidence=groupEvidence(logs);
