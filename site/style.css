@@ -90,6 +90,11 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--edge);bord
 .parlay-pool-row{display:flex;justify-content:space-between;gap:8px}
 .parlay-pool-row>strong{white-space:nowrap;font-variant-numeric:tabular-nums}
 .parlay-pool li p{margin:4px 0 0}
+.board.td-sweepstakes{table-layout:fixed}
+.board.td-sweepstakes th:first-child{width:44%}
+.board.td-sweepstakes .player-cell{white-space:normal;overflow-wrap:anywhere}
+.board.td-sweepstakes details>div{margin:.3rem 0;font-weight:400}
+@media(max-width:550px){.board.td-sweepstakes td{padding:5px 3px;font-size:12px}}
 .court-boost small{display:block;width:22ch;white-space:normal;text-align:left}
 .standout-card>h3,.standout-context{display:flex;align-items:center;gap:8px}
 .standout-team{display:inline-grid;grid-template-columns:22px 2.4em;flex:none;align-items:center;gap:5px;

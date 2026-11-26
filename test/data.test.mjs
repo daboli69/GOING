@@ -8,7 +8,7 @@ import {routes} from '../site/config.mjs';
 import {together,lineStats} from '../scripts/lines-data.mjs';
 
 test('every tool has one unique path inside its sport section',()=>{
-  assert.equal(routes.length,95);
+  assert.equal(routes.length,96);
   assert.ok(routes.some(r=>r.id==='nba-roles'&&r.path==='up/role-changes.html'));
   assert.deepEqual(routes.filter(r=>r.id==='market-watch').map(r=>r.path).sort(),[
     'cbb/market-watch.html','cwb/market-watch.html','fbs/market-watch.html','goal/market-watch.html','long/market-watch.html','up/market-watch.html','yard/market-watch.html'
@@ -17,9 +17,10 @@ test('every tool has one unique path inside its sport section',()=>{
   assert.ok(routes.some(r=>r.id==='nfl-parlays'&&r.path==='long/suggested-parlays.html'));
   assert.ok(routes.some(r=>r.id==='nfl-sgp'&&r.path==='long/same-game-parlays.html'));
   assert.ok(routes.some(r=>r.id==='nfl-td-jackpot'&&r.group==='Promos'&&r.path==='long/fanatics-td-jackpot.html'));
+  assert.ok(routes.some(r=>r.id==='nfl-td-sweepstakes'&&r.group==='Promos'&&r.path==='long/fanduel-td-sweepstakes.html'));
   assert.ok(routes.some(r=>r.id==='nba-jackpot'&&r.group==='Promos'&&r.path==='up/fanatics-nba-jackpot.html'));
   assert.equal(new Set(routes.map(r=>r.path)).size,routes.length);
-  assert.equal(routes.filter(r=>r.group==='Promos').length,7);
+  assert.equal(routes.filter(r=>r.group==='Promos').length,8);
   const home={nfl:'long/',nba:'up/',nhl:'goal/',mlb:'yard/',cbb:'cbb/',cwb:'cwb/',fbs:'fbs/',ufc:'fights/'};
   for(const r of routes)if(home[r.sport])assert.ok(r.path.startsWith(home[r.sport]),r.path);
 });
