@@ -2,6 +2,7 @@
 export const BASE=new URL('./',import.meta.url).pathname;
 export const NBA_MAIN_LINES_FEED='https://raw.githubusercontent.com/daboli69/GOING/refs/heads/nba-live-lines/';
 export const NBA_MAIN_LINES_CONTENTS='https://api.github.com/repos/daboli69/GOING/contents/';
+export const nflTdSweepstakesGame='2026_12_KC_BUF';
 export const sections={
   nba:{name:'GOING UP',word:'UP',sport:'Basketball',league:'NBA',home:'up/'},
   nfl:{name:'GOING LONG',word:'LONG',sport:'Football',league:'NFL',home:'long/'},
@@ -23,7 +24,8 @@ export const menus={
     Previews:[['Game Previews','long/game-previews.html','nfl-preview'],['Market Watch','long/market-watch.html','market-watch'],['TD Data','long/td-data.html','td'],['Opening Drive Tool','long/opening-drives.html','drives']],
     Props:[['Best Plays','long/best-plays.html','nfl-best'],['Receiving','long/player-props.html#receiving','nfl-props'],['Rushing','long/player-props.html#rushing','nfl-props'],['Passing','long/player-props.html#passing','nfl-props'],['TD Board','long/td-board.html','nfl-tdboard']],
     Parlays:[['Suggested Parlays','long/suggested-parlays.html','nfl-parlays'],['Same-Game Parlays','long/same-game-parlays.html','nfl-sgp'],['NFL Leg Tracker','long/parlay-tracker.html','nfl-parlay-tracker']],
-    Promos:[['King of the Endzone','long/promo-tools.html','endzone'],['Fanatics TD Jackpot','long/fanatics-td-jackpot.html','nfl-td-jackpot']]
+    Promos:[['King of the Endzone','long/promo-tools.html','endzone'],['Fanatics TD Jackpot','long/fanatics-td-jackpot.html','nfl-td-jackpot'],
+      ['FanDuel TD Sweepstakes','long/fanduel-td-sweepstakes.html','nfl-td-sweepstakes']]
   },
   nba:{
     Models:[['Ensemble Forecasts','up/','nba-models']],
@@ -62,6 +64,7 @@ export const viewDefaults={
   'nba-parlays':{nbaMilestoneStat:'Points',nbaFullContext:'All eligible',nbaFullSample:'3'},
   'nba-roles':{nbaRoleView:'Workload',nbaRoleWindow:'5',nbaRoleGame:'all',nbaInjuryFilter:'All',nbaRoleStat:'PRA'},
   'nfl-td-jackpot':{jackpotDay:'Sunday',jackpotDefense:'rush',jackpotOpp:'',jackpotMinChance:'0',jackpotQuestionable:'No'},
+  'nfl-td-sweepstakes':{sweepstakesRank:'either'},
   'nfl-tdboard':{tdMarket:'Anytime TD',tdPos:'All',tdMinEdge:'4',tdMinOdds:'',tdMaxOdds:'',tdMinRz:'0',tdMinSnap:'0',tdMaxSpread:'20',tdMinTotal:'0',
     tdWeather:'Any',tdNoQ:'No',tdDue:'No',tdDst:'Yes',tdHold:'20',tdShow:'Top 40',tdLegs:'3',tdPerGame:'Yes',tdStack:'No'},
   basket:{fbHistory:'Season',fbMinEdge:'2',fbRatio:'1.2',fbHold:'30',fbRR:'3',fbBy:'2',fbShow:'Top 30'},

@@ -107,7 +107,8 @@ export function gradeTdBoard(snapshot,box,now){
   const player=score=>known.get(score.team+'|'+nflName(score.name))??null;
   const firstScorer=box.touchdowns[0]||null;
   const tds=[...new Set(box.touchdowns.filter(x=>x.offensive).map(player).filter(Boolean))];
-  return {tds,first:firstScorer?player(firstScorer):null,firstScorer,graded:new Date(now).toISOString(),
+  return {tds,first:firstScorer?player(firstScorer):null,firstScorer,
+    ...(snapshot.sweepstakes?{lastScorer:box.touchdowns.at(-1)??null}:{}),graded:new Date(now).toISOString(),
     resultSource:'ESPN final scoring summary'};
 }
 

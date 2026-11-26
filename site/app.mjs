@@ -1,4 +1,4 @@
-import {menus,routes,sections,BASE,href,viewDefaults,viewSetup,NBA_MAIN_LINES_FEED,NBA_MAIN_LINES_CONTENTS} from './config.mjs';
+import {menus,routes,sections,BASE,href,viewDefaults,viewSetup,NBA_MAIN_LINES_FEED,NBA_MAIN_LINES_CONTENTS,nflTdSweepstakesGame} from './config.mjs';
 import {$,current as S,today,dateKey,dateAdd,get,dataURL,esc,box,empty,tools,btn,select,table,card,grid,cell,info,logo,local,keep,action,dialog,toast,footer,saveImage,notesKey,playKey,playCheck,basePlay,gameDay,final,round,pct,team,versus,sportWordmark} from './ui.mjs';
 import {ESPN,sportPath,scoreboard,compactInjuries} from './feeds.mjs';
 import {homeLoad,homePage,tickHomeClocks} from './home.mjs';
@@ -141,17 +141,18 @@ const basketInputs=()=>Promise.all([nbaInjuryReport(),
   get(dataURL('tracker/first-basket-backtest.json'),null)])
   .then(([injuries,live,backtest])=>({injuries,fbLog:{live,backtest:backtest?.games||[]}}));
 const nflDraftViews=new Set(['nfl-parlays','nfl-sgp']);
-const nflLiveViews=new Set([...nflDraftViews,'nfl-tdboard','nfl-td-jackpot','nfl-props','nfl-best','nfl-preview']);
+const nflTdViews=new Set(['nfl-tdboard','nfl-td-jackpot','nfl-td-sweepstakes']);
+const nflLiveViews=new Set([...nflDraftViews,...nflTdViews,'nfl-props','nfl-best','nfl-preview']);
 const nflProjectionViews=new Set([...nflDraftViews,'nfl-props']);
-const nflModelViews=new Set([...nflDraftViews,'nfl-tdboard','nfl-td-jackpot']);
+const nflModelViews=new Set([...nflDraftViews,...nflTdViews]);
 const nflParlayInputs=(year,id)=>Promise.all([nflModelViews.has(id)?readSnapshot('models/nfl.json',25000):null,
   nflModelViews.has(id)?readSnapshot('nfl-extra-'+year+'.json',25000):null,
   nflModelViews.has(id)?readSnapshot('live/weather-nfl.json'):null,readSnapshot('live/nfl-availability.json'),
   nflProjectionViews.has(id)?readSnapshot('live/nfl-projections.json'):null,
   // TD Board calibration: the saved pregame boards and the backtest.
-  ['nfl-tdboard','nfl-td-jackpot'].includes(id)?Promise.all([get(dataURL('tracker/td-board-index.json'),{}).then(i=>{
+  nflTdViews.has(id)?Promise.all([get(dataURL('tracker/td-board-index.json'),{}).then(i=>{
     const months=i.months||[];
-    const selected=id==='nfl-td-jackpot'?months.slice(-3):months;
+    const selected=id==='nfl-td-sweepstakes'?['2026-11']:id==='nfl-td-jackpot'?months.slice(-3):months;
     return Promise.all(selected.map(m=>get(dataURL('tracker/td-board-'+m+'.json'),[])));
   }).then(x=>x.flat()).catch(()=>[]),
     id==='nfl-tdboard'?get(dataURL('tracker/td-board-backtest.json'),null).then(x=>x?.games||[]):[]])
@@ -200,6 +201,7 @@ function start(){
   S.route=route();S.sort=null;S.error=null;
   S.f=viewSetup(S.route,location.hash);S.game=null;S.games=[];
   if(S.route.id==='nfl-sgp'||S.route.id==='nfl-preview')S.f.requestedNflGame=new URLSearchParams(location.search).get('game');
+  if(S.route.id==='nfl-td-sweepstakes')S.f.requestedNflGame=nflTdSweepstakesGame;
   if(S.route.id==='tracker'){
     const league=new URLSearchParams(location.search).get('sport')?.toLowerCase();
     if(league&&Object.hasOwn(sections,league))S.f.sport=league.toUpperCase();
@@ -304,7 +306,7 @@ async function load(){
   }
   try{
     const d=S.day,year=s==='nfl'?S.year:seasonFor(s,d);
-    const [,data,dayGames,injuries,publishedOdds,lineups,models]=await Promise.all([need(s),dataFor(s,year,{parlays:nbaDraftPricing(id)||nflDraftViews.has(id)}),
+    const [,data,dayGames,injuries,publishedOdds,lineups,models]=await Promise.all([need(s),dataFor(s,year,{parlays:nbaDraftPricing(id)||nflDraftViews.has(id)||id==='nfl-td-sweepstakes'}),
       s==='nfl'?null:slateFor(s,d).catch(()=>null),
       id==='court'&&d===dateKey()?nbaInjuryReport().then(x=>x??injuriesFor(s)):injuriesFor(s),oddsFor(s,d,id),
       s==='nhl'?get(dataURL('live/nhl-lineups-'+d+'.json'),{}):{},
@@ -735,12 +737,13 @@ async function tickNflInputs(force=false){
   const remaining=games.map(g=>g.id).join('|'),kickoffChanged=state.nflParlayRemaining!==remaining;
   const since=state.nflParlayChecked??now;
   const jackpot=id==='nfl-td-jackpot';
+  const sweepstakes=id==='nfl-td-sweepstakes';
   const deadlineChanged=(draft||jackpot)&&nflDeadlineChanged(S.odds,games,since,now);
   state.nflParlayChecked=now;
   state.nflParlayRemaining=remaining;
   if(!force&&(!games.length||state.nflParlayNext>now)){
     if(draft&&(kickoffChanged||deadlineChanged)){M.nfl.action('parlayRefreshDraft','');render({keepPosition:true});}
-    if(jackpot&&(kickoffChanged||deadlineChanged))render({keepPosition:true});
+    if((jackpot||sweepstakes)&&(kickoffChanged||deadlineChanged))render({keepPosition:true});
     return;
   }
   state.nflParlayChecking=true;
@@ -770,7 +773,7 @@ async function tickNflInputs(force=false){
     if(latestProjections!==S.nflProjections){S.nflProjections=latestProjections;changed=true;}
     if(Array.isArray(odds)&&JSON.stringify(odds)!==JSON.stringify(S.odds)){S.odds=odds;changed=true;}
     if(availability){
-      if(jackpot&&availability.reportAt!==S.nflAvailability?.reportAt)changed=true;
+      if((jackpot||sweepstakes)&&availability.reportAt!==S.nflAvailability?.reportAt)changed=true;
       if(JSON.stringify(availability.teams)===JSON.stringify(S.injuries))availability.teams=S.injuries;
       else{S.injuries=availability.teams;changed=true;}
       if(JSON.stringify(availability.games||{})===JSON.stringify(S.nflAvailability?.games||{}))availability.games=S.nflAvailability?.games;

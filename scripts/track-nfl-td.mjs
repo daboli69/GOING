@@ -4,9 +4,10 @@ import {mkdir,readFile,readdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {current as S,dateKey} from '../site/ui.mjs';
-import {routes,viewDefaults} from '../site/config.mjs';
+import {nflTdSweepstakesGame,routes,viewDefaults} from '../site/config.mjs';
 import {tdBoardData} from '../site/nfl.mjs';
 import {offenseTd} from '../site/nfl-td.mjs';
+import {tdSweepstakes} from '../site/nfl-td-sweepstakes.mjs';
 import {loadNflFinals,gradeTdBoard} from './nfl-finals.mjs';
 import {confirmedBacklog} from './health.mjs';
 
@@ -24,7 +25,15 @@ const season=(schedule||[]).filter(g=>+g.id.slice(0,4)===year);
 const snapshot=x=>({game:x.g.id,date:x.g.date,week:x.g.week,tip:x.g.iso,a:x.g.a,h:x.g.h,
   players:x.rows.map(r=>[r.id,r.p.name,r.team,r.role,+r.anytime.toFixed(4),+r.first.toFixed(4),+r.lambda.toFixed(3)])});
 // Who scored: every offensive TD scorer in the game, and the first TD's scorer (any kind, as Kalshi settles).
-const grade=(x,ev)=>{x.tds=[...new Set(ev.map(offenseTd).filter(Boolean))];x.first=ev.find(p=>p[8])?.[9]||null;x.graded=new Date(now).toISOString();return x;};
+const grade=(x,ev)=>{
+  const touchdowns=ev.filter(p=>p[8]);
+  x.tds=[...new Set(touchdowns.map(offenseTd).filter(Boolean))];x.first=touchdowns[0]?.[9]||null;
+  if(x.sweepstakes){
+    const scorer=p=>p?{name:archive.players?.[p[9]]?.[0]||'Unidentified scorer',team:p[8]}:null;
+    x.firstScorer=scorer(touchdowns[0]);x.lastScorer=scorer(touchdowns.at(-1));
+  }
+  x.graded=new Date(now).toISOString();return x;
+};
 const setup=(week,games,live)=>Object.assign(S,{route:routes.find(r=>r.id==='nfl-tdboard'),year,week,games,data:{...archive,schedule},extra,
   weather:live?weather:null,injuries:live&&Object.keys(availability?.teams||{}).length?availability.teams:live?injuries||{}:{},
   nflAvailability:live?availability:null,odds:live?odds||[]:[],models:live?models:null,f:{...viewDefaults['nfl-tdboard']}});
@@ -32,19 +41,26 @@ let saved=0,graded=0;
 const next=season.filter(g=>g.date>=today&&g.sa==null).sort((a,b)=>a.date.localeCompare(b.date))[0];
 if(next&&archive){
   setup(next.week,season.filter(g=>g.week===next.week),true);
-  for(const x of tdBoardData().games){
+  const board=tdBoardData();
+  for(const x of board.games){
     if(x.g.sa!=null||!(Date.parse(x.g.iso)>now))continue;
     if(store.get(x.g.id)?.graded)continue;
-    store.set(x.g.id,{...snapshot(x),capturedAt:new Date(now).toISOString()});changed.add(month(x.g));saved++;
+    const sweepstakes=x.g.id===nflTdSweepstakesGame?tdSweepstakes(x,schedule,archive.events,board.rates,now):null;
+    const previous=store.get(x.g.id);
+    store.set(x.g.id,{...snapshot(x),capturedAt:new Date(now).toISOString(),
+      ...(sweepstakes?{sweepstakes}:previous?.sweepstakes?{sweepstakes:previous.sweepstakes,sweepstakesAt:previous.sweepstakesAt??previous.capturedAt}:{})});
+    changed.add(month(x.g));saved++;
   }
 }
 const byGame=new Map(season.map(g=>[g.id,g]));
 const pending=[...store.values()].filter(x=>!x.graded&&now-Date.parse(x.tip)>=2.5*3600_000);
 const boxes=await loadNflFinals(season,new Set(pending.filter(x=>now-Date.parse(x.tip)<=7*86400_000&&
-  (!archive?.events?.[x.game]?.length||byGame.get(x.game)?.sa==null)).map(x=>x.game)));
+  (x.sweepstakes||!archive?.events?.[x.game]?.length||byGame.get(x.game)?.sa==null)).map(x=>x.game)));
 for(const x of pending){
   const ev=archive?.events?.[x.game], g=byGame.get(x.game);
-  if(ev?.length&&g?.sa!=null){
+  const promoResult=x.sweepstakes&&gradeTdBoard(x,boxes.get(x.game),now);
+  if(promoResult)Object.assign(x,promoResult);
+  else if(ev?.length&&g?.sa!=null){
     grade(x,ev);x.resultSource='Season play-by-play';
   }else{
     const result=gradeTdBoard(x,boxes.get(x.game),now);

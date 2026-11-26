@@ -6,6 +6,7 @@ import {markets as parlayMarkets,tdMarkets,badWeather} from './nfl-parlay-engine
 import {bucket,isRush,offenseTd,bucketRates,impliedPoints,impliedTds,rushShare,anytime,firstTdChance,shrink,log5,tdRegression,tdSettings} from './nfl-td.mjs';
 import {tdBoardPage,tdBoardAction} from './nfl-td-board.mjs';
 import {tdJackpotPage,tdJackpotAction} from './nfl-td-jackpot-page.mjs';
+import {tdSweepstakesPage} from './nfl-td-sweepstakes-page.mjs';
 import {nflParlayPage,nflParlayAction} from './nfl-parlays.mjs';
 import {nflSgpPage,nflSgpAction} from './nfl-sgp.mjs';
 import {defenseProfiles,similarDefenseGames} from './nfl-sgp-engine.mjs';
@@ -715,7 +716,8 @@ export function nflAction(act,v,target){
   if(act==='pickplayers'){const [a,h]=matchup();dialog('Pick players',grid(2,[tdPlayers(a),tdPlayers(h)]),true);return true;}
   return false;
 }
-export function nflPage(){return ({'nfl-tdboard':()=>tdBoardPage(tdBoardData()),'nfl-td-jackpot':()=>tdJackpotPage(tdBoardData()),'nfl-parlays':()=>nflParlayPage(nflParlayData()),'nfl-sgp':()=>nflSgpPage(nflSameGameData()),td:tdPage,drives:drivesPage,'nfl-preview':nflPreview,'nfl-props':nflProps,'nfl-best':bestNfl,endzone})[S.route.id]();}
+export function nflPage(){return ({'nfl-tdboard':()=>tdBoardPage(tdBoardData()),'nfl-td-jackpot':()=>tdJackpotPage(tdBoardData()),
+  'nfl-td-sweepstakes':()=>tdSweepstakesPage(tdBoardData()),'nfl-parlays':()=>nflParlayPage(nflParlayData()),'nfl-sgp':()=>nflSgpPage(nflSameGameData()),td:tdPage,drives:drivesPage,'nfl-preview':nflPreview,'nfl-props':nflProps,'nfl-best':bestNfl,endzone})[S.route.id]();}
 export function nflResult(p){
   const g=allGames().find(x=>x.id===p.game);
   if(!g||!final(g))return null;
